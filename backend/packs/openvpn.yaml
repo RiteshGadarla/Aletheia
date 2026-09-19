@@ -1,0 +1,59 @@
+# OpenVPN free-text auth lines over syslog (spec Sec9.9). Curated templates keyed by phrase
+# discriminators, same approach as Cisco ASA. Corpus generated from published OpenVPN log
+# message formats (spec Sec25) - no live device.
+pack: openvpn
+version: 1
+applies_to: {vendor: "OpenVPN Inc", product: "OpenVPN"}
+envelopes: [rfc3164_tag, rfc3164_tag_nopid]
+
+templates:
+
+  # ---------------------------------------------------------------- auth success
+  - id: openvpn_auth_success
+    discriminator: "authentication succeeded for username"
+    body:
+      - {slot: peer_ip, type: ip}
+      - {lit: ":"}
+      - {slot: peer_port, type: port}
+      - {lit: " TLS: Username/Password authentication succeeded for username '"}
+      - {slot: user, type: custom, pattern: "[^']*"}
+      - {lit: "'"}
+    ocsf:
+      class_uid: 3002
+      activity_id: 1                       # Logon
+      constants:
+        status_id: 1
+        status: Success
+        is_remote: true
+        auth_protocol: "Username/Password"
+        service.name: openvpn
+      map:
+        user: user.name
+        peer_ip: src_endpoint.ip
+        peer_port: {path: src_endpoint.port, transform: to_int}
+    tests: {samples: "tests/openvpn_auth_success/*.log", expected: "tests/openvpn_auth_success/*.json"}
+
+  # ---------------------------------------------------------------- auth failure
+  - id: openvpn_auth_failure
+    discriminator: "authentication failed for username"
+    body:
+      - {slot: peer_ip, type: ip}
+      - {lit: ":"}
+      - {slot: peer_port, type: port}
+      - {lit: " TLS: Username/Password authentication failed for username '"}
+      - {slot: user, type: custom, pattern: "[^']*"}
+      - {lit: "'"}
+    ocsf:
+      class_uid: 3002
+      activity_id: 1                       # Logon (attempted, failed)
+      constants:
+        status_id: 2
+        status: Failure
+        is_remote: true
+        auth_protocol: "Username/Password"
+        service.name: openvpn
+      map:
+        user: user.name
+        peer_ip: src_endpoint.ip
+        peer_port: {path: src_endpoint.port, transform: to_int}
+    tests: {samples: "tests/openvpn_auth_failure/*.log", expected: "tests/openvpn_auth_failure/*.json"}

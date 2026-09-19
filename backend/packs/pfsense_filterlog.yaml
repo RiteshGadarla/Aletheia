@@ -1,0 +1,315 @@
+# pfSense/OPNsense filterlog CSV-inside-syslog (spec Sec9.6). Field layout: rule, sub-rule,
+# anchor, tracker, interface, reason, action, direction, ip version, then IP- and
+# protocol-specific fields. Templates are per (ip_version, protocol) since field count differs.
+# Commas are literals; every field is a slot separated by a literal comma so no two slots are
+# ever adjacent. Empty CSV fields use a `custom` pattern that accepts zero characters.
+# Corpus generated from published pfSense filterlog documentation (spec Sec25) - no live device.
+pack: pfsense_filterlog
+version: 1
+applies_to: {vendor: "Netgate", product: "pfSense/OPNsense filterlog"}
+envelopes: [rfc3164_tag_nohost]
+
+templates:
+
+  # ---------------------------------------------------------------- IPv4 / TCP
+  - id: pfsense_v4_tcp
+    discriminator: ",6,tcp,"
+    body:
+      - {slot: rule_num, type: int}
+      - {lit: ","}
+      - {slot: sub_rule, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: anchor, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: tracker, type: int}
+      - {lit: ","}
+      - {slot: iface, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: reason, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: action, type: enum, values: [pass, block, reject]}
+      - {lit: ","}
+      - {slot: direction, type: enum, values: [in, out]}
+      - {lit: ",4,"}
+      - {slot: tos, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ecn, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ttl, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ip_id, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: offset, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: flags, type: custom, pattern: '[^,]*'}
+      - {lit: ",6,tcp,"}
+      - {slot: length, type: int}
+      - {lit: ","}
+      - {slot: src, type: ipv4}
+      - {lit: ","}
+      - {slot: dst, type: ipv4}
+      - {lit: ","}
+      - {slot: srcport, type: port}
+      - {lit: ","}
+      - {slot: dstport, type: port}
+      - {lit: ","}
+      - {slot: datalen, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: tcpflags, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: seq, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ack, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: window, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: urg, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: options, type: text}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6                       # Traffic
+      constants:
+        connection_info.protocol_name: tcp
+        connection_info.protocol_num: 6
+      map:
+        rule_num: firewall_rule.uid
+        tracker: connection_info.uid
+        reason: status_detail
+        action: [action, {path: action_id, enum: {pass: 1, block: 2, reject: 2}}]
+        length: {path: traffic.bytes, transform: to_int}
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+        srcport: {path: src_endpoint.port, transform: to_int}
+        dstport: {path: dst_endpoint.port, transform: to_int}
+      conditional:
+        - when: {direction: in}
+          map:
+            iface: src_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {in: 1}}
+        - when: {direction: out}
+          map:
+            iface: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {out: 2}}
+      unmapped_keep: [sub_rule, anchor, tos, ecn, ttl, ip_id, offset, flags,
+                      datalen, tcpflags, seq, ack, window, urg]
+    tests: {samples: "tests/pfsense_v4_tcp/*.log", expected: "tests/pfsense_v4_tcp/*.json"}
+
+  # ---------------------------------------------------------------- IPv4 / UDP
+  - id: pfsense_v4_udp
+    discriminator: ",17,udp,"
+    body:
+      - {slot: rule_num, type: int}
+      - {lit: ","}
+      - {slot: sub_rule, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: anchor, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: tracker, type: int}
+      - {lit: ","}
+      - {slot: iface, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: reason, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: action, type: enum, values: [pass, block, reject]}
+      - {lit: ","}
+      - {slot: direction, type: enum, values: [in, out]}
+      - {lit: ",4,"}
+      - {slot: tos, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ecn, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ttl, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ip_id, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: offset, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: flags, type: custom, pattern: '[^,]*'}
+      - {lit: ",17,udp,"}
+      - {slot: length, type: int}
+      - {lit: ","}
+      - {slot: src, type: ipv4}
+      - {lit: ","}
+      - {slot: dst, type: ipv4}
+      - {lit: ","}
+      - {slot: srcport, type: port}
+      - {lit: ","}
+      - {slot: dstport, type: port}
+      - {lit: ","}
+      - {slot: datalen, type: int}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6
+      constants:
+        connection_info.protocol_name: udp
+        connection_info.protocol_num: 17
+      map:
+        rule_num: firewall_rule.uid
+        tracker: connection_info.uid
+        reason: status_detail
+        action: [action, {path: action_id, enum: {pass: 1, block: 2, reject: 2}}]
+        length: {path: traffic.bytes, transform: to_int}
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+        srcport: {path: src_endpoint.port, transform: to_int}
+        dstport: {path: dst_endpoint.port, transform: to_int}
+      conditional:
+        - when: {direction: in}
+          map:
+            iface: src_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {in: 1}}
+        - when: {direction: out}
+          map:
+            iface: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {out: 2}}
+      unmapped_keep: [sub_rule, anchor, tos, ecn, ttl, ip_id, offset, flags]
+    tests: {samples: "tests/pfsense_v4_udp/*.log", expected: "tests/pfsense_v4_udp/*.json"}
+
+  # ---------------------------------------------------------------- IPv4 / ICMP
+  - id: pfsense_v4_icmp
+    discriminator: ",1,icmp,"
+    body:
+      - {slot: rule_num, type: int}
+      - {lit: ","}
+      - {slot: sub_rule, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: anchor, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: tracker, type: int}
+      - {lit: ","}
+      - {slot: iface, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: reason, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: action, type: enum, values: [pass, block, reject]}
+      - {lit: ","}
+      - {slot: direction, type: enum, values: [in, out]}
+      - {lit: ",4,"}
+      - {slot: tos, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ecn, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ttl, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ip_id, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: offset, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: flags, type: custom, pattern: '[^,]*'}
+      - {lit: ",1,icmp,"}
+      - {slot: length, type: int}
+      - {lit: ","}
+      - {slot: src, type: ipv4}
+      - {lit: ","}
+      - {slot: dst, type: ipv4}
+      - {lit: ","}
+      - {slot: icmp_type, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: icmp_id, type: int}
+      - {lit: ","}
+      - {slot: icmp_seq, type: int}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6
+      constants:
+        connection_info.protocol_name: icmp
+        connection_info.protocol_num: 1
+      map:
+        rule_num: firewall_rule.uid
+        tracker: connection_info.uid
+        reason: status_detail
+        action: [action, {path: action_id, enum: {pass: 1, block: 2, reject: 2}}]
+        length: {path: traffic.bytes, transform: to_int}
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+      conditional:
+        - when: {direction: in}
+          map:
+            iface: src_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {in: 1}}
+        - when: {direction: out}
+          map:
+            iface: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {out: 2}}
+      unmapped_keep: [sub_rule, anchor, tos, ecn, ttl, ip_id, offset, flags,
+                      icmp_type, icmp_id, icmp_seq]
+    tests: {samples: "tests/pfsense_v4_icmp/*.log", expected: "tests/pfsense_v4_icmp/*.json"}
+
+  # ---------------------------------------------------------------- IPv6 / TCP
+  - id: pfsense_v6_tcp
+    discriminator: ",6,tcp,"
+    body:
+      - {slot: rule_num, type: int}
+      - {lit: ","}
+      - {slot: sub_rule, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: anchor, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: tracker, type: int}
+      - {lit: ","}
+      - {slot: iface, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: reason, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: action, type: enum, values: [pass, block, reject]}
+      - {lit: ","}
+      - {slot: direction, type: enum, values: [in, out]}
+      - {lit: ",6,"}
+      - {slot: ip6_class, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: flowlabel, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: hoplimit, type: custom, pattern: '[^,]*'}
+      - {lit: ",6,tcp,"}
+      - {slot: length, type: int}
+      - {lit: ","}
+      - {slot: src, type: ipv6}
+      - {lit: ","}
+      - {slot: dst, type: ipv6}
+      - {lit: ","}
+      - {slot: srcport, type: port}
+      - {lit: ","}
+      - {slot: dstport, type: port}
+      - {lit: ","}
+      - {slot: datalen, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: tcpflags, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: seq, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: ack, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: window, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: urg, type: custom, pattern: '[^,]*'}
+      - {lit: ","}
+      - {slot: options, type: text}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6
+      constants:
+        connection_info.protocol_name: tcp
+        connection_info.protocol_num: 6
+      map:
+        rule_num: firewall_rule.uid
+        tracker: connection_info.uid
+        reason: status_detail
+        action: [action, {path: action_id, enum: {pass: 1, block: 2, reject: 2}}]
+        length: {path: traffic.bytes, transform: to_int}
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+        srcport: {path: src_endpoint.port, transform: to_int}
+        dstport: {path: dst_endpoint.port, transform: to_int}
+      conditional:
+        - when: {direction: in}
+          map:
+            iface: src_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {in: 1}}
+        - when: {direction: out}
+          map:
+            iface: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {out: 2}}
+      unmapped_keep: [sub_rule, anchor, ip6_class, flowlabel, hoplimit,
+                      datalen, tcpflags, seq, ack, window, urg]
+    tests: {samples: "tests/pfsense_v6_tcp/*.log", expected: "tests/pfsense_v6_tcp/*.json"}

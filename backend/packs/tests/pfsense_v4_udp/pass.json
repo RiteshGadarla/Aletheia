@@ -1,0 +1,57 @@
+{
+  "action": "pass",
+  "action_id": 1,
+  "activity_id": 6,
+  "aletheia": {
+    "pack": "pfsense_filterlog",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "pfsense_v4_udp"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "connection_info": {
+    "direction_id": 2,
+    "protocol_name": "udp",
+    "protocol_num": 17,
+    "uid": "1000000104"
+  },
+  "dst_endpoint": {
+    "interface_name": "em0",
+    "ip": "198.51.100.9",
+    "port": 53
+  },
+  "firewall_rule": {
+    "uid": "9"
+  },
+  "metadata": {
+    "log_provider": "filterlog",
+    "original_time": "Sep 19 14:31:03",
+    "product": {
+      "name": "pfSense/OPNsense filterlog",
+      "vendor_name": "Netgate"
+    }
+  },
+  "severity_id": 1,
+  "src_endpoint": {
+    "ip": "10.0.0.5",
+    "port": 52144
+  },
+  "status_detail": "match",
+  "traffic": {
+    "bytes": 76
+  },
+  "type_uid": 400106,
+  "unmapped": {
+    "anchor": "",
+    "datalen": "48",
+    "ecn": "",
+    "flags": "DF",
+    "ip_id": "0",
+    "offset": "0",
+    "sub_rule": "",
+    "tos": "0x0",
+    "ttl": "64"
+  }
+}

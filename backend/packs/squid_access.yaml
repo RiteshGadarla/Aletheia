@@ -1,0 +1,52 @@
+# Squid native access.log, space-delimited (spec Sec9.8). Default format right-justifies the
+# elapsed-ms field, so a variable run of padding spaces follows the timestamp; captured with the
+# `ws` slot type (CONTRACTS Sec1) so alignment reconstructs byte-exact. Empty-string literals
+# separate `ws` from its neighbour slots only to satisfy the compiler's no-adjacent-slots rule -
+# they consume zero bytes and do not change the matched text.
+# Corpus generated from the published Squid access.log format (spec Sec25) - no live device.
+pack: squid_access
+version: 1
+applies_to: {vendor: "Squid Cache", product: "Squid"}
+envelopes: [bare]
+
+templates:
+
+  - id: squid_connect
+    discriminator: " HIER_"
+    body:
+      - {slot: ts_epoch, type: epoch_ts}
+      - {lit: ""}
+      - {slot: pad, type: ws}
+      - {lit: ""}
+      - {slot: elapsed, type: int}
+      - {lit: " "}
+      - {slot: client_ip, type: ip}
+      - {lit: " "}
+      - {slot: result_code, type: custom, pattern: '[A-Z_]+'}
+      - {lit: "/"}
+      - {slot: http_status, type: int}
+      - {lit: " "}
+      - {slot: bytes, type: int}
+      - {lit: " "}
+      - {slot: method, type: custom, pattern: '[A-Z]+'}
+      - {lit: " "}
+      - {slot: url, type: word}
+      - {lit: " "}
+      - {slot: user, type: word}
+      - {lit: " "}
+      - {slot: hier_peer, type: word}
+      - {lit: " "}
+      - {slot: content_type, type: word}
+    ocsf:
+      class_uid: 4002
+      activity_id: 1                       # Connect - this template is a CONNECT tunnel record
+      map:
+        client_ip: src_endpoint.ip
+        http_status: {path: http_response.code, transform: to_int}
+        bytes: {path: traffic.bytes, transform: to_int}
+        method: http_request.http_method
+        url: http_request.url.text
+        user: user.name
+        content_type: http_response.content_type
+      unmapped_keep: [result_code, hier_peer]
+    tests: {samples: "tests/squid_connect/*.log", expected: "tests/squid_connect/*.json"}

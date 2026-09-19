@@ -1,0 +1,60 @@
+{
+  "action": "block",
+  "action_id": 2,
+  "activity_id": 6,
+  "aletheia": {
+    "pack": "pfsense_filterlog",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "pfsense_v6_tcp"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "connection_info": {
+    "direction_id": 1,
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "1000000106"
+  },
+  "dst_endpoint": {
+    "ip": "2001:db8::5",
+    "port": 22
+  },
+  "firewall_rule": {
+    "uid": "11"
+  },
+  "metadata": {
+    "log_provider": "filterlog",
+    "original_time": "Sep 19 14:31:05",
+    "product": {
+      "name": "pfSense/OPNsense filterlog",
+      "vendor_name": "Netgate"
+    }
+  },
+  "severity_id": 1,
+  "src_endpoint": {
+    "interface_name": "em0",
+    "ip": "2001:db8::9",
+    "port": 51514
+  },
+  "status_detail": "match",
+  "traffic": {
+    "bytes": 60
+  },
+  "type_uid": 400106,
+  "unmapped": {
+    "ack": "",
+    "anchor": "",
+    "datalen": "0",
+    "flowlabel": "00000",
+    "hoplimit": "64",
+    "ip6_class": "0",
+    "options": "mss;sackOK;TS;nop;wscale",
+    "seq": "1234567890",
+    "sub_rule": "",
+    "tcpflags": "S",
+    "urg": "",
+    "window": "64240"
+  }
+}

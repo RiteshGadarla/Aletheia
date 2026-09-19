@@ -1,0 +1,1 @@
+{"timestamp":"2026-09-19T14:31:02.123456+0530","flow_id":123456789,"in_iface":"eth0","event_type":"alert","src_ip":"198.51.100.9","src_port":51514,"dest_ip":"10.0.0.5","dest_port":22,"proto":"TCP","alert":{"action":"allowed","gid":1,"signature_id":2001219,"rev":1,"signature":"ET SCAN Potential SSH Scan","category":"Attempted Information Leak","severity":2}}

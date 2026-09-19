@@ -1,0 +1,44 @@
+{
+  "activity_id": 1,
+  "aletheia": {
+    "pack": "squid_access",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "squid_connect"
+  },
+  "category_uid": 4,
+  "class_uid": 4002,
+  "http_request": {
+    "http_method": "CONNECT",
+    "url": {
+      "text": "example.com:443"
+    }
+  },
+  "http_response": {
+    "code": 200,
+    "content_type": "-"
+  },
+  "metadata": {
+    "product": {
+      "name": "Squid",
+      "vendor_name": "Squid Cache"
+    }
+  },
+  "src_endpoint": {
+    "ip": "10.0.0.5"
+  },
+  "traffic": {
+    "bytes": 5120
+  },
+  "type_uid": 400201,
+  "unmapped": {
+    "elapsed": "245",
+    "hier_peer": "HIER_DIRECT/93.184.216.34",
+    "result_code": "TCP_TUNNEL",
+    "ts_epoch": "1789828262.123"
+  },
+  "user": {
+    "name": "-"
+  }
+}

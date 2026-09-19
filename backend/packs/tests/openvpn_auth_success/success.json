@@ -1,0 +1,37 @@
+{
+  "activity_id": 1,
+  "aletheia": {
+    "pack": "openvpn",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "openvpn_auth_success"
+  },
+  "auth_protocol": "Username/Password",
+  "category_uid": 3,
+  "class_uid": 3002,
+  "is_remote": true,
+  "metadata": {
+    "log_name": "vpn01",
+    "log_provider": "openvpn",
+    "original_time": "Sep 19 14:31:02",
+    "product": {
+      "name": "OpenVPN",
+      "vendor_name": "OpenVPN Inc"
+    }
+  },
+  "service": {
+    "name": "openvpn"
+  },
+  "severity_id": 2,
+  "src_endpoint": {
+    "ip": "198.51.100.20",
+    "port": 50112
+  },
+  "status": "Success",
+  "status_id": 1,
+  "type_uid": 300201,
+  "user": {
+    "name": "analyst1"
+  }
+}

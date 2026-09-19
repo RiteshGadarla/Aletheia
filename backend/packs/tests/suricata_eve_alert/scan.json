@@ -1,0 +1,49 @@
+{
+  "action": "allowed",
+  "action_id": 1,
+  "activity_id": 1,
+  "aletheia": {
+    "pack": "suricata_eve",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "verbatim",
+    "template_id": "suricata_eve_alert"
+  },
+  "category_uid": 2,
+  "class_uid": 2004,
+  "connection_info": {
+    "protocol_name": "tcp"
+  },
+  "dst_endpoint": {
+    "ip": "10.0.0.5",
+    "port": 22
+  },
+  "finding_info": {
+    "analytic": {
+      "category": "IDS",
+      "name": "ET SCAN Potential SSH Scan",
+      "type": "Signature",
+      "uid": 2001219
+    },
+    "desc": "Attempted Information Leak",
+    "title": "ET SCAN Potential SSH Scan",
+    "uid": 2001219
+  },
+  "metadata": {
+    "original_time": "2026-09-19T14:31:02.123456+0530",
+    "product": {
+      "name": "Suricata",
+      "vendor_name": "OISF"
+    }
+  },
+  "risk_level_id": 3,
+  "severity_id": 4,
+  "src_endpoint": {
+    "ip": "198.51.100.9",
+    "port": 51514
+  },
+  "type_uid": 200401,
+  "unmapped": {
+    "json": "{\"timestamp\":\"2026-09-19T14:31:02.123456+0530\",\"flow_id\":123456789,\"in_iface\":\"eth0\",\"event_type\":\"alert\",\"src_ip\":\"198.51.100.9\",\"src_port\":51514,\"dest_ip\":\"10.0.0.5\",\"dest_port\":22,\"proto\":\"TCP\",\"alert\":{\"action\":\"allowed\",\"gid\":1,\"signature_id\":2001219,\"rev\":1,\"signature\":\"ET SCAN Potential SSH Scan\",\"category\":\"Attempted Information Leak\",\"severity\":2}}"
+  }
+}

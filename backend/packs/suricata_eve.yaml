@@ -1,0 +1,38 @@
+# Suricata EVE JSON (spec Sec9.7). One JSON object per line, no syslog envelope (file tail).
+# Mapped by key path; storage_mode is verbatim per spec Sec9.7 - byte-exact templating of
+# arbitrary JSON is fragile, so the whole line is kept as one slot and mapped via `json_map`.
+# The pack is still fully parsed and normalized; only the storage representation differs.
+# Golden sample shaped from the published EVE JSON schema (spec Sec9.7); see sources/README.md
+# for the honest provenance statement covering all corpora in this repository.
+pack: suricata_eve
+version: 1
+applies_to: {vendor: "OISF", product: "Suricata"}
+envelopes: [bare]
+
+templates:
+
+  - id: suricata_eve_alert
+    discriminator: '"event_type":"alert"'
+    storage_mode: verbatim
+    body:
+      - {slot: json, type: text}
+    ocsf:
+      class_uid: 2004
+      activity_id: 1                       # Create
+      storage_mode: verbatim
+      constants:
+        finding_info.analytic.type: Signature
+        finding_info.analytic.category: IDS
+      json_map:
+        src_ip: src_endpoint.ip
+        src_port: {path: src_endpoint.port, transform: to_int}
+        dest_ip: dst_endpoint.ip
+        dest_port: {path: dst_endpoint.port, transform: to_int}
+        proto: {path: connection_info.protocol_name, transform: lowercase}
+        alert.signature: [finding_info.title, finding_info.analytic.name]
+        alert.signature_id: [finding_info.uid, finding_info.analytic.uid]
+        alert.category: finding_info.desc
+        alert.action: [action, {path: action_id, enum: {allowed: 1, blocked: 2}}]
+        alert.severity: [{path: severity_id, enum: {"1": 5, "2": 4, "3": 3, "4": 2}},
+                         {path: risk_level_id, enum: {"1": 4, "2": 3, "3": 2, "4": 1}}]
+    tests: {samples: "tests/suricata_eve_alert/*.log", expected: "tests/suricata_eve_alert/*.json"}
