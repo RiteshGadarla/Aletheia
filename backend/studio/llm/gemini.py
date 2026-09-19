@@ -39,7 +39,7 @@ class GeminiProvider:
     name = "gemini"
 
     def __init__(self, model: str, api_key: str, base_url: str = DEFAULT_BASE_URL,
-                 timeout_s: int = 30, max_output_tokens: int = 8192,
+                 timeout_s: int = 120, max_output_tokens: int = 8192,
                  client: httpx.Client | None = None) -> None:
         self.model = model
         self._key = api_key

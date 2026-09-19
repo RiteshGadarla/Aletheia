@@ -22,7 +22,7 @@ SPEC: dict[str, tuple[str | None, Any, bool]] = {
     "llm.base_url":          ("ALETHEIA_LLM_BASE_URL", "", False),
     "llm.api_key":           ("ALETHEIA_LLM_API_KEY", "", True),
     "llm.send_samples":      ("ALETHEIA_LLM_SEND_SAMPLES", "masked", False),
-    "llm.timeout_s":         ("ALETHEIA_LLM_TIMEOUT_S", 30, False),
+    "llm.timeout_s":         ("ALETHEIA_LLM_TIMEOUT_S", 120, False),
     "llm.max_output_tokens": ("ALETHEIA_LLM_MAX_OUTPUT_TOKENS", 8192, False),
     "llm.requests_per_hour": ("ALETHEIA_LLM_REQUESTS_PER_HOUR", 60, False),
     "airgap":                ("ALETHEIA_AIRGAP", False, False),
@@ -76,7 +76,7 @@ class LLMConfig:
     base_url: str = ""
     api_key: str = ""           # never serialise this field
     send_samples: str = "masked"
-    timeout_s: int = 30
+    timeout_s: int = 120
     max_output_tokens: int = 8192
     requests_per_hour: int = 60
     airgap: bool = False
@@ -165,7 +165,7 @@ class SettingsStore:
             base_url=base_url.rstrip("/"),
             api_key=str(pick("llm.api_key") or ""),
             send_samples=str(pick("llm.send_samples") or "masked").strip().lower(),
-            timeout_s=_as_int(pick("llm.timeout_s"), 30),
+            timeout_s=_as_int(pick("llm.timeout_s"), 120),
             max_output_tokens=_as_int(pick("llm.max_output_tokens"), 8192),
             requests_per_hour=_as_int(pick("llm.requests_per_hour"), 60),
             airgap=_as_bool(pick("airgap")),
