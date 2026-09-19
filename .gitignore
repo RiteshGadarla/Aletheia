@@ -1,0 +1,20 @@
+personal/
+
+# secrets — never commit real keys
+.env
+*.env
+!*.env.example
+deploy/secrets/*
+!deploy/secrets/*.example
+
+# build artifacts
+/bin/
+engine/**/*.test
+node_modules/
+ui/dist/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+/data/
+*.tar
