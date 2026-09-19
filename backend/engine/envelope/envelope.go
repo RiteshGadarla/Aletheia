@@ -59,7 +59,9 @@ var (
 	reTag      = regexp.MustCompile(`^([A-Za-z0-9._-]+)(\[[0-9]+\])?: `)
 	reASA      = regexp.MustCompile(`^%[A-Za-z][A-Za-z0-9_-]*-\d+-\d+`)
 	reKV       = regexp.MustCompile(`(?:^|[ \t^|])[A-Za-z][A-Za-z0-9_.\-]*=`)
-	reLogID    = regexp.MustCompile(`(?:^|[ \t])logid=("?)([^" \t]*)\1`)
+	// RE2 has no backreferences: capture the whole token verbatim, quotes and
+	// all, so the discriminator equals the literal a pack declares.
+	reLogID = regexp.MustCompile(`(?:^|[ \t])(logid=(?:"[^"]*"|[^" \t]+))`)
 )
 
 const tagPattern = `[A-Za-z0-9._-]+(?:\[[0-9]+\])?`

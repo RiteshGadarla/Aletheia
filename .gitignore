@@ -21,3 +21,5 @@ venv/
 
 # Go build/module cache (created by containerized builds)
 .gocache/
+/bin/
+.venv/

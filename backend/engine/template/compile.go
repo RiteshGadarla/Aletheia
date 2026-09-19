@@ -55,9 +55,8 @@ func Validate(toks []Token) error {
 	seen := map[string]bool{}
 	for i, t := range toks {
 		if t.IsLit() {
-			if t.Lit == "" {
-				return fmt.Errorf("token %d: empty literal", i)
-			}
+			// An empty literal consumes no bytes but still separates two slots,
+			// which is how packs declare an unambiguous slot pair explicitly.
 			continue
 		}
 		if seen[t.Slot] {
@@ -67,11 +66,10 @@ func Validate(toks []Token) error {
 		if _, err := Pattern(t); err != nil {
 			return err
 		}
-		if t.Type == TypeText {
-			// `text` is lazy; it needs a following literal to bound it.
-			if i+1 >= len(toks) || !toks[i+1].IsLit() {
-				return fmt.Errorf("token %d: slot %q of type text must be followed by a literal", i, t.Slot)
-			}
+		if t.Type == TypeText && i+1 < len(toks) && !toks[i+1].IsLit() {
+			// `text` is lazy: it needs a following literal, or the `$` anchor,
+			// to bound it (CONTRACTS §1).
+			return fmt.Errorf("token %d: slot %q of type text must be followed by a literal", i, t.Slot)
 		}
 		if i+1 < len(toks) && !toks[i+1].IsLit() {
 			if err := checkAdjacent(t, toks[i+1]); err != nil {

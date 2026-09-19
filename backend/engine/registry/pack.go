@@ -17,9 +17,11 @@ import (
 )
 
 // MapTarget is a slot to OCSF path mapping. YAML allows a bare string or an object.
+// Enum values are usually ints (OCSF enum ids) but the shipped packs also map to
+// strings (protocol number to name), so the value side is `any`.
 type MapTarget struct {
 	Path      string         `yaml:"path"      json:"path"`
-	Enum      map[string]int `yaml:"enum"      json:"enum,omitempty"`
+	Enum      map[string]any `yaml:"enum"      json:"enum,omitempty"`
 	Transform string         `yaml:"transform" json:"transform,omitempty"`
 }
 
@@ -38,11 +40,39 @@ func (m *MapTarget) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
+// Targets is the value side of a pack `map:` entry. One slot may fan out to
+// several OCSF paths, so YAML allows a bare string, an object, or a sequence of
+// either. CONTRACTS §2 documents only the first two; the shipped packs use the
+// sequence form (cef_generic `proto:`, `act:`), so the engine accepts all three.
+type Targets []MapTarget
+
+// UnmarshalYAML accepts a scalar, a mapping or a sequence of those.
+func (t *Targets) UnmarshalYAML(n *yaml.Node) error {
+	if n.Kind == yaml.SequenceNode {
+		out := make(Targets, 0, len(n.Content))
+		for _, c := range n.Content {
+			var one MapTarget
+			if err := one.UnmarshalYAML(c); err != nil {
+				return err
+			}
+			out = append(out, one)
+		}
+		*t = out
+		return nil
+	}
+	var one MapTarget
+	if err := one.UnmarshalYAML(n); err != nil {
+		return err
+	}
+	*t = Targets{one}
+	return nil
+}
+
 // Conditional applies extra mappings when every `when` slot matches exactly.
 type Conditional struct {
-	When      map[string]string    `yaml:"when"      json:"when"`
-	Map       map[string]MapTarget `yaml:"map"       json:"map,omitempty"`
-	Constants map[string]any       `yaml:"constants" json:"constants,omitempty"`
+	When      map[string]string  `yaml:"when"      json:"when"`
+	Map       map[string]Targets `yaml:"map"       json:"map,omitempty"`
+	Constants map[string]any     `yaml:"constants" json:"constants,omitempty"`
 }
 
 // OCSF is the normalization block of a template.
@@ -51,7 +81,7 @@ type OCSF struct {
 	ActivityID   int                  `yaml:"activity_id"   json:"activity_id"`
 	SeverityID   *int                 `yaml:"severity_id"   json:"severity_id,omitempty"`
 	Constants    map[string]any       `yaml:"constants"     json:"constants,omitempty"`
-	Map          map[string]MapTarget `yaml:"map"           json:"map,omitempty"`
+	Map          map[string]Targets   `yaml:"map"           json:"map,omitempty"`
 	Conditional  []Conditional        `yaml:"conditional"   json:"conditional,omitempty"`
 	UnmappedKeep []string             `yaml:"unmapped_keep" json:"unmapped_keep,omitempty"`
 }
@@ -131,17 +161,15 @@ func ParsePack(data []byte, path string) (*Pack, error) {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		t.Compiled = c
-		if t.Discriminator != "" && !discriminatorPlausible(t) {
-			return nil, fmt.Errorf("%s: template %s discriminator %q does not appear in its body literals",
-				path, t.ID, t.Discriminator)
-		}
 	}
 	return &p, nil
 }
 
-// discriminatorPlausible checks the pack invariant that the discriminator is a
-// fast index key derived from the body, the envelope tag or a structural header.
-func discriminatorPlausible(t *TemplateDef) bool {
+// DiscriminatorInBody reports whether the discriminator is a body literal. It
+// is only a hint: a discriminator is a substring prefilter over the whole raw
+// line, so it may equally come from the envelope or from a slot value (Squid
+// " HIER_"). The reconstruction gate checks it against each sample instead.
+func DiscriminatorInBody(t *TemplateDef) bool {
 	if strings.ContainsAny(t.Discriminator, ":=|") {
 		return true // tag:, logid=, CEF:/LEEF: structural keys
 	}

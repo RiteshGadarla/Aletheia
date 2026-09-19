@@ -1,0 +1,6 @@
+<134>Sep 19 09:12:01 filterlog[1234]: 12,,,1000000201,em0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,60,203.0.113.34,10.0.0.5,44120,22,0,S,2211334455,,64240,,mss;sackOK;TS;nop;wscale
+<134>Sep 19 09:12:07 filterlog[1234]: 4,,,1000000202,em0,match,pass,out,4,0x0,,64,0,0,DF,6,tcp,60,10.0.0.7,203.0.113.9,51302,443,0,S,3311224455,,64240,,mss;sackOK;TS;nop;wscale
+<134>Sep 19 09:12:11 filterlog[1234]: 4,,,1000000203,em0,match,pass,out,4,0x0,,64,0,0,DF,17,udp,76,10.0.0.12,203.0.113.20,52441,53,48
+<134>Sep 19 09:12:15 filterlog[1234]: 6,,,1000000204,em0,match,pass,in,4,0x0,,64,0,0,none,1,icmp,84,198.51.100.5,10.0.0.9,echo request,1,101
+<134>Sep 19 09:12:22 filterlog[1234]: 12,,,1000000205,em0,match,block,in,6,0,00000,64,6,tcp,60,2001:db8::abcd,2001:db8::5,44121,3389,0,S,2211334456,,64240,,mss;sackOK;TS;nop;wscale
+<134>Sep 19 09:12:30 filterlog[1234]: 12,,,1000000206,em0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,60,203.0.113.34,10.0.0.5,44130,3389,0,S,2211334460,,64240,,mss;sackOK;TS;nop;wscale

@@ -11,7 +11,7 @@ import (
 // applyMap writes each mapped slot to its OCSF path, applying enum tables and
 // transforms. Returns false if any mapping could not be applied, which
 // downgrades parse_status to partial. Spec §6.7 steps 3 and 6.
-func applyMap(ev map[string]any, m map[string]registry.MapTarget, vals map[string]Typed,
+func applyMap(ev map[string]any, m map[string]registry.Targets, vals map[string]Typed,
 	mapped map[string]bool, en *Enums, recvMS int64, src *registry.Source) bool {
 
 	slots := make([]string, 0, len(m))
@@ -22,19 +22,30 @@ func applyMap(ev map[string]any, m map[string]registry.MapTarget, vals map[strin
 
 	ok := true
 	for _, slot := range slots {
-		tgt := m[slot]
+		tgts := m[slot]
 		v, found := vals[slot]
-		if !found || tgt.Path == "" {
+		if !found || len(tgts) == 0 {
 			ok = false
 			continue
 		}
 		mapped[slot] = true
-		val, good := derive(tgt, v, en, recvMS, src)
-		if !good {
-			ok = false
+		for _, tgt := range tgts {
+			if tgt.Path == "" {
+				ok = false
+				continue
+			}
+			val, good := derive(tgt, v, en, recvMS, src)
+			if !good {
+				// An enum with no entry for this value stays unset; the exact
+				// substring is still in vars, so nothing is lost.
+				ok = false
+				if len(tgt.Enum) > 0 {
+					continue
+				}
+			}
+			setPath(ev, tgt.Path, val)
+			decorate(ev, tgt.Path, v, val, en)
 		}
-		setPath(ev, tgt.Path, val)
-		decorate(ev, tgt.Path, v, val, en)
 	}
 	return ok
 }
@@ -50,7 +61,7 @@ func derive(tgt registry.MapTarget, v Typed, en *Enums, recvMS int64, src *regis
 		if id, hit := tgt.Enum[strings.ToLower(raw)]; hit {
 			return id, true
 		}
-		return 0, false
+		return nil, false
 	}
 
 	switch tgt.Transform {

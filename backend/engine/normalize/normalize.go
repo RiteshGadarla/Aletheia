@@ -289,14 +289,21 @@ func applyConstants(ev map[string]any, c map[string]any) {
 }
 
 func mappedTime(td *registry.TemplateDef, vals map[string]Typed, recvMS int64, src *registry.Source) (int64, string, bool) {
-	check := func(m map[string]registry.MapTarget) (int64, string, bool) {
+	check := func(m map[string]registry.Targets) (int64, string, bool) {
 		slots := make([]string, 0, len(m))
 		for s := range m {
 			slots = append(slots, s)
 		}
 		sort.Strings(slots)
 		for _, s := range slots {
-			if m[s].Transform != "ts_parse" {
+			hasTS := false
+			for _, t := range m[s] {
+				if t.Transform == "ts_parse" {
+					hasTS = true
+					break
+				}
+			}
+			if !hasTS {
 				continue
 			}
 			v, ok := vals[s]

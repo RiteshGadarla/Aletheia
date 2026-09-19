@@ -42,7 +42,7 @@ func classify(r *Result) {
 	}
 	if r.BodyType == BodyKV {
 		if m := reLogID.FindStringSubmatch(b); m != nil {
-			r.Discriminator = "logid=" + m[2]
+			r.Discriminator = m[1]
 			return
 		}
 	}

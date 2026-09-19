@@ -1,0 +1,6 @@
+<29>Sep 19 09:05:02 vpn01 openvpn[812]: 198.51.100.20:50112 TLS: Username/Password authentication succeeded for username 'analyst1'
+<29>Sep 19 09:14:47 vpn01 openvpn[812]: 203.0.113.34:33221 TLS: Username/Password authentication failed for username 'admin'
+<29>Sep 19 09:14:52 vpn01 openvpn[812]: 203.0.113.34:33224 TLS: Username/Password authentication failed for username 'administrator'
+<29>Sep 19 09:14:58 vpn01 openvpn[812]: 203.0.113.34:33229 TLS: Username/Password authentication failed for username 'root'
+<29>Sep 19 09:22:10 vpn01 openvpn[812]: 198.51.100.22:50119 TLS: Username/Password authentication succeeded for username 'analyst2'
+<29>Sep 19 09:31:40 vpn01 openvpn[812]: 198.51.100.20:50188 TLS: Username/Password authentication failed for username 'analyst1'
