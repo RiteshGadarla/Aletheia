@@ -1,0 +1,1 @@
+CEF:0|VendorX|NGFW|4.2|1002|Connection denied|6|rt=1758359462000 src=198.51.100.9 spt=51514 dst=10.0.0.5 dpt=22 proto=TCP act=deny deviceInboundInterface=eth0 cs1Label=Policy cs1=DenyExternal msg=Blocked by policy DenyExternal

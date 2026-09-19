@@ -1,0 +1,1 @@
+CEF:0|VendorX|WAF|2.0|100|SQL Injection Attempt|8|src=198.51.100.20 spt=41302 dst=10.0.0.9 dpt=443 request=/login.php?id=1%27%20OR%20%271%27=%271 requestMethod=POST suser=anonymous act=block cs2Label=RuleId cs2=942100 msg=SQL Injection Attack Detected via libinjection

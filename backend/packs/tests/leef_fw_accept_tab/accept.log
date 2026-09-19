@@ -1,0 +1,1 @@
+LEEF:1.0|VendorZ|FWALL|1.4|ACCEPT|cat=traffic	src=10.0.0.5	srcPort=52144	dst=203.0.113.5	dstPort=443	proto=tcp	action=accept	srcBytes=1324	dstBytes=5120

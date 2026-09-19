@@ -1,0 +1,48 @@
+{
+  "action": "deny",
+  "action_id": 2,
+  "activity_id": 5,
+  "aletheia": {
+    "pack": "cef_generic",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "cef_ngfw_1002_deny"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "connection_info": {
+    "protocol_name": "tcp",
+    "protocol_num": 6
+  },
+  "dst_endpoint": {
+    "ip": "10.0.0.5",
+    "port": 22
+  },
+  "message": "Blocked by policy DenyExternal",
+  "metadata": {
+    "product": {
+      "feature": {
+        "name": "1002"
+      },
+      "name": "NGFW",
+      "vendor_name": "VendorX",
+      "version": "4.2"
+    }
+  },
+  "policy": {
+    "name": "DenyExternal"
+  },
+  "severity_id": 3,
+  "src_endpoint": {
+    "interface_name": "eth0",
+    "ip": "198.51.100.9",
+    "port": 51514
+  },
+  "type_uid": 400105,
+  "unmapped": {
+    "cef_version": "0",
+    "name": "Connection denied",
+    "rt": "1758359462000"
+  }
+}

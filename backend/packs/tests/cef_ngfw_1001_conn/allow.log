@@ -1,0 +1,1 @@
+CEF:0|VendorX|NGFW|4.2|1001|Connection allowed|3|src=10.0.0.5 spt=52144 dst=203.0.113.5 dpt=443 proto=TCP act=allow

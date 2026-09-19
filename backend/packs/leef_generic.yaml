@@ -33,13 +33,12 @@ templates:
       map:
         src: src_endpoint.ip
         dst: dst_endpoint.ip
-        usr_name: user.name
         action: [action, {path: action_id, enum: {block: 2, allow: 1, detect: 1}}]
         event_id: [finding_info.uid, finding_info.title]
         dev_vendor: metadata.product.vendor_name
         dev_product: metadata.product.name
         dev_version: metadata.product.version
-      unmapped_keep: [leef_version, delim]
+      unmapped_keep: [leef_version, delim, usr_name]
     tests: {samples: "tests/leef_waf_block_caret/*.log", expected: "tests/leef_waf_block_caret/*.json"}
 
   # LEEF 2.0 with the same vendor but a tab-delimited extension (delim declared as x09).
@@ -65,13 +64,12 @@ templates:
       map:
         src: src_endpoint.ip
         dst: dst_endpoint.ip
-        usr_name: user.name
         action: [action, {path: action_id, enum: {block: 2, allow: 1, detect: 1}}]
         event_id: [finding_info.uid, finding_info.title]
         dev_vendor: metadata.product.vendor_name
         dev_product: metadata.product.name
         dev_version: metadata.product.version
-      unmapped_keep: [leef_version, delim]
+      unmapped_keep: [leef_version, delim, usr_name]
     tests: {samples: "tests/leef_waf_block_tab/*.log", expected: "tests/leef_waf_block_tab/*.json"}
 
   # LEEF 1.0 firewall traffic, tab separated, no delimiter field in the header.

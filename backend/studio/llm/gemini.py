@@ -39,7 +39,7 @@ class GeminiProvider:
     name = "gemini"
 
     def __init__(self, model: str, api_key: str, base_url: str = DEFAULT_BASE_URL,
-                 timeout_s: int = 30, max_output_tokens: int = 2048,
+                 timeout_s: int = 30, max_output_tokens: int = 8192,
                  client: httpx.Client | None = None) -> None:
         self.model = model
         self._key = api_key
@@ -66,12 +66,13 @@ class GeminiProvider:
                 client.close()
 
     def _generate(self, system_prompt: str, user_prompt: str,
-                  schema: dict[str, Any] | None) -> dict[str, Any]:
+                  schema: dict[str, Any] | None,
+                  max_tokens: int | None = None) -> dict[str, Any]:
         # Fact 1: no systemInstruction — the system prompt is folded into the first user part.
         text = f"{system_prompt.strip()}\n\n{user_prompt.strip()}" if system_prompt else user_prompt
         gen: dict[str, Any] = {
             "temperature": 0,
-            "maxOutputTokens": self.max_output_tokens,
+            "maxOutputTokens": max_tokens or self.max_output_tokens,
         }
         if schema is not None:
             gen["responseMimeType"] = "application/json"
@@ -82,30 +83,45 @@ class GeminiProvider:
 
     # ---- interface ---------------------------------------------------
     def complete_json(self, system_prompt: str, user_prompt: str, schema: dict) -> dict:
-        def attempt(_n: int) -> dict[str, Any]:
-            return self._generate(system_prompt, user_prompt, schema)
+        # Gemma 4 is a thinking model and thought tokens count against maxOutputTokens, so a
+        # truncated reply is plausible rather than exceptional. Retry once with double the budget.
+        budget = self.max_output_tokens
+        for widen in (False, True):
+            if widen:
+                budget *= 2
 
-        data = with_retry(attempt, what=f"gemini/{self.model}", secrets=[self._key])
-        usage = data.get("usageMetadata") or {}
-        self.last_usage = {
-            "prompt_tokens": int(usage.get("promptTokenCount") or 0),
-            "completion_tokens": int(usage.get("candidatesTokenCount") or 0),
-            "total_tokens": int(usage.get("totalTokenCount") or 0),
-        }
-        candidates = data.get("candidates") or []
-        if not candidates:
-            reason = (data.get("promptFeedback") or {}).get("blockReason", "no candidates")
-            raise LLMError(f"gemini: empty response ({reason})")
-        parts = ((candidates[0].get("content") or {}).get("parts")) or []
-        text = join_answer_parts(parts).strip()
-        if not text:
+            def attempt(_n: int, _b: int = budget) -> dict[str, Any]:
+                return self._generate(system_prompt, user_prompt, schema, max_tokens=_b)
+
+            data = with_retry(attempt, what=f"gemini/{self.model}", secrets=[self._key])
+            usage = data.get("usageMetadata") or {}
+            self.last_usage = {
+                "prompt_tokens": int(usage.get("promptTokenCount") or 0),
+                "completion_tokens": int(usage.get("candidatesTokenCount") or 0),
+                "total_tokens": int(usage.get("totalTokenCount") or 0),
+            }
+            candidates = data.get("candidates") or []
+            if not candidates:
+                reason = (data.get("promptFeedback") or {}).get("blockReason", "no candidates")
+                raise LLMError(f"gemini: empty response ({reason})")
             finish = candidates[0].get("finishReason", "?")
-            raise LLMError(f"gemini: no non-thought text part (finishReason={finish})")
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as exc:
-            snippet = text[:200].replace("\n", " ")
-            raise LLMError(f"gemini: response is not JSON: {snippet}") from exc
+            parts = ((candidates[0].get("content") or {}).get("parts")) or []
+            text = join_answer_parts(parts).strip()
+
+            truncated = finish == "MAX_TOKENS"
+            if not text:
+                if truncated and not widen:
+                    continue          # thinking consumed the whole budget
+                raise LLMError(f"gemini: no non-thought text part (finishReason={finish})")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError as exc:
+                if truncated and not widen:
+                    continue          # JSON cut mid-object; one wider retry
+                snippet = text[:200].replace("\n", " ")
+                hint = " (truncated at maxOutputTokens)" if truncated else ""
+                raise LLMError(f"gemini: response is not JSON{hint}: {snippet}") from exc
+        raise LLMError(f"gemini: response still truncated at {budget} output tokens")
 
     def test_connection(self) -> ConnTest:
         probe_schema = {
