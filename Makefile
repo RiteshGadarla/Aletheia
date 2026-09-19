@@ -27,7 +27,7 @@ export PATH := $(GOROOT_LOCAL)/bin:$(PATH)
 .DEFAULT_GOAL := help
 .PHONY: help doctor setup venv node-deps secrets check test verify-packs engine engine-test \
         studio-test frontend-check dev studio frontend lite cli bench-storage demo up down \
-        logs install-go clean distclean services services-down services-logs run
+        logs install-go clean distclean services services-down services-logs run topics
 
 ## ---------------------------------------------------------------- help / doctor
 
@@ -198,7 +198,16 @@ services:
 	done
 	@docker compose -f $(SERVICES) ps --format 'table {{.Service}}\t{{.Status}}'
 	@echo
+	@$(MAKE) --no-print-directory topics
+	@echo
 	@echo "ClickHouse :8123   PostgreSQL :5432   Redpanda :9092   MinIO :9001"
+
+# Topics are part of a usable stack, so create them once the bus is healthy.
+topics:
+	@for t in raw quarantine normalized control dlq; do \
+	  docker exec aletheia-services-redpanda-1 rpk topic create $$t -p 4 -r 1 2>/dev/null | tail -1; \
+	done
+	@docker exec aletheia-services-redpanda-1 rpk topic list
 
 services-down:
 	docker compose -f $(SERVICES) down
