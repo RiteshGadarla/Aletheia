@@ -25,7 +25,20 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
   });
   const text = await res.text();
-  const body: unknown = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // Almost always the dev proxy missing, so the HTML shell came back instead of JSON.
+      throw new ApiError(
+        `${path} returned ${res.status} ${res.headers.get('content-type') ?? 'unknown type'}, not JSON. `
+        + 'Is the Studio API running on :8081? Try `make studio`.',
+        res.status,
+        text.slice(0, 200),
+      );
+    }
+  }
   if (!res.ok) {
     const detail =
       body && typeof body === 'object' && 'detail' in body ? String((body as { detail: unknown }).detail) : res.statusText;

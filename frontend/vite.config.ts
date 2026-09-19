@@ -8,6 +8,9 @@ export default defineConfig({
   server: {
     port: 5173,
     // Dev-only proxy to the Studio API; production is served behind the same origin.
-    proxy: { '/api': { target: process.env.VITE_API_TARGET || 'http://localhost:8080', changeOrigin: true } },
+    proxy: {
+      // Studio API. Must match `make studio` (:8081) — :8080 is the all-in-one image's UI port.
+      '/api': { target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8081', changeOrigin: true },
+    },
   },
 });

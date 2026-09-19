@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO_SCRIPT = REPO_ROOT / "demo" / "scenarios.py"
 
 app = FastAPI(title="Aletheia Studio", version="1.0.0")
+
+# The frontend calls /api/v1/*; /healthz stays unprefixed for container probes.
+api = APIRouter(prefix="/api/v1")
 
 # The frontend dev server runs on a different port; in production both sit behind one origin.
 app.add_middleware(
@@ -109,12 +112,12 @@ def _settings_payload() -> dict[str, Any]:
     }
 
 
-@app.get("/settings/llm")
+@api.get("/settings/llm")
 def get_settings() -> dict[str, Any]:
     return _settings_payload()
 
 
-@app.put("/settings/llm")
+@api.put("/settings/llm")
 def put_settings(update: LlmSettingsUpdate) -> dict[str, Any]:
     st = get_state()
     st.settings.set("llm.provider", update.provider)
@@ -129,7 +132,7 @@ def put_settings(update: LlmSettingsUpdate) -> dict[str, Any]:
     return _settings_payload()
 
 
-@app.post("/settings/llm/test")
+@api.post("/settings/llm/test")
 def test_connection() -> dict[str, Any]:
     st = get_state()
     cfg = st.settings.llm_config()
@@ -214,12 +217,12 @@ _RUNNABLE = {"traffic": "traffic", "lineage": "lineage", "verify": "verify",
              "tamper": "tamper", "storage": "storage", "drift": "drift", "bench": "bench"}
 
 
-@app.get("/demo/scenarios")
+@api.get("/demo/scenarios")
 def list_scenarios() -> list[dict[str, Any]]:
     return SCENARIOS
 
 
-@app.post("/demo/scenarios/{scenario_id}/run")
+@api.post("/demo/scenarios/{scenario_id}/run")
 def run_scenario(scenario_id: str) -> dict[str, Any]:
     cmd = _RUNNABLE.get(scenario_id)
     if cmd is None:
@@ -232,13 +235,13 @@ def run_scenario(scenario_id: str) -> dict[str, Any]:
             "output": out[-8000:], "link": None}
 
 
-@app.post("/demo/reset")
+@api.post("/demo/reset")
 def reset_demo() -> dict[str, Any]:
     rc, out = _demo(["reset"])
     return {"ok": rc == 0, "output": out[-2000:]}
 
 
-@app.get("/packs/verify")
+@api.get("/packs/verify")
 def verify_packs() -> dict[str, Any]:
     """Byte-exact reconstruction over every golden sample. Needs no services."""
     script = REPO_ROOT / "backend" / "packs" / "verify_packs.py"
@@ -250,3 +253,228 @@ def verify_packs() -> dict[str, Any]:
         return json.loads(last)
     except json.JSONDecodeError:
         return {"ok": p.returncode == 0, "output": p.stdout[-4000:]}
+
+
+# --------------------------------------------------------------------------- events + lineage
+CH_URL = os.environ.get("ALETHEIA_CH_URL", "http://localhost:8123")
+CH_USER = os.environ.get("ALETHEIA_CH_USER", "aletheia")
+CH_PASS = os.environ.get("ALETHEIA_CH_PASSWORD", "aletheia")
+CH_DB = os.environ.get("ALETHEIA_CH_DB", "aletheia")
+
+CLASS_NAMES = {4001: "Network Activity", 4002: "HTTP Activity", 4003: "DNS Activity",
+               3002: "Authentication", 2004: "Detection Finding"}
+
+
+def _ch(sql: str, timeout: int = 30) -> list[dict[str, Any]]:
+    """Query ClickHouse, returning JSON rows. Raises on transport failure."""
+    import urllib.parse
+    import urllib.request
+    q = urllib.parse.urlencode({"user": CH_USER, "password": CH_PASS, "database": CH_DB})
+    req = urllib.request.Request(f"{CH_URL}/?{q}", data=sql.encode())
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        body = r.read().decode().strip()
+    return json.loads(body).get("data", []) if body else []
+
+
+def _ch_up() -> bool:
+    try:
+        _ch("SELECT 1 FORMAT JSON", timeout=3)
+        return True
+    except Exception:                                               # noqa: BLE001
+        return False
+
+
+def _row_to_event(r: dict[str, Any]) -> dict[str, Any]:
+    """Rebuild the CONTRACTS section 5 event shape from a stored row."""
+    extra = {}
+    if r.get("ocsf_extra"):
+        try:
+            extra = json.loads(r["ocsf_extra"])
+        except json.JSONDecodeError:
+            extra = {}
+    unmapped = {}
+    if r.get("unmapped"):
+        try:
+            unmapped = json.loads(r["unmapped"])
+        except json.JSONDecodeError:
+            unmapped = {}
+    cls = int(r.get("class_uid") or 0)
+    act = int(r.get("activity_id") or 0)
+    ev: dict[str, Any] = {
+        "class_uid": cls,
+        "category_uid": {4001: 4, 4002: 4, 4003: 4, 3002: 3, 2004: 2}.get(cls, 0),
+        "activity_id": act,
+        "type_uid": cls * 100 + act,
+        "time": int(_epoch_ms(r.get("event_time"))),
+        "severity_id": int(r.get("severity_id") or 0),
+        "action_id": int(r.get("action_id") or 0),
+        "metadata": {
+            "log_name": r.get("source_id", ""),
+            "product": {"vendor_name": "", "name": ""},
+            "original_time": "",
+        },
+        "unmapped": unmapped,
+        "aletheia": {
+            "event_uid": r.get("event_uid", ""),
+            "source_id": r.get("source_id", ""),
+            "parse_status": r.get("parse_status", "raw_only"),
+            "storage_mode": r.get("storage_mode", "verbatim"),
+            "template_id": r.get("template_id", ""),
+            "pack": "",
+            "pack_version": int(r.get("pack_version") or 0),
+            "raw_sha256": r.get("raw_sha256_hex", ""),
+            "verified": r.get("storage_mode") == "template",
+            "merkle_batch": r.get("merkle_batch", ""),
+        },
+        **extra,
+    }
+    if r.get("src_ip"):
+        ev["src_endpoint"] = {"ip": _unmap_v6(r["src_ip"]), "port": int(r.get("src_port") or 0) or None}
+    if r.get("dst_ip"):
+        ev["dst_endpoint"] = {"ip": _unmap_v6(r["dst_ip"]), "port": int(r.get("dst_port") or 0) or None}
+    if r.get("protocol"):
+        ev["connection_info"] = {"protocol_name": r["protocol"]}
+    if r.get("user_name"):
+        ev["user"] = {"name": r["user_name"]}
+    return ev
+
+
+def _unmap_v6(ip: str) -> str:
+    """IPv4 is stored as IPv4-mapped IPv6; show it as IPv4 again."""
+    return ip[7:] if ip.startswith("::ffff:") else ip
+
+
+def _epoch_ms(v: Any) -> float:
+    if v in (None, ""):
+        return 0
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp() * 1000
+    except (ValueError, TypeError):
+        return 0
+
+
+def _esc(v: str) -> str:
+    return v.replace("\\", "\\\\").replace("'", "\\'")
+
+
+@api.get("/events")
+def list_events(source_id: str = "", class_uid: int = 0, parse_status: str = "",
+                q: str = "", limit: int = 200, offset: int = 0) -> dict[str, Any]:
+    if not _ch_up():
+        # An empty page beats a 500: the UI stays usable before any traffic is generated.
+        return {"events": [], "total": 0, "sources": [],
+                "classes": [{"class_uid": k, "name": v} for k, v in CLASS_NAMES.items()]}
+    where = ["1"]
+    if source_id:
+        where.append(f"source_id = '{_esc(source_id)}'")
+    if class_uid:
+        where.append(f"class_uid = {int(class_uid)}")
+    if parse_status:
+        where.append(f"parse_status = '{_esc(parse_status)}'")
+    if q:
+        where.append(f"(source_id ILIKE '%{_esc(q)}%' OR template_id ILIKE '%{_esc(q)}%')")
+    cond = " AND ".join(where)
+    limit = max(1, min(int(limit or 200), 1000))
+
+    rows = _ch(f"""SELECT event_uid, toString(event_time) AS event_time, source_id, template_id,
+        pack_version, storage_mode, parse_status, class_uid, activity_id, severity_id,
+        toString(src_ip) AS src_ip, src_port, toString(dst_ip) AS dst_ip, dst_port, protocol,
+        action_id, user_name, unmapped, ocsf_extra, merkle_batch, hex(raw_sha256) AS raw_sha256_hex
+        FROM events WHERE {cond}
+        ORDER BY recv_time DESC LIMIT {limit} OFFSET {max(0, int(offset))} FORMAT JSON""")
+    total = int((_ch(f"SELECT count() AS n FROM events WHERE {cond} FORMAT JSON") or [{}])[0].get("n", 0))
+    sources = [r["source_id"] for r in _ch("SELECT DISTINCT source_id FROM events FORMAT JSON")]
+    classes = [{"class_uid": int(r["class_uid"]),
+                "name": CLASS_NAMES.get(int(r["class_uid"]), str(r["class_uid"]))}
+               for r in _ch("SELECT DISTINCT class_uid FROM events WHERE class_uid > 0 FORMAT JSON")]
+    return {"events": [_row_to_event(r) for r in rows], "total": total,
+            "sources": sorted(sources), "classes": classes or
+            [{"class_uid": k, "name": v} for k, v in CLASS_NAMES.items()]}
+
+
+@api.get("/events/{event_uid}/lineage")
+def get_lineage(event_uid: str) -> dict[str, Any]:
+    if not _ch_up():
+        raise HTTPException(status_code=503, detail="ClickHouse unavailable — run `make services`")
+    rows = _ch(f"""SELECT event_uid, source_id, template_id, pack_version, storage_mode,
+        parse_status, vars, raw_verbatim, merkle_batch, hex(raw_sha256) AS raw_sha256_hex,
+        toString(event_time) AS event_time, class_uid, activity_id, severity_id,
+        toString(src_ip) AS src_ip, src_port, toString(dst_ip) AS dst_ip, dst_port, protocol,
+        action_id, user_name, unmapped, ocsf_extra
+        FROM events WHERE event_uid = '{_esc(event_uid)}' LIMIT 1 FORMAT JSON""")
+    if not rows:
+        raise HTTPException(status_code=404, detail=f"no event {event_uid}")
+    r = rows[0]
+    tpl = _ch(f"""SELECT tokens FROM templates
+        WHERE template_id = '{_esc(r.get('template_id') or '')}' ORDER BY pack_version DESC
+        LIMIT 1 FORMAT JSON""")
+    tokens: list[dict[str, Any]] = []
+    if tpl:
+        try:
+            tokens = json.loads(tpl[0]["tokens"])
+        except (json.JSONDecodeError, KeyError):
+            tokens = []
+    vars_ = list(r.get("vars") or [])
+
+    # Spans are recomputed here, never stored (spec 8.4).
+    raw, spans, i = "", {}, 0
+    for t in tokens:
+        if t.get("lit") is not None and not t.get("slot"):
+            raw += t["lit"]
+        else:
+            v = vars_[i] if i < len(vars_) else ""
+            spans[t.get("slot", f"slot{i}")] = {"start": len(raw), "end": len(raw) + len(v)}
+            raw += v
+            i += 1
+    if not tokens:
+        raw = r.get("raw_verbatim") or ""
+
+    return {
+        "event_uid": r["event_uid"], "raw": raw, "raw_sha256": r.get("raw_sha256_hex", ""),
+        "verified": r.get("storage_mode") == "template",
+        "storage_mode": r.get("storage_mode", "verbatim"),
+        "parse_status": r.get("parse_status", "raw_only"),
+        "template_id": r.get("template_id", ""), "pack": "",
+        "pack_version": int(r.get("pack_version") or 0),
+        "merkle_batch": r.get("merkle_batch", ""),
+        "tokens": tokens, "vars": vars_, "spans": spans, "field_map": {},
+        "event": _row_to_event(r),
+    }
+
+
+# --------------------------------------------------------------------------- studio + airgap
+@api.get("/studio/clusters")
+def list_clusters() -> list[dict[str, Any]]:
+    """Quarantined events, clustered. Empty until drifted traffic arrives."""
+    if not _ch_up():
+        return []
+    rows = _ch("""SELECT source_id, count() AS n, min(toString(recv_time)) AS first_seen,
+        max(toString(recv_time)) AS last_seen, groupArray(4)(raw_verbatim) AS samples
+        FROM events WHERE parse_status = 'raw_only' AND raw_verbatim IS NOT NULL
+        GROUP BY source_id ORDER BY n DESC LIMIT 50 FORMAT JSON""")
+    out = []
+    for i, r in enumerate(rows):
+        samples = [s for s in (r.get("samples") or []) if s]
+        out.append({
+            "cluster_id": f"{r['source_id']}-{i}", "source_id": r["source_id"],
+            "sample_count": int(r.get("n") or 0),
+            "first_seen": r.get("first_seen", ""), "last_seen": r.get("last_seen", ""),
+            "drain_template": get_state().clusters.template_for(samples)
+            if hasattr(get_state().clusters, "template_for") else (samples[0] if samples else ""),
+            "samples": samples[:4],
+        })
+    return out
+
+
+class AirgapUpdate(BaseModel):
+    airgap: bool
+
+
+@api.post("/settings/airgap")
+def set_airgap(update: AirgapUpdate) -> dict[str, Any]:
+    get_state().settings.set("llm.airgap", "true" if update.airgap else "false")
+    return _settings_payload()
+
+
+app.include_router(api)
