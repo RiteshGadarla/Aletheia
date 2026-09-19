@@ -1,0 +1,33 @@
+# Canonical enum normalization shared by engine and studio (spec §10.4, CONTRACTS §5).
+# The original vendor word always stays in vars; these are derived values only.
+action:
+  1: [allow, allowed, accept, accepted, permit, permitted, pass, passed]   # Allowed
+  2: [deny, denied, drop, dropped, block, blocked, reject, rejected]       # Denied
+
+# syslog severity (PRI mod 8) -> OCSF severity_id
+syslog_severity:
+  0: 6   # emerg    -> Fatal
+  1: 6   # alert    -> Fatal
+  2: 5   # crit     -> Critical
+  3: 4   # err      -> High
+  4: 3   # warning  -> Medium
+  5: 2   # notice   -> Low
+  6: 1   # info     -> Informational
+  7: 1   # debug    -> Informational
+
+# OCSF class_uid -> category_uid
+category:
+  4001: 4
+  4002: 4
+  4003: 4
+  3002: 3
+  2004: 2
+
+# IANA protocol number -> name
+protocol_num:
+  1: icmp
+  6: tcp
+  17: udp
+  47: gre
+  50: esp
+  58: ipv6-icmp
