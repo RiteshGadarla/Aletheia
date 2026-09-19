@@ -46,7 +46,52 @@ Docker Engine or Docker Desktop. **4+ CPU cores, 8 GB RAM allocated to Docker, 1
 (Docker Desktop's default memory allocation is often lower than 8 GB — raise it, or the container
 will not reach `healthy`.)
 
-## 3. Quick start
+## 3. Run it on this machine (no Docker for the app)
+
+Docker is used **only for the four datastores**. The engine, Studio and frontend run natively.
+
+```bash
+make setup        # venv, npm install, local LLM config
+make doctor       # what is installed, what each target needs
+make check        # packs + engine + studio + frontend, with nothing running
+make services     # ClickHouse, PostgreSQL, Redpanda, MinIO in Docker
+make run          # services + engine/Studio/frontend natively
+```
+
+| | |
+|---|---|
+| Frontend | <http://localhost:5173> |
+| Studio API | <http://localhost:8081> |
+| ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 · MinIO :9001 |
+
+Go is not required up front — `make install-go` drops Go 1.23 into `~/.local/go` without root.
+
+### Prove the core claim with no services at all
+
+```bash
+make lite
+```
+
+Generates nothing, needs nothing running, and re-derives the project's central guarantee: every
+golden sample is parsed, reconstructed from its template plus variables, and checked byte for byte.
+Two independent implementations — the Go engine and a Python reference verifier — must agree.
+
+```
+pack                    tmpl  samples   recon   fail
+cisco_asa                  8       11      11      0
+fortigate                  3        5       5      0
+cef_generic                3        3       3      0
+leef_generic               3        3       3      0
+pfsense_filterlog          4        4       4      0
+openvpn                    2        2       2      0
+squid_access               1        1       1      0
+suricata_eve               1        1       1      0
+TOTAL                     25       30      30      0
+```
+
+## 4. Quick start with Docker (evaluator path)
+
+### One image, one command
 
 ```bash
 docker pull docker.io/<namespace>/aletheia:1.0.0
@@ -68,7 +113,7 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 | 6514 | Syslog over TLS (optional) |
 | 8123 | ClickHouse HTTP, read-only demo user (optional) |
 
-## 4. Guided evaluation
+## 5. Guided evaluation
 
 Open the **Demo Console** at <http://localhost:8080/demo> and run the scenarios in order. Each card
 states what is being proven and what success looks like, and shows the equivalent CLI command.
@@ -89,7 +134,7 @@ states what is being proven and what success looks like, and shows the equivalen
 | 9 | Air-gapped operation | j |
 | 10 | Bring your own log | "any source" |
 
-## 5. Bring your own log
+## 6. Bring your own log
 
 ```bash
 logger --server localhost --port 5514 --udp "<your log line>"
@@ -100,7 +145,7 @@ echo "<your log line>" | nc -u -w1 localhost 5514
 A recognised format normalizes immediately. An unknown format is stored verbatim, appears in
 quarantine, and can be onboarded in the Studio on the spot.
 
-## 6. CLI
+## 7. CLI
 
 ```bash
 docker exec aletheia aletheia verify  --source fw01 --last 15m
@@ -111,7 +156,7 @@ docker exec aletheia aletheia bench   --workers 1,2,4 --duration 60s
 
 All accept `--json` and print a single JSON object.
 
-## 7. Air-gapped installation
+## 8. Air-gapped installation
 
 ```bash
 # on a connected machine
@@ -136,7 +181,7 @@ Helper scripts for multi-image production mode: [`deploy/offline/`](deploy/offli
 all egress at the host firewall), start the container and run every Demo Console scenario. All must
 pass. Do not use `--network none` — it also blocks the published ports you need for the UI.
 
-## 8. Configuration
+## 9. Configuration
 
 All state lives under `/data`. Without a mounted volume every `docker run` starts a fresh, identical
 demo. Use `-v aletheia-data:/data` to persist across restarts.
@@ -154,7 +199,7 @@ demo. Use `-v aletheia-data:/data` to persist across restarts.
 Sinks: ClickHouse (system of record), Grafana Loki, Kafka topic `normalized`, Splunk HEC,
 CEF re-emit over syslog, and periodic Parquet export to MinIO.
 
-## 9. AI assistant (optional)
+## 10. AI assistant (optional)
 
 Aletheia works **fully without any AI.** The Onboarding Studio always runs its heuristics first.
 An AI model is an optional second opinion during onboarding only — **it never touches a live event**,
@@ -224,7 +269,7 @@ docker run -d --name aletheia \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 
-## 10. Production mode and building from source
+## 11. Production mode and building from source
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d      # multi-image, workers scale by replicas
@@ -245,7 +290,7 @@ sources           seeded log generators and corpora
 bench             benchmark harness (spec §17 methodology)
 ```
 
-## 11. Image details
+## 12. Image details
 
 | | |
 |---|---|
@@ -257,7 +302,7 @@ bench             benchmark harness (spec §17 methodology)
 
 Pinned upstream component versions are listed in [`docker/allinone/Dockerfile`](docker/allinone/Dockerfile).
 
-## 12. Benchmarks and limitations
+## 13. Benchmarks and limitations
 
 Measured results with machine specifications: [`docs/benchmarks.md`](docs/benchmarks.md).
 Every figure there is measured by the harness in [`bench/`](bench/) — no estimated numbers.
@@ -276,7 +321,7 @@ Honest scope and known limitations are in
   not captured from real devices.
 - UDP syslog can lose packets on the network before they reach Aletheia; prefer TCP or TLS.
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|

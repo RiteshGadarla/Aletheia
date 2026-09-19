@@ -3,7 +3,7 @@
 // The ASA 302013 line is the spec's own example (sections 3.2 and 7.4).
 
 import type {
-  DemoScenario, NormalizedEvent, ParseStatus, QuarantineCluster, SlotType, Token,
+  DemoScenario, ParseStatus, QuarantineCluster, SlotType, Token,
 } from './types';
 
 const L = (lit: string): Token => ({ lit });
