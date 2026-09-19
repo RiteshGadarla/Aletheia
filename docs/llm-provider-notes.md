@@ -36,6 +36,33 @@ assigned `ip_a → src_endpoint.ip`, whereas for an **outbound** ASA 302013 the 
 remote party (spec §7.3 maps `ip_b → src_endpoint.ip` on outbound). A textbook case of why AI
 output is a *proposal* that must clear the reconstruction gate, the replay diff and human review.
 
+## Latency and the two bugs it exposed
+
+Measured with a 180-second client timeout and a realistic OCSF-mapping prompt, successful calls
+returned in **34 s and 50 s**. Two of our defaults were wrong for a thinking model, and both are fixed:
+
+| Default | Was | Now | Why |
+|---|---|---|---|
+| `ALETHEIA_LLM_TIMEOUT_S` | 30 | **120** | Real calls take 34–50 s. A 30 s limit turned would-be successes into `ReadTimeout`, which is exactly what we first saw. |
+| `ALETHEIA_LLM_MAX_OUTPUT_TOKENS` | 2048 | **8192** | Thought tokens are billed against the same budget, so 2048 truncated the JSON mid-object. A truncation-aware retry now doubles the budget on `finishReason: MAX_TOKENS`. |
+
+Spec §8.12.9 suggests a 30 s default. That predates knowing the model reasons before answering, so we
+deviate deliberately and document it here.
+
+## Model reliability, measured side by side
+
+Six identical JSON-mode calls per model, same key, same window:
+
+| Model | Successful | Codes seen |
+|---|---|---|
+| `gemma-4-31b-it` | **3/6** | 200 x3, 503 x2, 500 x1 |
+| `gemma-4-26b-a4b-it` | **6/6** | 200 x6 |
+
+`gemma-4-26b-a4b-it` is the sparse/MoE variant (~4 B active parameters), so it is cheaper to serve
+and visibly less contended. `gemma-4-31b-it` remains the configured default because it was the
+model asked for; **if the assistant is flaky during a demo, switch to `gemma-4-26b-a4b-it` on the
+Settings page** — no restart, no rebuild.
+
 ## Operational conclusion for the demo
 
 Treat `gemma-4-31b-it` as **best-effort**. During one measurement window it answered roughly half
