@@ -1,0 +1,274 @@
+# FortiGate key=value (spec §9.5). Key order and the quote characters are literals, so the
+# template is structural and reconstruction is byte-exact. Generated from the published
+# FortiOS log reference (spec §25).
+# Discriminator = logid, which is a literal here so it is part of template identity.
+pack: fortigate
+version: 1
+applies_to: {vendor: Fortinet, product: FortiGate}
+envelopes: [syslog_pri_only, bare]
+
+templates:
+
+  # ---------------------------------------------------------------- traffic / forward
+  - id: fgt_traffic_forward
+    discriminator: 'logid="0000000013"'
+    body:
+      - {lit: "date="}
+      - {slot: date, type: custom, pattern: '\d{4}-\d{2}-\d{2}'}
+      - {lit: " time="}
+      - {slot: time, type: custom, pattern: '\d{2}:\d{2}:\d{2}'}
+      - {lit: ' devname="'}
+      - {slot: devname, type: custom, pattern: '[^"]*'}
+      - {lit: '" devid="'}
+      - {slot: devid, type: custom, pattern: '[^"]*'}
+      - {lit: '" logid="0000000013" type="traffic" subtype="forward" level="'}
+      - {slot: level, type: enum, values: [emergency, alert, critical, error, warning, notice, information, debug]}
+      - {lit: '" vd="'}
+      - {slot: vd, type: custom, pattern: '[^"]*'}
+      - {lit: '" eventtime='}
+      - {slot: eventtime, type: int}
+      - {lit: " srcip="}
+      - {slot: srcip, type: ip}
+      - {lit: " srcport="}
+      - {slot: srcport, type: port}
+      - {lit: ' srcintf="'}
+      - {slot: srcintf, type: custom, pattern: '[^"]*'}
+      - {lit: '" dstip='}
+      - {slot: dstip, type: ip}
+      - {lit: " dstport="}
+      - {slot: dstport, type: port}
+      - {lit: ' dstintf="'}
+      - {slot: dstintf, type: custom, pattern: '[^"]*'}
+      - {lit: '" sessionid='}
+      - {slot: sessionid, type: int}
+      - {lit: " proto="}
+      - {slot: proto, type: int}
+      - {lit: ' action="'}
+      - {slot: action, type: enum, values: [accept, deny, close, timeout, start]}
+      - {lit: '" policyid='}
+      - {slot: policyid, type: int}
+      - {lit: ' service="'}
+      - {slot: service, type: custom, pattern: '[^"]*'}
+      - {lit: '" trandisp="'}
+      - {slot: trandisp, type: custom, pattern: '[^"]*'}
+      - {lit: '" transip='}
+      - {slot: transip, type: ip}
+      - {lit: " transport="}
+      - {slot: transport, type: port}
+      - {lit: " duration="}
+      - {slot: duration, type: int}
+      - {lit: " sentbyte="}
+      - {slot: sentbyte, type: int}
+      - {lit: " rcvdbyte="}
+      - {slot: rcvdbyte, type: int}
+      - {lit: " sentpkt="}
+      - {slot: sentpkt, type: int}
+      - {lit: " rcvdpkt="}
+      - {slot: rcvdpkt, type: int}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6                       # Traffic
+      constants:
+        connection_info.direction_id: 2
+      map:
+        sessionid: connection_info.uid
+        srcip: src_endpoint.ip
+        srcport: {path: src_endpoint.port, transform: to_int}
+        srcintf: src_endpoint.interface_name
+        dstip: dst_endpoint.ip
+        dstport: {path: dst_endpoint.port, transform: to_int}
+        dstintf: dst_endpoint.interface_name
+        # proto=6 is an IANA protocol number: keep the number and derive the name.
+        proto: [{path: connection_info.protocol_num, transform: to_int},
+                {path: connection_info.protocol_name,
+                 enum: {"1": icmp, "6": tcp, "17": udp, "47": gre, "50": esp, "58": ipv6-icmp}}]
+        action: [action,
+                 {path: action_id, enum: {accept: 1, start: 1, close: 1,
+                                          deny: 2, timeout: 2}}]
+        policyid: policy.uid
+        service: dst_endpoint.svc_name
+        sentbyte: {path: traffic.bytes_out, transform: to_int}
+        rcvdbyte: {path: traffic.bytes_in, transform: to_int}
+        sentpkt: {path: traffic.packets_out, transform: to_int}
+        rcvdpkt: {path: traffic.packets_in, transform: to_int}
+        devname: metadata.log_name
+        level: metadata.log_level
+      unmapped_keep: [date, time, devid, vd, eventtime, trandisp, transip, transport, duration]
+    tests: {samples: "tests/fgt_traffic_forward/*.log", expected: "tests/fgt_traffic_forward/*.json"}
+
+  # ---------------------------------------------------------------- utm / webfilter
+  - id: fgt_utm_webfilter
+    discriminator: 'logid="0317013312"'
+    body:
+      - {lit: "date="}
+      - {slot: date, type: custom, pattern: '\d{4}-\d{2}-\d{2}'}
+      - {lit: " time="}
+      - {slot: time, type: custom, pattern: '\d{2}:\d{2}:\d{2}'}
+      - {lit: ' devname="'}
+      - {slot: devname, type: custom, pattern: '[^"]*'}
+      - {lit: '" devid="'}
+      - {slot: devid, type: custom, pattern: '[^"]*'}
+      - {lit: '" logid="0317013312" type="utm" subtype="webfilter" eventtype="'}
+      - {slot: eventtype, type: custom, pattern: '[^"]*'}
+      - {lit: '" level="'}
+      - {slot: level, type: enum, values: [emergency, alert, critical, error, warning, notice, information, debug]}
+      - {lit: '" vd="'}
+      - {slot: vd, type: custom, pattern: '[^"]*'}
+      - {lit: '" eventtime='}
+      - {slot: eventtime, type: int}
+      - {lit: " policyid="}
+      - {slot: policyid, type: int}
+      - {lit: " sessionid="}
+      - {slot: sessionid, type: int}
+      - {lit: " srcip="}
+      - {slot: srcip, type: ip}
+      - {lit: " srcport="}
+      - {slot: srcport, type: port}
+      - {lit: ' srcintf="'}
+      - {slot: srcintf, type: custom, pattern: '[^"]*'}
+      - {lit: '" dstip='}
+      - {slot: dstip, type: ip}
+      - {lit: " dstport="}
+      - {slot: dstport, type: port}
+      - {lit: ' dstintf="'}
+      - {slot: dstintf, type: custom, pattern: '[^"]*'}
+      - {lit: '" proto='}
+      - {slot: proto, type: int}
+      - {lit: ' service="'}
+      - {slot: service, type: custom, pattern: '[^"]*'}
+      - {lit: '" hostname="'}
+      - {slot: hostname, type: custom, pattern: '[^"]*'}
+      - {lit: '" profile="'}
+      - {slot: profile, type: custom, pattern: '[^"]*'}
+      - {lit: '" action="'}
+      - {slot: action, type: enum, values: [blocked, passthrough, monitored, exempt]}
+      - {lit: '" reqtype="'}
+      - {slot: reqtype, type: custom, pattern: '[^"]*'}
+      - {lit: '" url="'}
+      - {slot: url, type: custom, pattern: '[^"]*'}
+      - {lit: '" sentbyte='}
+      - {slot: sentbyte, type: int}
+      - {lit: " rcvdbyte="}
+      - {slot: rcvdbyte, type: int}
+      - {lit: ' direction="'}
+      - {slot: direction, type: enum, values: [incoming, outgoing]}
+      - {lit: '" msg="'}
+      - {slot: msg, type: custom, pattern: '[^"]*'}
+      - {lit: '" method="'}
+      - {slot: method, type: custom, pattern: '[^"]*'}
+      - {lit: '" cat='}
+      - {slot: cat, type: int}
+      - {lit: ' catdesc="'}
+      - {slot: catdesc, type: custom, pattern: '[^"]*'}
+      - {lit: '"'}
+    ocsf:
+      class_uid: 4002
+      activity_id: 3                       # Get (HTTP request seen by the web filter)
+      map:
+        sessionid: connection_info.uid
+        srcip: src_endpoint.ip
+        srcport: {path: src_endpoint.port, transform: to_int}
+        srcintf: src_endpoint.interface_name
+        dstip: dst_endpoint.ip
+        dstport: {path: dst_endpoint.port, transform: to_int}
+        dstintf: dst_endpoint.interface_name
+        proto: [{path: connection_info.protocol_num, transform: to_int},
+                {path: connection_info.protocol_name,
+                 enum: {"1": icmp, "6": tcp, "17": udp}}]
+        hostname: http_request.url.hostname
+        url: http_request.url.path
+        service: http_request.url.scheme
+        action: [action, {path: action_id, enum: {blocked: 2, passthrough: 1,
+                                                  monitored: 1, exempt: 1}}]
+        direction: {path: connection_info.direction_id, enum: {incoming: 1, outgoing: 2}}
+        sentbyte: {path: traffic.bytes_out, transform: to_int}
+        rcvdbyte: {path: traffic.bytes_in, transform: to_int}
+        policyid: policy.uid
+        msg: message
+        devname: metadata.log_name
+        level: metadata.log_level
+      unmapped_keep: [date, time, devid, vd, eventtime, eventtype, profile, reqtype,
+                      method, cat, catdesc]
+    tests: {samples: "tests/fgt_utm_webfilter/*.log", expected: "tests/fgt_utm_webfilter/*.json"}
+
+  # ---------------------------------------------------------------- utm / ips
+  - id: fgt_utm_ips
+    discriminator: 'logid="0419016384"'
+    body:
+      - {lit: "date="}
+      - {slot: date, type: custom, pattern: '\d{4}-\d{2}-\d{2}'}
+      - {lit: " time="}
+      - {slot: time, type: custom, pattern: '\d{2}:\d{2}:\d{2}'}
+      - {lit: ' devname="'}
+      - {slot: devname, type: custom, pattern: '[^"]*'}
+      - {lit: '" devid="'}
+      - {slot: devid, type: custom, pattern: '[^"]*'}
+      - {lit: '" logid="0419016384" type="utm" subtype="ips" eventtype="signature" level="'}
+      - {slot: level, type: enum, values: [emergency, alert, critical, error, warning, notice, information, debug]}
+      - {lit: '" vd="'}
+      - {slot: vd, type: custom, pattern: '[^"]*'}
+      - {lit: '" eventtime='}
+      - {slot: eventtime, type: int}
+      - {lit: ' severity="'}
+      - {slot: severity, type: enum, values: [critical, high, medium, low, info]}
+      - {lit: '" srcip='}
+      - {slot: srcip, type: ip}
+      - {lit: " dstip="}
+      - {slot: dstip, type: ip}
+      - {lit: ' srcintf="'}
+      - {slot: srcintf, type: custom, pattern: '[^"]*'}
+      - {lit: '" dstintf="'}
+      - {slot: dstintf, type: custom, pattern: '[^"]*'}
+      - {lit: '" sessionid='}
+      - {slot: sessionid, type: int}
+      - {lit: ' action="'}
+      - {slot: action, type: enum, values: [dropped, detected, blocked, reset, pass]}
+      - {lit: '" proto='}
+      - {slot: proto, type: int}
+      - {lit: ' service="'}
+      - {slot: service, type: custom, pattern: '[^"]*'}
+      - {lit: '" policyid='}
+      - {slot: policyid, type: int}
+      - {lit: ' attack="'}
+      - {slot: attack, type: custom, pattern: '[^"]*'}
+      - {lit: '" srcport='}
+      - {slot: srcport, type: port}
+      - {lit: " dstport="}
+      - {slot: dstport, type: port}
+      - {lit: " attackid="}
+      - {slot: attackid, type: int}
+      - {lit: ' profile="'}
+      - {slot: profile, type: custom, pattern: '[^"]*'}
+      - {lit: '" msg="'}
+      - {slot: msg, type: custom, pattern: '[^"]*'}
+      - {lit: '"'}
+    ocsf:
+      class_uid: 2004
+      activity_id: 1                       # Create
+      constants:
+        finding_info.analytic.type: Signature
+        finding_info.analytic.category: IPS
+      map:
+        attack: [finding_info.title, finding_info.analytic.name]
+        attackid: [finding_info.uid, {path: finding_info.analytic.uid}]
+        msg: message
+        srcip: src_endpoint.ip
+        srcport: {path: src_endpoint.port, transform: to_int}
+        srcintf: src_endpoint.interface_name
+        dstip: dst_endpoint.ip
+        dstport: {path: dst_endpoint.port, transform: to_int}
+        dstintf: dst_endpoint.interface_name
+        sessionid: connection_info.uid
+        proto: [{path: connection_info.protocol_num, transform: to_int},
+                {path: connection_info.protocol_name,
+                 enum: {"1": icmp, "6": tcp, "17": udp}}]
+        action: [action, {path: action_id, enum: {dropped: 2, blocked: 2, reset: 2,
+                                                  detected: 1, pass: 1}}]
+        severity: [{path: severity_id, enum: {critical: 5, high: 4, medium: 3,
+                                              low: 2, info: 1}},
+                   {path: risk_level_id, enum: {critical: 4, high: 3, medium: 2,
+                                                low: 1, info: 1}}]
+        devname: metadata.log_name
+        level: metadata.log_level
+      unmapped_keep: [date, time, devid, vd, eventtime, service, profile, policyid]
+    tests: {samples: "tests/fgt_utm_ips/*.log", expected: "tests/fgt_utm_ips/*.json"}

@@ -1,0 +1,158 @@
+# Aletheia collection — devices -> Redpanda topic `raw`.
+# INVARIANT (spec §6.1, CONTRACTS §3): the Kafka message VALUE is the exact raw bytes.
+# Nothing is parsed, trimmed, re-encoded or wrapped. All metadata travels in Kafka HEADERS.
+
+data_dir = "/var/lib/vector"
+
+[api]
+enabled = true
+address = "0.0.0.0:8686"
+
+# Peer -> source_id resolution (spec §14). Unknown peers become `unknown:<ip>`
+# and therefore never inherit another source's parser packs.
+[enrichment_tables.sources]
+type = "file"
+
+[enrichment_tables.sources.file]
+path = "/etc/vector/sources.csv"
+encoding = { type = "csv" }
+
+[enrichment_tables.sources.schema]
+peer_ip = "string"
+source_id = "string"
+
+# ---------------------------------------------------------------- sources
+
+# UDP: one datagram = one message. Lossy by nature; TCP/TLS recommended (spec §6.1).
+[sources.syslog_udp]
+type = "socket"
+mode = "udp"
+address = "0.0.0.0:5514"
+max_length = 102400
+receive_buffer_bytes = 8388608
+decoding.codec = "bytes"
+
+# TCP, newline-delimited: the common case.
+[sources.syslog_tcp]
+type = "socket"
+mode = "tcp"
+address = "0.0.0.0:5514"
+decoding.codec = "bytes"
+framing.method = "newline_delimited"
+framing.newline_delimited.max_length = 102400
+keepalive.time_secs = 120
+
+# TCP, RFC 6587 octet-counted framing.
+[sources.syslog_tcp_octet]
+type = "socket"
+mode = "tcp"
+address = "0.0.0.0:5515"
+decoding.codec = "bytes"
+framing.method = "octet_counting"
+framing.octet_counting.max_length = 102400
+
+# TLS (RFC 5425), which mandates octet counting. Certs from the org CA, or the
+# demo CA generated at first start — never baked into the image (spec §13.7).
+[sources.syslog_tls]
+type = "socket"
+mode = "tcp"
+address = "0.0.0.0:6514"
+decoding.codec = "bytes"
+framing.method = "octet_counting"
+framing.octet_counting.max_length = 102400
+tls.enabled = true
+tls.crt_file = "/etc/vector/tls/server.crt"
+tls.key_file = "/etc/vector/tls/server.key"
+tls.ca_file = "/etc/vector/tls/ca.crt"
+tls.verify_certificate = false   # set true for mutual TLS where devices support it
+
+# Internal input for the demo replayers / corpus loaders (spec §13.2).
+[sources.internal_replay]
+type = "socket"
+mode = "tcp"
+address = "127.0.0.1:5599"
+decoding.codec = "bytes"
+framing.method = "newline_delimited"
+framing.newline_delimited.max_length = 262144
+
+# ---------------------------------------------------------------- metadata
+
+# Per-listener label: remap cannot see which source produced an event, so each
+# listener is stamped first, then all merge into `stamp`.
+[transforms.listener_udp]
+type = "remap"
+inputs = ["syslog_udp"]
+source = '.aletheia_listener = "udp:5514"'
+
+[transforms.listener_tcp]
+type = "remap"
+inputs = ["syslog_tcp"]
+source = '.aletheia_listener = "tcp:5514"'
+
+[transforms.listener_octet]
+type = "remap"
+inputs = ["syslog_tcp_octet"]
+source = '.aletheia_listener = "tcp:5515"'
+
+[transforms.listener_tls]
+type = "remap"
+inputs = ["syslog_tls"]
+source = '.aletheia_listener = "tls:6514"'
+
+[transforms.listener_replay]
+type = "remap"
+inputs = ["internal_replay"]
+source = '.aletheia_listener = "replay:5599"'
+
+# Builds ONLY header/key fields. `.message` is never touched.
+[transforms.stamp]
+type = "remap"
+inputs = ["listener_udp", "listener_tcp", "listener_octet", "listener_tls", "listener_replay"]
+source = '''
+.pr_listener = to_string(.aletheia_listener) ?? "unknown"
+
+peer_ip = to_string(.host) ?? "0.0.0.0"
+peer_port = to_string(.port) ?? "0"
+.pr_peer = peer_ip + ":" + peer_port
+.pr_recv_ms = to_string(to_unix_timestamp(to_timestamp(.timestamp) ?? now(), unit: "milliseconds"))
+
+# Registry lookup; unknown peers are tagged, never guessed.
+matched = find_enrichment_table_records("sources", { "peer_ip": peer_ip }) ?? []
+.source_id = if length(matched) > 0 { string!(matched[0].source_id) } else { "unknown:" + peer_ip }
+
+# Kafka headers, exactly CONTRACTS §3.
+._headers = {
+  "pr_recv_ms": .pr_recv_ms,
+  "pr_peer": .pr_peer,
+  "pr_listener": .pr_listener
+}
+'''
+
+# ---------------------------------------------------------------- sink
+
+[sinks.raw_bus]
+type = "kafka"
+inputs = ["stamp"]
+bootstrap_servers = "${ALETHEIA_BUS_BROKERS:-redpanda:9092}"
+topic = "raw"
+key_field = "source_id"        # CONTRACTS §3: key = source_id
+headers_key = "_headers"       # metadata leaves as Kafka headers, not in the value
+compression = "none"           # raw bytes stay byte-identical on the wire
+message_timeout_ms = 300000
+socket_timeout_ms = 60000
+
+# `text` emits the `message` field verbatim — no JSON wrapper, no re-encoding.
+[sinks.raw_bus.encoding]
+codec = "text"
+
+[sinks.raw_bus.librdkafka_options]
+"queue.buffering.max.messages" = "500000"
+"queue.buffering.max.ms" = "50"
+"enable.idempotence" = "true"
+
+# Disk buffer: a short Redpanda outage must not lose data (spec §6.1).
+# `block` applies backpressure instead of dropping — nothing is ever dropped.
+[sinks.raw_bus.buffer]
+type = "disk"
+max_size = 4294967296
+when_full = "block"

@@ -1,0 +1,59 @@
+groups:
+  - name: aletheia-recording
+    interval: 15s
+    rules:
+      - record: aletheia:events_rate5m
+        expr: sum by (source, status) (rate(aletheia_events_total[5m]))
+      - record: aletheia:quarantine_rate5m
+        expr: |
+          sum by (source) (rate(aletheia_quarantine_total[5m]))
+            /
+          clamp_min(sum by (source) (rate(aletheia_events_total[5m])), 0.001)
+      - record: aletheia:quarantine_rate_baseline
+        expr: avg_over_time(aletheia:quarantine_rate5m[6h])
+
+  - name: aletheia-alerts
+    rules:
+      # Non-negotiable invariant: reconstruction must be byte-exact, always.
+      - alert: AletheiaReconstructMismatch
+        expr: increase(aletheia_reconstruct_mismatch_total[5m]) > 0
+        for: 0m
+        labels: {severity: critical}
+        annotations:
+          summary: "Reconstruction mismatch detected — must always be zero"
+
+      # Drift signal: quarantine rate above this source's own baseline (spec §16).
+      - alert: AletheiaFormatDrift
+        expr: aletheia:quarantine_rate5m > (aletheia:quarantine_rate_baseline * 3 + 0.01)
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Quarantine rate for {{ $labels.source }} above baseline — likely firmware/config change"
+
+      - alert: AletheiaConsumerLagGrowing
+        expr: sum(aletheia_consumer_lag) > 100000 and deriv(sum(aletheia_consumer_lag)[10m:1m]) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Consumer lag growing — add workers or partitions"
+
+      - alert: AletheiaInsertLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(aletheia_insert_latency_seconds_bucket[5m]))) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "ClickHouse p99 insert latency above 5s"
+
+      - alert: AletheiaTemplateExplosion
+        expr: aletheia_templates > 5000
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Template count for {{ $labels.source }} exploding — consider verbatim fallback"
+
+      - alert: AletheiaSealStalled
+        expr: increase(aletheia_merkle_sealed_total[10m]) == 0 and sum(rate(aletheia_events_total[10m])) > 0
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "Merkle sealer produced no batches while events are flowing"

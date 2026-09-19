@@ -1,0 +1,154 @@
+# Aletheia fan-out — Redpanda topic `normalized` -> Loki, Splunk HEC, CEF-over-syslog.
+# ClickHouse is written by the workers directly (spec §11.1); this file is the rest of §11.
+
+[sources.normalized_bus]
+type = "kafka"
+bootstrap_servers = "${ALETHEIA_BUS_BROKERS:-redpanda:9092}"
+group_id = "aletheia-sinks"
+topics = ["normalized"]
+auto_offset_reset = "earliest"
+decoding.codec = "json"
+
+# ---------------------------------------------------------------- Loki
+
+# Label cardinality is the whole game here (spec §11.3). Labels are indexed and each
+# unique combination makes a stream, so ONLY these five may ever become labels.
+# IPs, ports, usernames and event_uid go to structured metadata instead.
+[transforms.loki_fields]
+type = "remap"
+inputs = ["normalized_bus"]
+source = '''
+.lbl_vendor       = to_string(.metadata.product.vendor_name) ?? "unknown"
+.lbl_product      = to_string(.metadata.product.name) ?? "unknown"
+.lbl_source_id    = to_string(.aletheia.source_id) ?? "unknown"
+.lbl_ocsf_class   = to_string(.class_uid) ?? "0"
+.lbl_parse_status = to_string(.aletheia.parse_status) ?? "raw_only"
+
+# High-cardinality identifiers: structured metadata only, never labels.
+.sm_event_uid   = to_string(.aletheia.event_uid) ?? ""
+.sm_template_id = to_string(.aletheia.template_id) ?? ""
+.sm_merkle_batch = to_string(.aletheia.merkle_batch) ?? ""
+.sm_storage_mode = to_string(.aletheia.storage_mode) ?? ""
+'''
+
+[sinks.loki]
+type = "loki"
+inputs = ["loki_fields"]
+endpoint = "${ALETHEIA_LOKI_ENDPOINT:-http://loki:3100}"
+out_of_order_action = "accept"
+remove_label_fields = true
+remove_structured_metadata_fields = true
+compression = "snappy"
+
+# ALLOWED LABELS — low cardinality only. Do not add to this list.
+[sinks.loki.labels]
+vendor = "{{ lbl_vendor }}"
+product = "{{ lbl_product }}"
+source_id = "{{ lbl_source_id }}"
+ocsf_class = "{{ lbl_ocsf_class }}"
+parse_status = "{{ lbl_parse_status }}"
+
+# Loki 3.x structured metadata: queryable, not indexed as streams.
+[sinks.loki.structured_metadata]
+event_uid = "{{ sm_event_uid }}"
+template_id = "{{ sm_template_id }}"
+merkle_batch = "{{ sm_merkle_batch }}"
+storage_mode = "{{ sm_storage_mode }}"
+
+# The line itself is the normalized OCSF JSON; LogQL `| json` filters it at query time.
+[sinks.loki.encoding]
+codec = "json"
+except_fields = ["lbl_vendor", "lbl_product", "lbl_source_id", "lbl_ocsf_class", "lbl_parse_status", "sm_event_uid", "sm_template_id", "sm_merkle_batch", "sm_storage_mode"]
+
+[sinks.loki.buffer]
+type = "disk"
+max_size = 1073741824
+when_full = "block"
+
+# ---------------------------------------------------------------- Splunk HEC
+
+[transforms.hec_fields]
+type = "remap"
+inputs = ["normalized_bus"]
+source = '''
+.st = "ocsf:" + (to_string(.class_uid) ?? "0")
+.src_host = to_string(.aletheia.source_id) ?? "unknown"
+'''
+
+[sinks.splunk_hec]
+type = "splunk_hec_logs"
+inputs = ["hec_fields"]
+endpoint = "${ALETHEIA_HEC_ENDPOINT:-http://splunk-hec.invalid:8088}"
+default_token = "${ALETHEIA_HEC_TOKEN:-unset}"
+sourcetype = "{{ st }}"
+source = "aletheia"
+index = "${ALETHEIA_HEC_INDEX:-main}"
+host_key = "src_host"
+healthcheck.enabled = false        # optional sink; absence must not block startup
+
+[sinks.splunk_hec.encoding]
+codec = "json"
+except_fields = ["st", "src_host"]
+
+[sinks.splunk_hec.buffer]
+type = "disk"
+max_size = 536870912
+when_full = "drop_newest"          # optional downstream; never backpressure the pipeline
+
+# ---------------------------------------------------------------- CEF re-emit
+
+# OCSF -> CEF key mapping (spec §11.6): a uniform CEF feed from heterogeneous sources.
+[transforms.cef]
+type = "remap"
+inputs = ["normalized_bus"]
+source = '''
+sev = to_int(.severity_id) ?? 1
+act = if (to_int(.action_id) ?? 0) == 1 { "allow" } else if (to_int(.action_id) ?? 0) == 2 { "deny" } else { "unknown" }
+vendor = to_string(.metadata.product.vendor_name) ?? "Aletheia"
+product = to_string(.metadata.product.name) ?? "Normalized"
+ver = to_string(.metadata.product.version) ?? "1.0"
+name = to_string(.activity_name) ?? ("class_" + (to_string(.class_uid) ?? "0"))
+sig = (to_string(.class_uid) ?? "0") + ":" + (to_string(.activity_id) ?? "0")
+
+ext = []
+if exists(.src_endpoint.ip)   { ext = push(ext, "src=" + (to_string(.src_endpoint.ip) ?? "")) }
+if exists(.dst_endpoint.ip)   { ext = push(ext, "dst=" + (to_string(.dst_endpoint.ip) ?? "")) }
+if exists(.src_endpoint.port) { ext = push(ext, "spt=" + (to_string(.src_endpoint.port) ?? "")) }
+if exists(.dst_endpoint.port) { ext = push(ext, "dpt=" + (to_string(.dst_endpoint.port) ?? "")) }
+if exists(.connection_info.protocol_name) { ext = push(ext, "proto=" + (to_string(.connection_info.protocol_name) ?? "")) }
+if exists(.actor.user.name)   { ext = push(ext, "suser=" + (to_string(.actor.user.name) ?? "")) }
+ext = push(ext, "act=" + act)
+ext = push(ext, "rt=" + (to_string(.time) ?? "0"))
+ext = push(ext, "cs1Label=event_uid")
+ext = push(ext, "cs1=" + (to_string(.aletheia.event_uid) ?? ""))
+ext = push(ext, "cs2Label=template_id")
+ext = push(ext, "cs2=" + (to_string(.aletheia.template_id) ?? ""))
+
+. = { "message": "<134>CEF:0|" + vendor + "|" + product + "|" + ver + "|" + sig + "|" + name + "|" + to_string(sev) + "|" + join!(ext, " ") }
+'''
+
+[sinks.cef_syslog]
+type = "socket"
+inputs = ["cef"]
+mode = "tcp"
+address = "${ALETHEIA_CEF_SYSLOG_ADDR:-siem.invalid:514}"
+framing.method = "newline_delimited"
+
+[sinks.cef_syslog.encoding]
+codec = "text"
+
+[sinks.cef_syslog.buffer]
+type = "disk"
+max_size = 268435456
+when_full = "drop_newest"
+
+# ---------------------------------------------------------------- self-metrics
+
+[sources.vector_metrics]
+type = "internal_metrics"
+
+[sinks.prometheus]
+type = "prometheus_exporter"
+inputs = ["vector_metrics"]
+address = "0.0.0.0:9598"
+default_namespace = "vector"

@@ -1,0 +1,4 @@
+#!/command/with-contenv bash
+set -eu
+exec 2>&1
+exec s6-setuidgid aletheia /usr/local/bin/loki -config.file=/etc/aletheia/loki/loki.yml

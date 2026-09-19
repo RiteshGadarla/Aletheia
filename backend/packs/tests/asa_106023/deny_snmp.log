@@ -1,0 +1,1 @@
+<164>Sep 19 14:31:08 fw01 %ASA-4-106023: Deny udp src outside:198.51.100.9/40000 dst inside:10.0.0.12/161 by access-group "outside_access_in" [0x8fd44c1e, 0x0]

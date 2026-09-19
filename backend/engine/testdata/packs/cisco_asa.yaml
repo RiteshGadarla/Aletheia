@@ -1,0 +1,141 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: cisco_asa
+version: 4
+applies_to:
+  vendor: Cisco
+  product: ASA
+envelopes:
+- rfc3164_std
+- rfc3164_nohost
+sources:
+- fw01
+templates:
+- id: asa_302013
+  discriminator: '%ASA-6-302013'
+  body:
+  - lit: '%ASA-6-302013: Built '
+  - slot: direction
+    type: enum
+    values:
+    - inbound
+    - outbound
+  - lit: ' TCP connection '
+  - slot: conn_id
+    type: int
+  - lit: ' for '
+  - slot: if_a
+    type: word
+  - lit: ':'
+  - slot: ip_a
+    type: ip
+  - lit: /
+  - slot: port_a
+    type: port
+  - lit: ' ('
+  - slot: mip_a
+    type: ip
+  - lit: /
+  - slot: mport_a
+    type: port
+  - lit: ') to '
+  - slot: if_b
+    type: word
+  - lit: ':'
+  - slot: ip_b
+    type: ip
+  - lit: /
+  - slot: port_b
+    type: port
+  - lit: ' ('
+  - slot: mip_b
+    type: ip
+  - lit: /
+  - slot: mport_b
+    type: port
+  - lit: )
+  ocsf:
+    class_uid: 4001
+    activity_id: 1
+    constants:
+      connection_info.protocol_name: tcp
+    map:
+      conn_id: connection_info.uid
+    conditional:
+    - when:
+        direction: outbound
+      map:
+        ip_b: src_endpoint.ip
+        port_b: src_endpoint.port
+        if_b: src_endpoint.interface_name
+        ip_a: dst_endpoint.ip
+        port_a: dst_endpoint.port
+        if_a: dst_endpoint.interface_name
+        direction:
+          path: connection_info.direction_id
+          enum:
+            outbound: 2
+    - when:
+        direction: inbound
+      map:
+        ip_a: src_endpoint.ip
+        port_a: src_endpoint.port
+        if_a: src_endpoint.interface_name
+        ip_b: dst_endpoint.ip
+        port_b: dst_endpoint.port
+        if_b: dst_endpoint.interface_name
+        direction:
+          path: connection_info.direction_id
+          enum:
+            inbound: 1
+    unmapped_keep:
+    - mip_a
+    - mport_a
+    - mip_b
+    - mport_b
+- id: asa_106023
+  discriminator: '%ASA-4-106023'
+  body:
+  - lit: '%ASA-4-106023: Deny '
+  - slot: proto
+    type: word
+  - lit: ' src '
+  - slot: if_a
+    type: word
+  - lit: ':'
+  - slot: ip_a
+    type: ip
+  - lit: /
+  - slot: port_a
+    type: port
+  - lit: ' dst '
+  - slot: if_b
+    type: word
+  - lit: ':'
+  - slot: ip_b
+    type: ip
+  - lit: /
+  - slot: port_b
+    type: port
+  - lit: ' by access-group "'
+  - slot: acl
+    type: custom
+    pattern: '[^"]*'
+  - lit: '"'
+  ocsf:
+    class_uid: 4001
+    activity_id: 6
+    constants:
+      action_id: 2
+      action: Denied
+    map:
+      proto:
+        path: connection_info.protocol_name
+        transform: lowercase
+      ip_a: src_endpoint.ip
+      port_a: src_endpoint.port
+      if_a: src_endpoint.interface_name
+      ip_b: dst_endpoint.ip
+      port_b: dst_endpoint.port
+      if_b: dst_endpoint.interface_name
+    unmapped_keep:
+    - acl

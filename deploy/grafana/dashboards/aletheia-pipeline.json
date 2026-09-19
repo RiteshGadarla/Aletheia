@@ -1,0 +1,205 @@
+{
+  "uid": "aletheia-pipeline",
+  "title": "Aletheia — Pipeline health",
+  "description": "Spec §16 pipeline observability. Every metric on this page is emitted by the workers and sealer.",
+  "tags": ["aletheia", "pipeline"],
+  "timezone": "browser",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {"from": "now-1h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "source",
+        "label": "Source",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+        "query": "label_values(aletheia_events_total, source)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {"text": "All", "value": "$__all"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Throughput",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Events by source and parse status",
+      "description": "aletheia_events_total{source,status}",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 1},
+      "fieldConfig": {
+        "defaults": {"unit": "eps", "custom": {"fillOpacity": 20, "stacking": {"mode": "normal"}}},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (source, status) (rate(aletheia_events_total{source=~\"$source\"}[5m]))",
+          "legendFormat": "{{source}} / {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sustained ingest rate",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 1},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "eps",
+          "thresholds": {"mode": "absolute", "steps": [{"color": "text", "value": null}]}
+        },
+        "overrides": []
+      },
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(aletheia_events_total[1m]))", "legendFormat": "events/s"}
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Reconstruct mismatch (must stay 0)",
+      "description": "Non-negotiable invariant. Any non-zero value means a reconstruction was not byte-exact.",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 4, "w": 8, "x": 16, "y": 5},
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {"mode": "absolute", "steps": [
+            {"color": "green", "value": null},
+            {"color": "red", "value": 1}
+          ]}
+        },
+        "overrides": []
+      },
+      "options": {"colorMode": "background", "graphMode": "none"},
+      "targets": [
+        {"refId": "A", "expr": "sum(increase(aletheia_reconstruct_mismatch_total[24h]))", "legendFormat": "24h"}
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Coverage and drift",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9}
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Verified ratio per source",
+      "description": "Share of events stored in verified template mode (aletheia_verified_ratio).",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "max": 1, "custom": {"fillOpacity": 10}},
+        "overrides": []
+      },
+      "targets": [
+        {"refId": "A", "expr": "aletheia_verified_ratio{source=~\"$source\"}", "legendFormat": "{{source}}"}
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Quarantine rate per source (drift signal)",
+      "description": "A rise above a source's own baseline usually means a firmware or configuration change.",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit", "min": 0, "custom": {"fillOpacity": 10}},
+        "overrides": []
+      },
+      "targets": [
+        {"refId": "A", "expr": "aletheia:quarantine_rate5m{source=~\"$source\"}", "legendFormat": "{{source}} now"},
+        {"refId": "B", "expr": "aletheia:quarantine_rate_baseline{source=~\"$source\"}", "legendFormat": "{{source}} baseline"}
+      ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Backpressure and storage",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18}
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Consumer lag by partition",
+      "description": "Primary scaling alert. Growing lag at a fixed rate means add workers or partitions.",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 19},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "aletheia_consumer_lag", "legendFormat": "p{{partition}}"},
+        {"refId": "B", "expr": "sum(aletheia_consumer_lag)", "legendFormat": "total"}
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "ClickHouse batch insert latency",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 19},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(aletheia_insert_latency_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(aletheia_insert_latency_seconds_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "Registry and integrity",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27}
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Template count per source (explosion alert)",
+      "description": "Structural formats with variable key order can create many templates; very high-variety sources fall back to verbatim.",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": []},
+      "targets": [
+        {"refId": "A", "expr": "aletheia_templates{source=~\"$source\"}", "legendFormat": "{{source}}"}
+      ]
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Merkle seal health",
+      "description": "Batches sealed per minute and the delay between an event's minute and its seal.",
+      "datasource": {"type": "prometheus", "uid": "aletheia-prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "fieldConfig": {"defaults": {"unit": "short"}, "overrides": [
+        {
+          "matcher": {"id": "byName", "options": "seal delay"},
+          "properties": [{"id": "unit", "value": "s"}, {"id": "custom.axisPlacement", "value": "right"}]
+        }
+      ]},
+      "targets": [
+        {"refId": "A", "expr": "sum(rate(aletheia_merkle_sealed_total[5m])) * 60", "legendFormat": "batches/min"},
+        {"refId": "B", "expr": "max(aletheia_merkle_seal_delay_seconds)", "legendFormat": "seal delay"}
+      ]
+    }
+  ]
+}

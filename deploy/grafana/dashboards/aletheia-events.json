@@ -1,0 +1,207 @@
+{
+  "uid": "aletheia-events",
+  "title": "Aletheia — Events, storage and integrity",
+  "description": "Reads the ClickHouse system of record and Loki. Storage panels are computed live from system.parts (spec §17).",
+  "tags": ["aletheia", "events"],
+  "timezone": "browser",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "event_uid",
+        "label": "event_uid",
+        "type": "textbox",
+        "query": "",
+        "current": {"text": "", "value": ""}
+      },
+      {
+        "name": "source_id",
+        "label": "Source",
+        "type": "query",
+        "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+        "query": "SELECT DISTINCT source_id FROM aletheia.events ORDER BY source_id",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "current": {"text": "All", "value": "$__all"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Unified output — every source, one schema",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Stored events by source",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 1},
+      "fieldConfig": {"defaults": {"unit": "short", "custom": {"fillOpacity": 20, "stacking": {"mode": "normal"}}}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 3,
+          "rawSql": "SELECT toStartOfInterval(recv_time, INTERVAL 1 MINUTE) AS time, source_id, count() AS events FROM aletheia.events WHERE $__timeFilter(recv_time) AND source_id IN ($source_id) GROUP BY time, source_id ORDER BY time"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "piechart",
+      "title": "Parse status mix",
+      "description": "full / partial / raw_only. Nothing is ever dropped: an unmatched event is raw_only + verbatim.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 1},
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT toString(parse_status) AS status, count() AS events FROM aletheia.events WHERE $__timeFilter(recv_time) AND source_id IN ($source_id) GROUP BY status ORDER BY events DESC"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Verified rate per source",
+      "description": "Share of events stored as verified templates (spec §17).",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 9},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "verified_rate"}, "properties": [{"id": "unit", "value": "percentunit"}, {"id": "custom.cellOptions", "value": {"type": "gauge"}}, {"id": "max", "value": 1}, {"id": "min", "value": 0}]}
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT source_id, count() AS events, countIf(storage_mode = 'template') AS verified, countIf(storage_mode = 'template') / count() AS verified_rate, countIf(parse_status = 'raw_only') AS quarantined FROM aletheia.events WHERE $__timeFilter(recv_time) GROUP BY source_id ORDER BY events DESC"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Top templates",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 9},
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT template_id, any(pack_version) AS pack_version, count() AS events FROM aletheia.events WHERE $__timeFilter(recv_time) AND source_id IN ($source_id) GROUP BY template_id ORDER BY events DESC LIMIT 25"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Storage economy — measured, not claimed",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 17}
+    },
+    {
+      "id": 11,
+      "type": "barchart",
+      "title": "Compressed bytes on disk: Aletheia vs baseline",
+      "description": "From system.parts. baseline_events holds raw + normalized JSON, both ZSTD — the realistic baseline of spec §17.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 9, "w": 12, "x": 0, "y": 18},
+      "fieldConfig": {"defaults": {"unit": "bytes"}, "overrides": []},
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT table AS dataset, sum(data_compressed_bytes) AS compressed, sum(data_uncompressed_bytes) AS uncompressed FROM system.parts WHERE active AND database = 'aletheia' AND table IN ('events', 'baseline_events') GROUP BY table ORDER BY table"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Bytes per column — where the space goes",
+      "description": "raw_verbatim shrinking as verified_rate rises is the whole storage argument.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 9, "w": 12, "x": 12, "y": 18},
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "compressed"}, "properties": [{"id": "unit", "value": "bytes"}]},
+          {"matcher": {"id": "byName", "options": "uncompressed"}, "properties": [{"id": "unit", "value": "bytes"}]}
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT column, sum(column_data_compressed_bytes) AS compressed, sum(column_data_uncompressed_bytes) AS uncompressed FROM system.parts_columns WHERE active AND database = 'aletheia' AND table = 'events' GROUP BY column ORDER BY compressed DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "row",
+      "title": "Integrity",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27}
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Recent Merkle batches",
+      "description": "Batch key is (source_id, partition, minute). Chained roots make a silent edit to an old batch impossible.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT merkle_batch, count() AS leaves, min(recv_time) AS first_event, max(recv_time) AS last_event FROM aletheia.events WHERE $__timeFilter(recv_time) AND merkle_batch != '' GROUP BY merkle_batch ORDER BY last_event DESC LIMIT 30"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Event lookup (event_uid)",
+      "description": "Set the event_uid variable, or arrive here from a Loki line via its structured metadata.",
+      "datasource": {"type": "grafana-clickhouse-datasource", "uid": "aletheia-clickhouse"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT event_uid, recv_time, source_id, template_id, toString(storage_mode) AS storage_mode, toString(parse_status) AS parse_status, hex(raw_sha256) AS raw_sha256, merkle_batch, vars FROM aletheia.events WHERE event_uid = '$event_uid' LIMIT 10"
+        }
+      ]
+    },
+    {
+      "id": 30,
+      "type": "logs",
+      "title": "Live normalized feed (Loki)",
+      "description": "Low-cardinality labels only: vendor, product, source_id, ocsf_class, parse_status.",
+      "datasource": {"type": "loki", "uid": "aletheia-loki"},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 36},
+      "options": {"showTime": true, "wrapLogMessage": true, "prettifyLogMessage": true},
+      "targets": [
+        {"refId": "A", "expr": "{source_id=~\".+\"}", "queryType": "range"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+# Declarative mirror of create-topics.sh — the bus contract in one place (CONTRACTS §3).
+# Key for every topic except `control` is source_id.
+topics:
+  - name: raw
+    key: source_id
+    partitions: 12
+    retention_ms: 604800000      # 7 days: raw-first durability + reprocessing window
+    cleanup_policy: delete
+    value: exact raw bytes, no wrapper
+    headers: [pr_recv_ms, pr_peer, pr_listener]
+  - name: quarantine
+    key: source_id
+    partitions: 12
+    retention_ms: 259200000
+    cleanup_policy: delete
+    value: unmatched event reference + raw bytes
+  - name: normalized
+    key: source_id
+    partitions: 12
+    retention_ms: 259200000
+    cleanup_policy: delete
+    value: OCSF JSON
+  - name: dlq
+    key: source_id
+    partitions: 12
+    retention_ms: 604800000
+    cleanup_policy: delete
+    value: processing error with context; the event is still stored verbatim
+  - name: control
+    key: null
+    partitions: 1
+    retention_ms: 259200000
+    cleanup_policy: compact
+    value: pack publish/retire notice for worker hot reload

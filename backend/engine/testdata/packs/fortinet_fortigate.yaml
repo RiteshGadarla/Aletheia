@@ -1,0 +1,97 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: fortinet_fortigate
+version: 2
+applies_to:
+  vendor: Fortinet
+  product: FortiGate
+envelopes:
+- bare
+- rfc3164_std
+sources:
+- fgt01
+templates:
+- id: fgt_traffic_forward
+  discriminator: logid=0000000013
+  body:
+  - lit: date=
+  - slot: date
+    type: custom
+    pattern: \d{4}-\d{2}-\d{2}
+  - lit: ' time='
+  - slot: time
+    type: custom
+    pattern: \d{2}:\d{2}:\d{2}
+  - lit: ' devname='
+  - slot: devname
+    type: quoted
+  - lit: ' logid='
+  - slot: logid
+    type: quoted
+  - lit: ' type='
+  - slot: type
+    type: quoted
+  - lit: ' subtype='
+  - slot: subtype
+    type: quoted
+  - lit: ' level='
+  - slot: level
+    type: quoted
+  - lit: ' srcip='
+  - slot: srcip
+    type: ip
+  - lit: ' srcport='
+  - slot: srcport
+    type: port
+  - lit: ' srcintf='
+  - slot: srcintf
+    type: quoted
+  - lit: ' dstip='
+  - slot: dstip
+    type: ip
+  - lit: ' dstport='
+  - slot: dstport
+    type: port
+  - lit: ' dstintf='
+  - slot: dstintf
+    type: quoted
+  - lit: ' proto='
+  - slot: proto
+    type: int
+  - lit: ' action='
+  - slot: action
+    type: quoted
+  - lit: ' policyid='
+  - slot: policyid
+    type: int
+  - lit: ' sentbyte='
+  - slot: sentbyte
+    type: int
+  - lit: ' rcvdbyte='
+  - slot: rcvdbyte
+    type: int
+  ocsf:
+    class_uid: 4001
+    activity_id: 1
+    map:
+      srcip: src_endpoint.ip
+      srcport: src_endpoint.port
+      srcintf: src_endpoint.interface_name
+      dstip: dst_endpoint.ip
+      dstport: dst_endpoint.port
+      dstintf: dst_endpoint.interface_name
+      proto:
+        path: connection_info.protocol_num
+        transform: to_int
+      action: action_id
+      sentbyte:
+        path: traffic.bytes_out
+        transform: to_int
+      rcvdbyte:
+        path: traffic.bytes_in
+        transform: to_int
+    unmapped_keep:
+    - policyid
+    - level
+    - devname
+    - date
+    - time

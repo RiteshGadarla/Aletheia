@@ -1,0 +1,366 @@
+# Cisco ASA syslog message IDs, free text (spec §9.9). Generated from published Cisco message
+# documentation - no proprietary device was available (spec §25).
+# Interface-name slots use `word` per spec §7.3; ASA IPv6 messages would need `[^:\s]+` instead.
+pack: cisco_asa
+version: 1
+applies_to: {vendor: Cisco, product: ASA}
+envelopes: [rfc3164_std, rfc3164_nohost]
+
+templates:
+
+  # ---------------------------------------------------------------- 302013 Built TCP
+  - id: asa_302013
+    discriminator: "%ASA-6-302013"
+    body:
+      - {lit: "%ASA-6-302013: Built "}
+      - {slot: direction, type: enum, values: [inbound, outbound]}
+      - {lit: " TCP connection "}
+      - {slot: conn_id, type: int}
+      - {lit: " for "}
+      - {slot: if_a, type: word}
+      - {lit: ":"}
+      - {slot: ip_a, type: ip}
+      - {lit: "/"}
+      - {slot: port_a, type: port}
+      - {lit: " ("}
+      - {slot: mip_a, type: ip}
+      - {lit: "/"}
+      - {slot: mport_a, type: port}
+      - {lit: ") to "}
+      - {slot: if_b, type: word}
+      - {lit: ":"}
+      - {slot: ip_b, type: ip}
+      - {lit: "/"}
+      - {slot: port_b, type: port}
+      - {lit: " ("}
+      - {slot: mip_b, type: ip}
+      - {lit: "/"}
+      - {slot: mport_b, type: port}
+      - {lit: ")"}
+    ocsf:
+      class_uid: 4001
+      activity_id: 1                       # Open
+      constants:
+        connection_info.protocol_name: tcp
+        connection_info.protocol_num: 6
+        action_id: 1
+      map:
+        conn_id: connection_info.uid
+      conditional:
+        # The "for" side is the remote party on outbound connections and the initiator on
+        # inbound ones, so the endpoint roles flip with `direction` (spec §7.3).
+        - when: {direction: outbound}
+          map:
+            ip_b: src_endpoint.ip
+            port_b: {path: src_endpoint.port, transform: to_int}
+            if_b: src_endpoint.interface_name
+            ip_a: dst_endpoint.ip
+            port_a: {path: dst_endpoint.port, transform: to_int}
+            if_a: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {outbound: 2}}
+        - when: {direction: inbound}
+          map:
+            ip_a: src_endpoint.ip
+            port_a: {path: src_endpoint.port, transform: to_int}
+            if_a: src_endpoint.interface_name
+            ip_b: dst_endpoint.ip
+            port_b: {path: dst_endpoint.port, transform: to_int}
+            if_b: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {inbound: 1}}
+      unmapped_keep: [mip_a, mport_a, mip_b, mport_b]
+    tests: {samples: "tests/asa_302013/*.log", expected: "tests/asa_302013/*.json"}
+
+  # ---------------------------------------------------------------- 302015 Built UDP
+  - id: asa_302015
+    discriminator: "%ASA-6-302015"
+    body:
+      - {lit: "%ASA-6-302015: Built "}
+      - {slot: direction, type: enum, values: [inbound, outbound]}
+      - {lit: " UDP connection "}
+      - {slot: conn_id, type: int}
+      - {lit: " for "}
+      - {slot: if_a, type: word}
+      - {lit: ":"}
+      - {slot: ip_a, type: ip}
+      - {lit: "/"}
+      - {slot: port_a, type: port}
+      - {lit: " ("}
+      - {slot: mip_a, type: ip}
+      - {lit: "/"}
+      - {slot: mport_a, type: port}
+      - {lit: ") to "}
+      - {slot: if_b, type: word}
+      - {lit: ":"}
+      - {slot: ip_b, type: ip}
+      - {lit: "/"}
+      - {slot: port_b, type: port}
+      - {lit: " ("}
+      - {slot: mip_b, type: ip}
+      - {lit: "/"}
+      - {slot: mport_b, type: port}
+      - {lit: ")"}
+    ocsf:
+      class_uid: 4001
+      activity_id: 1
+      constants:
+        connection_info.protocol_name: udp
+        connection_info.protocol_num: 17
+        action_id: 1
+      map:
+        conn_id: connection_info.uid
+      conditional:
+        - when: {direction: outbound}
+          map:
+            ip_b: src_endpoint.ip
+            port_b: {path: src_endpoint.port, transform: to_int}
+            if_b: src_endpoint.interface_name
+            ip_a: dst_endpoint.ip
+            port_a: {path: dst_endpoint.port, transform: to_int}
+            if_a: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {outbound: 2}}
+        - when: {direction: inbound}
+          map:
+            ip_a: src_endpoint.ip
+            port_a: {path: src_endpoint.port, transform: to_int}
+            if_a: src_endpoint.interface_name
+            ip_b: dst_endpoint.ip
+            port_b: {path: dst_endpoint.port, transform: to_int}
+            if_b: dst_endpoint.interface_name
+            direction: {path: connection_info.direction_id, enum: {inbound: 1}}
+      unmapped_keep: [mip_a, mport_a, mip_b, mport_b]
+    tests: {samples: "tests/asa_302015/*.log", expected: "tests/asa_302015/*.json"}
+
+  # ---------------------------------------------------------------- 302014 Teardown TCP
+  # 302014 carries no direction word; the "for" side is the foreign host in the common
+  # outbound case, so a -> dst_endpoint and b -> src_endpoint.
+  - id: asa_302014
+    discriminator: "%ASA-6-302014"
+    body:
+      - {lit: "%ASA-6-302014: Teardown TCP connection "}
+      - {slot: conn_id, type: int}
+      - {lit: " for "}
+      - {slot: if_a, type: word}
+      - {lit: ":"}
+      - {slot: ip_a, type: ip}
+      - {lit: "/"}
+      - {slot: port_a, type: port}
+      - {lit: " to "}
+      - {slot: if_b, type: word}
+      - {lit: ":"}
+      - {slot: ip_b, type: ip}
+      - {lit: "/"}
+      - {slot: port_b, type: port}
+      - {lit: " duration "}
+      - {slot: duration, type: custom, pattern: '\d+:\d{2}:\d{2}'}
+      - {lit: " bytes "}
+      - {slot: bytes, type: int}
+      - {lit: " "}
+      - {slot: reason, type: text}
+    ocsf:
+      class_uid: 4001
+      activity_id: 2                       # Close
+      constants:
+        connection_info.protocol_name: tcp
+        connection_info.protocol_num: 6
+        connection_info.direction_id: 2
+      map:
+        conn_id: connection_info.uid
+        ip_b: src_endpoint.ip
+        port_b: {path: src_endpoint.port, transform: to_int}
+        if_b: src_endpoint.interface_name
+        ip_a: dst_endpoint.ip
+        port_a: {path: dst_endpoint.port, transform: to_int}
+        if_a: dst_endpoint.interface_name
+        bytes: [{path: traffic.bytes, transform: to_int}]
+        reason: status_detail
+      unmapped_keep: [duration]
+    tests: {samples: "tests/asa_302014/*.log", expected: "tests/asa_302014/*.json"}
+
+  # ---------------------------------------------------------------- 302016 Teardown UDP
+  - id: asa_302016
+    discriminator: "%ASA-6-302016"
+    body:
+      - {lit: "%ASA-6-302016: Teardown UDP connection "}
+      - {slot: conn_id, type: int}
+      - {lit: " for "}
+      - {slot: if_a, type: word}
+      - {lit: ":"}
+      - {slot: ip_a, type: ip}
+      - {lit: "/"}
+      - {slot: port_a, type: port}
+      - {lit: " to "}
+      - {slot: if_b, type: word}
+      - {lit: ":"}
+      - {slot: ip_b, type: ip}
+      - {lit: "/"}
+      - {slot: port_b, type: port}
+      - {lit: " duration "}
+      - {slot: duration, type: custom, pattern: '\d+:\d{2}:\d{2}'}
+      - {lit: " bytes "}
+      - {slot: bytes, type: int}
+    ocsf:
+      class_uid: 4001
+      activity_id: 2
+      constants:
+        connection_info.protocol_name: udp
+        connection_info.protocol_num: 17
+        connection_info.direction_id: 2
+      map:
+        conn_id: connection_info.uid
+        ip_b: src_endpoint.ip
+        port_b: {path: src_endpoint.port, transform: to_int}
+        if_b: src_endpoint.interface_name
+        ip_a: dst_endpoint.ip
+        port_a: {path: dst_endpoint.port, transform: to_int}
+        if_a: dst_endpoint.interface_name
+        bytes: {path: traffic.bytes, transform: to_int}
+      unmapped_keep: [duration]
+    tests: {samples: "tests/asa_302016/*.log", expected: "tests/asa_302016/*.json"}
+
+  # ---------------------------------------------------------------- 106023 Deny by access-group
+  - id: asa_106023
+    discriminator: "%ASA-4-106023"
+    body:
+      - {lit: "%ASA-4-106023: Deny "}
+      - {slot: proto, type: enum, values: [tcp, udp, icmp, gre, esp, ip]}
+      - {lit: " src "}
+      - {slot: if_a, type: word}
+      - {lit: ":"}
+      - {slot: ip_a, type: ip}
+      - {lit: "/"}
+      - {slot: port_a, type: port}
+      - {lit: " dst "}
+      - {slot: if_b, type: word}
+      - {lit: ":"}
+      - {slot: ip_b, type: ip}
+      - {lit: "/"}
+      - {slot: port_b, type: port}
+      - {lit: ' by access-group "'}
+      - {slot: acl, type: custom, pattern: '[^"]*'}
+      - {lit: '" ['}
+      - {slot: hashcode1, type: custom, pattern: '0x[0-9a-fA-F]+'}
+      - {lit: ", "}
+      - {slot: hashcode2, type: custom, pattern: '0x[0-9a-fA-F]+'}
+      - {lit: "]"}
+    ocsf:
+      class_uid: 4001
+      activity_id: 5                       # Refuse
+      constants:
+        action_id: 2                       # Denied
+        action: denied
+        connection_info.direction_id: 1
+      map:
+        proto: [connection_info.protocol_name,
+                {path: connection_info.protocol_num,
+                 enum: {tcp: 6, udp: 17, icmp: 1, gre: 47, esp: 50, ip: 0}}]
+        ip_a: src_endpoint.ip
+        port_a: {path: src_endpoint.port, transform: to_int}
+        if_a: src_endpoint.interface_name
+        ip_b: dst_endpoint.ip
+        port_b: {path: dst_endpoint.port, transform: to_int}
+        if_b: dst_endpoint.interface_name
+        acl: firewall_rule.name
+      unmapped_keep: [hashcode1, hashcode2]
+    tests: {samples: "tests/asa_106023/*.log", expected: "tests/asa_106023/*.json"}
+
+  # ---------------------------------------------------------------- 113039 AnyConnect session up
+  - id: asa_113039
+    discriminator: "%ASA-4-113039"
+    body:
+      - {lit: "%ASA-4-113039: Group <"}
+      - {slot: group, type: custom, pattern: '[^>]*'}
+      - {lit: "> User <"}
+      - {slot: user, type: custom, pattern: '[^>]*'}
+      - {lit: "> IP <"}
+      - {slot: peer_ip, type: ip}
+      - {lit: "> AnyConnect parent session started."}
+    ocsf:
+      class_uid: 3002
+      activity_id: 1                       # Logon
+      constants:
+        status_id: 1
+        status: Success
+        is_remote: true
+        auth_protocol: AnyConnect
+        service.name: AnyConnect
+      map:
+        user: user.name
+        group: user.domain
+        peer_ip: src_endpoint.ip
+    tests: {samples: "tests/asa_113039/*.log", expected: "tests/asa_113039/*.json"}
+
+  # ---------------------------------------------------------------- 113019 Session disconnected
+  - id: asa_113019
+    discriminator: "%ASA-4-113019"
+    body:
+      - {lit: "%ASA-4-113019: Group = "}
+      - {slot: group, type: custom, pattern: '[^,]*'}
+      - {lit: ", Username = "}
+      - {slot: user, type: custom, pattern: '[^,]*'}
+      - {lit: ", IP = "}
+      - {slot: peer_ip, type: ip}
+      - {lit: ", Session disconnected. Session Type: "}
+      - {slot: session_type, type: word}
+      - {lit: ", Duration: "}
+      - {slot: duration, type: custom, pattern: '\d+h:\d{2}m:\d{2}s'}
+      - {lit: ", Bytes xmt: "}
+      - {slot: bytes_xmt, type: int}
+      - {lit: ", Bytes rcv: "}
+      - {slot: bytes_rcv, type: int}
+      - {lit: ", Reason: "}
+      - {slot: reason, type: text}
+    ocsf:
+      class_uid: 3002
+      activity_id: 2                       # Logoff
+      constants:
+        status_id: 1
+        is_remote: true
+      map:
+        user: user.name
+        group: user.domain
+        peer_ip: src_endpoint.ip
+        session_type: auth_protocol
+        bytes_xmt: {path: traffic.bytes_out, transform: to_int}
+        bytes_rcv: {path: traffic.bytes_in, transform: to_int}
+        reason: status_detail
+      unmapped_keep: [duration]
+    tests: {samples: "tests/asa_113019/*.log", expected: "tests/asa_113019/*.json"}
+
+  # ---------------------------------------------------------------- 305011 NAT translation built
+  - id: asa_305011
+    discriminator: "%ASA-6-305011"
+    body:
+      - {lit: "%ASA-6-305011: Built "}
+      - {slot: xlate_type, type: enum, values: [dynamic, static]}
+      - {lit: " "}
+      - {slot: proto, type: enum, values: [TCP, UDP, ICMP, GRE, ESP]}
+      - {lit: " translation from "}
+      - {slot: if_a, type: word}
+      - {lit: ":"}
+      - {slot: ip_a, type: ip}
+      - {lit: "/"}
+      - {slot: port_a, type: port}
+      - {lit: " to "}
+      - {slot: if_b, type: word}
+      - {lit: ":"}
+      - {slot: ip_b, type: ip}
+      - {lit: "/"}
+      - {slot: port_b, type: port}
+    ocsf:
+      class_uid: 4001
+      activity_id: 1
+      constants:
+        action_id: 1
+        connection_info.direction_id: 2
+      map:
+        proto: [{path: connection_info.protocol_name, transform: lowercase},
+                {path: connection_info.protocol_num,
+                 enum: {TCP: 6, UDP: 17, ICMP: 1, GRE: 47, ESP: 50}}]
+        ip_a: src_endpoint.ip
+        port_a: {path: src_endpoint.port, transform: to_int}
+        if_a: src_endpoint.interface_name
+        ip_b: dst_endpoint.ip
+        port_b: {path: dst_endpoint.port, transform: to_int}
+        if_b: dst_endpoint.interface_name
+      unmapped_keep: [xlate_type]
+    tests: {samples: "tests/asa_305011/*.log", expected: "tests/asa_305011/*.json"}

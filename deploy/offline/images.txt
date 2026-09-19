@@ -1,0 +1,16 @@
+# Every image the air-gapped deployment needs. Keep in sync with docker/versions.env.
+# Lines are expanded with the variables from docker/versions.env.
+${ALETHEIA_REGISTRY}/aletheia:${ALETHEIA_VERSION}
+${ALETHEIA_REGISTRY}/aletheia-worker:${ALETHEIA_VERSION}
+${ALETHEIA_REGISTRY}/aletheia-sealer:${ALETHEIA_VERSION}
+${ALETHEIA_REGISTRY}/aletheia-studio:${ALETHEIA_VERSION}
+${ALETHEIA_REGISTRY}/aletheia-ui:${ALETHEIA_VERSION}
+timberio/vector:${VECTOR_VERSION}-debian
+redpandadata/redpanda:${REDPANDA_VERSION}
+clickhouse/clickhouse-server:${CLICKHOUSE_VERSION}
+postgres:${POSTGRES_VERSION}-bookworm
+minio/minio:${MINIO_VERSION}
+minio/mc:${MINIO_MC_VERSION}
+grafana/loki:${LOKI_VERSION}
+grafana/grafana:${GRAFANA_VERSION}
+prom/prometheus:${PROMETHEUS_VERSION}

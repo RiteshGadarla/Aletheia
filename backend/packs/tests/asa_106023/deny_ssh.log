@@ -1,0 +1,1 @@
+<164>Sep 19 14:31:07 fw01 %ASA-4-106023: Deny tcp src outside:198.51.100.9/51514 dst inside:10.0.0.5/22 by access-group "outside_access_in" [0x0, 0x0]

@@ -1,0 +1,45 @@
+{
+  "activity_id": 2,
+  "aletheia": {
+    "pack": "cisco_asa",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "asa_302014"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "connection_info": {
+    "direction_id": 2,
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "1234"
+  },
+  "dst_endpoint": {
+    "interface_name": "outside",
+    "ip": "203.0.113.5",
+    "port": 443
+  },
+  "metadata": {
+    "log_name": "fw01",
+    "original_time": "Sep 19 14:31:32",
+    "product": {
+      "name": "ASA",
+      "vendor_name": "Cisco"
+    }
+  },
+  "severity_id": 1,
+  "src_endpoint": {
+    "interface_name": "inside",
+    "ip": "10.0.0.5",
+    "port": 52144
+  },
+  "status_detail": "TCP FINs",
+  "traffic": {
+    "bytes": 5120
+  },
+  "type_uid": 400102,
+  "unmapped": {
+    "duration": "0:00:30"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "activity_id": 2,
+  "aletheia": {
+    "pack": "cisco_asa",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "asa_302016"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "connection_info": {
+    "direction_id": 2,
+    "protocol_name": "udp",
+    "protocol_num": 17,
+    "uid": "1235"
+  },
+  "dst_endpoint": {
+    "interface_name": "outside",
+    "ip": "8.8.8.8",
+    "port": 53
+  },
+  "metadata": {
+    "log_name": "fw01",
+    "original_time": "Sep 19 14:31:36",
+    "product": {
+      "name": "ASA",
+      "vendor_name": "Cisco"
+    }
+  },
+  "severity_id": 1,
+  "src_endpoint": {
+    "interface_name": "inside",
+    "ip": "10.0.0.5",
+    "port": 51000
+  },
+  "traffic": {
+    "bytes": 180
+  },
+  "type_uid": 400102,
+  "unmapped": {
+    "duration": "0:00:31"
+  }
+}

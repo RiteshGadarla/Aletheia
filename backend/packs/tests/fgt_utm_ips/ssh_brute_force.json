@@ -1,0 +1,61 @@
+{
+  "action": "dropped",
+  "action_id": 2,
+  "activity_id": 1,
+  "aletheia": {
+    "pack": "fortigate",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "fgt_utm_ips"
+  },
+  "category_uid": 2,
+  "class_uid": 2004,
+  "connection_info": {
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "8901"
+  },
+  "dst_endpoint": {
+    "interface_name": "port2",
+    "ip": "10.0.0.5",
+    "port": 22
+  },
+  "finding_info": {
+    "analytic": {
+      "category": "IPS",
+      "name": "SSH.Connection.Brute.Force",
+      "type": "Signature",
+      "uid": "101646338"
+    },
+    "title": "SSH.Connection.Brute.Force",
+    "uid": "101646338"
+  },
+  "message": "applications3: SSH.Connection.Brute.Force",
+  "metadata": {
+    "log_level": "alert",
+    "log_name": "FGT-EDGE",
+    "product": {
+      "name": "FortiGate",
+      "vendor_name": "Fortinet"
+    }
+  },
+  "risk_level_id": 4,
+  "severity_id": 5,
+  "src_endpoint": {
+    "interface_name": "port1",
+    "ip": "198.51.100.9",
+    "port": 51514
+  },
+  "type_uid": 200401,
+  "unmapped": {
+    "date": "2026-09-19",
+    "devid": "FG100D3G16800001",
+    "eventtime": "1789828280999888777",
+    "policyid": "1",
+    "profile": "default",
+    "service": "SSH",
+    "time": "14:31:20",
+    "vd": "root"
+  }
+}

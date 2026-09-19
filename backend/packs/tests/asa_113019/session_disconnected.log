@@ -1,0 +1,1 @@
+<164>Sep 19 14:45:31 vpn01 %ASA-4-113019: Group = GroupPolicy_AnyConnect, Username = analyst1, IP = 198.51.100.20, Session disconnected. Session Type: SSL, Duration: 0h:12m:31s, Bytes xmt: 40960, Bytes rcv: 81920, Reason: User Requested

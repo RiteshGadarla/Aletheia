@@ -1,0 +1,257 @@
+# Pinned OCSF subset used by Aletheia (spec §10.2, CONTRACTS §5).
+# This is an ALLOW-LIST: the Studio constrains LLM mapping proposals to these paths, and the
+# engine/verifier rejects any pack that maps a slot to a path not listed here.
+# Types are Aletheia value types, not OCSF primitive names: string | integer | long | boolean |
+# float | string[] | integer[] | object | timestamp_ms.
+# Only leaf paths are listed; parent objects are implied.
+
+ocsf_version: "1.3.0"
+
+# Attributes legal on every class in this subset.
+common:
+  activity_id:            {type: integer, required: true}
+  activity_name:          {type: string}
+  category_uid:           {type: integer, required: true}
+  class_uid:              {type: integer, required: true}
+  type_uid:               {type: integer, required: true}
+  time:                   {type: timestamp_ms, required: true}
+  timezone_offset:        {type: integer}
+  severity_id:            {type: integer, required: true}
+  severity:               {type: string}
+  status:                 {type: string}
+  status_id:              {type: integer}
+  status_code:            {type: string}
+  status_detail:          {type: string}
+  count:                  {type: integer}
+  duration:               {type: long}
+  message:                {type: string}
+  raw_data:               {type: string}          # never stored; filled on export only
+  observables:            {type: object}
+  unmapped:               {type: object}
+  metadata.version:       {type: string}
+  metadata.uid:           {type: string}
+  metadata.correlation_uid: {type: string}
+  metadata.original_time: {type: string}
+  metadata.logged_time:   {type: timestamp_ms}
+  metadata.log_name:      {type: string}
+  metadata.log_provider:  {type: string}
+  metadata.log_level:     {type: string}
+  metadata.product.vendor_name: {type: string}
+  metadata.product.name:  {type: string}
+  metadata.product.version: {type: string}
+  metadata.product.feature.name: {type: string}
+  metadata.profiles:      {type: "string[]"}
+  # Aletheia provenance block (CONTRACTS §5) - an extension object, not OCSF core.
+  aletheia.event_uid:     {type: string}
+  aletheia.source_id:     {type: string}
+  aletheia.parse_status:  {type: string}
+  aletheia.storage_mode:  {type: string}
+  aletheia.template_id:   {type: string}
+  aletheia.pack:          {type: string}
+  aletheia.pack_version:  {type: integer}
+  aletheia.raw_sha256:    {type: string}
+  aletheia.verified:      {type: boolean}
+  aletheia.merkle_batch:  {type: string}
+
+# Reusable object shapes referenced by $ref below.
+objects:
+  network_endpoint:
+    ip:              {type: string}
+    port:            {type: integer}
+    hostname:        {type: string}
+    mac:             {type: string}
+    interface_name:  {type: string}
+    interface_uid:   {type: string}
+    svc_name:        {type: string}
+    domain:          {type: string}
+    intermediate_ips: {type: "string[]"}
+    location.country: {type: string}
+    location.city:   {type: string}
+    vlan_uid:        {type: string}
+  user:
+    name:            {type: string}
+    uid:             {type: string}
+    domain:          {type: string}
+    type:            {type: string}
+    type_id:         {type: integer}
+    full_name:       {type: string}
+    email_addr:      {type: string}
+    groups:          {type: object}
+  traffic:
+    bytes:           {type: long}
+    bytes_in:        {type: long}
+    bytes_out:       {type: long}
+    packets:         {type: long}
+    packets_in:      {type: long}
+    packets_out:     {type: long}
+
+classes:
+
+  4001:
+    name: Network Activity
+    category_uid: 4
+    category_name: Network Activity
+    activity_ids: {0: Unknown, 1: Open, 2: Close, 3: Reset, 4: Fail, 5: Refuse, 6: Traffic, 99: Other}
+    attributes:
+      action:                    {type: string}
+      action_id:                 {type: integer}     # 1 Allowed, 2 Denied
+      disposition_id:            {type: integer}
+      tls.version:               {type: string}
+      connection_info.uid:       {type: string}
+      connection_info.direction: {type: string}
+      connection_info.direction_id: {type: integer}  # 1 Inbound, 2 Outbound, 3 Local
+      connection_info.protocol_name: {type: string}
+      connection_info.protocol_num:  {type: integer}
+      connection_info.protocol_ver_id: {type: integer}
+      connection_info.boundary_id: {type: integer}
+      connection_info.tcp_flags:  {type: integer}
+      connection_info.session_uid: {type: string}
+      firewall_rule.uid:         {type: string}
+      firewall_rule.name:        {type: string}
+      firewall_rule.duration:    {type: long}
+      policy.uid:                {type: string}
+      policy.name:               {type: string}
+      src_endpoint:              {$ref: network_endpoint}
+      dst_endpoint:              {$ref: network_endpoint}
+      proxy_endpoint:            {$ref: network_endpoint}
+      traffic:                   {$ref: traffic}
+      user:                      {$ref: user}
+
+  4002:
+    name: HTTP Activity
+    category_uid: 4
+    category_name: Network Activity
+    activity_ids: {0: Unknown, 1: Connect, 2: Delete, 3: Get, 4: Head, 5: Options, 6: Post, 7: Put, 8: Trace, 9: Patch, 99: Other}
+    attributes:
+      action:                        {type: string}
+      action_id:                     {type: integer}
+      disposition_id:                {type: integer}
+      http_request.http_method:      {type: string}
+      http_request.url.text:         {type: string}
+      http_request.url.hostname:     {type: string}
+      http_request.url.path:         {type: string}
+      http_request.url.port:         {type: integer}
+      http_request.url.scheme:       {type: string}
+      http_request.url.query_string: {type: string}
+      http_request.user_agent:       {type: string}
+      http_request.referrer:         {type: string}
+      http_request.version:          {type: string}
+      http_request.uid:              {type: string}
+      http_request.length:           {type: long}
+      http_response.code:            {type: integer}
+      http_response.status:          {type: string}
+      http_response.content_type:    {type: string}
+      http_response.length:          {type: long}
+      http_status:                   {type: integer}
+      policy.uid:                    {type: string}
+      policy.name:                   {type: string}
+      connection_info.uid:           {type: string}
+      connection_info.direction_id:  {type: integer}
+      connection_info.protocol_name: {type: string}
+      connection_info.protocol_num:  {type: integer}
+      src_endpoint:                  {$ref: network_endpoint}
+      dst_endpoint:                  {$ref: network_endpoint}
+      proxy_endpoint:                {$ref: network_endpoint}
+      traffic:                       {$ref: traffic}
+      user:                          {$ref: user}
+
+  4003:
+    name: DNS Activity
+    category_uid: 4
+    category_name: Network Activity
+    activity_ids: {0: Unknown, 1: Query, 2: Response, 6: Traffic, 99: Other}
+    attributes:
+      action:                        {type: string}
+      action_id:                     {type: integer}
+      disposition_id:                {type: integer}
+      rcode:                         {type: string}
+      rcode_id:                      {type: integer}
+      query.hostname:                {type: string}
+      query.type:                    {type: string}
+      query.class:                   {type: string}
+      query.opcode:                  {type: string}
+      query.opcode_id:               {type: integer}
+      policy.uid:                    {type: string}
+      policy.name:                   {type: string}
+      answers:                       {type: object}
+      query_time:                    {type: timestamp_ms}
+      response_time:                 {type: timestamp_ms}
+      connection_info.uid:           {type: string}
+      connection_info.direction_id:  {type: integer}
+      connection_info.protocol_name: {type: string}
+      connection_info.protocol_num:  {type: integer}
+      src_endpoint:                  {$ref: network_endpoint}
+      dst_endpoint:                  {$ref: network_endpoint}
+      traffic:                       {$ref: traffic}
+
+  3002:
+    name: Authentication
+    category_uid: 3
+    category_name: Identity & Access Management
+    activity_ids: {0: Unknown, 1: Logon, 2: Logoff, 3: "Authentication Ticket", 4: "Service Ticket Request", 5: "Service Ticket Renew", 6: Preauth, 99: Other}
+    attributes:
+      auth_protocol:                 {type: string}
+      auth_protocol_id:              {type: integer}
+      logon_type:                    {type: string}
+      logon_type_id:                 {type: integer}
+      is_remote:                     {type: boolean}
+      is_cleartext:                  {type: boolean}
+      is_mfa:                        {type: boolean}
+      session.uid:                   {type: string}
+      session.created_time:          {type: timestamp_ms}
+      session.is_remote:             {type: boolean}
+      service.name:                  {type: string}
+      service.uid:                   {type: string}
+      user:                          {$ref: user}
+      actor.user.name:               {type: string}
+      actor.user.uid:                {type: string}
+      actor.process.name:            {type: string}
+      src_endpoint:                  {$ref: network_endpoint}
+      dst_endpoint:                  {$ref: network_endpoint}
+      traffic:                       {$ref: traffic}
+      auth_factors:                  {type: object}
+
+  2004:
+    name: Detection Finding
+    category_uid: 2
+    category_name: Findings
+    activity_ids: {0: Unknown, 1: Create, 2: Update, 3: Close, 99: Other}
+    attributes:
+      action:                        {type: string}
+      action_id:                     {type: integer}
+      disposition:                   {type: string}
+      disposition_id:                {type: integer}
+      confidence:                    {type: string}
+      confidence_id:                 {type: integer}
+      confidence_score:              {type: integer}
+      impact_id:                     {type: integer}
+      risk_level:                    {type: string}
+      risk_level_id:                 {type: integer}
+      risk_score:                    {type: integer}
+      finding_info.uid:              {type: string}
+      finding_info.title:            {type: string}
+      finding_info.desc:             {type: string}
+      finding_info.types:            {type: "string[]"}
+      finding_info.created_time:     {type: timestamp_ms}
+      finding_info.first_seen_time:  {type: timestamp_ms}
+      finding_info.last_seen_time:   {type: timestamp_ms}
+      finding_info.analytic.name:    {type: string}
+      finding_info.analytic.uid:     {type: string}
+      finding_info.analytic.type:    {type: string}
+      finding_info.analytic.type_id: {type: integer}
+      finding_info.analytic.category: {type: string}
+      finding_info.src_url:          {type: string}
+      evidences:                     {type: object}
+      attacks:                       {type: object}
+      malware:                       {type: object}
+      resources:                     {type: object}
+      vulnerabilities:               {type: object}
+      policy.uid:                    {type: string}
+      policy.name:                   {type: string}
+      connection_info.uid:           {type: string}
+      connection_info.direction_id:  {type: integer}
+      connection_info.protocol_name: {type: string}
+      connection_info.protocol_num:  {type: integer}
+      src_endpoint:                  {$ref: network_endpoint}
+      dst_endpoint:                  {$ref: network_endpoint}
+      traffic:                       {$ref: traffic}

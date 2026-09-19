@@ -1,0 +1,50 @@
+# Loki 3.x, single binary, filesystem storage. Structured metadata required (spec §11.3).
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: warn
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /data/loki
+  storage:
+    filesystem:
+      chunks_directory: /data/loki/chunks
+      rules_directory: /data/loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13            # v13 is what enables structured metadata
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true
+  reject_old_samples: false
+  ingestion_rate_mb: 64
+  ingestion_burst_size_mb: 128
+  max_label_names_per_series: 12       # guard rail: the five allowed labels + slack
+  max_streams_per_user: 10000
+  volume_enabled: true
+  retention_period: 168h
+
+compactor:
+  working_directory: /data/loki/compactor
+  retention_enabled: true
+  delete_request_store: filesystem
+
+analytics:
+  reporting_enabled: false             # no outbound calls (spec §13.6)
+
+frontend:
+  encoding: protobuf

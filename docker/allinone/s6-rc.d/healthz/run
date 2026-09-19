@@ -1,0 +1,5 @@
+#!/command/with-contenv bash
+# Readiness aggregator: GET /healthz is ready only when every service is healthy.
+set -eu
+exec 2>&1
+exec s6-setuidgid aletheia /venv/bin/python /opt/aletheia/init/healthz_server.py

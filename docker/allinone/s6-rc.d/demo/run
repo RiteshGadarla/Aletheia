@@ -1,0 +1,8 @@
+#!/command/with-contenv bash
+# Scenario engine + seeded replayers. Autostart is on by default (spec §13.3).
+set -eu
+exec 2>&1
+/opt/aletheia/init/wait-for.sh tcp 127.0.0.1:5599 120
+cd /app
+exec s6-setuidgid aletheia /venv/bin/python -m demo.engine serve \
+  --host 127.0.0.1 --port 8090

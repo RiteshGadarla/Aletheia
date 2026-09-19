@@ -1,0 +1,115 @@
+# Generic LEEF (spec §9.4). Structural templating exactly like CEF, but the attribute separator
+# is the delimiter DECLARED in the LEEF 2.0 header (slot `delim` in the envelope) and appears as
+# a literal between the body's key=value pairs. LEEF 1.0 has no delimiter field and defaults to
+# a tab, which the `leef_nodelim` envelope plus tab literals cover.
+# Discriminator is the envelope-derived vendor|product|eventid (spec §6.4).
+pack: leef_generic
+version: 1
+applies_to: {format: leef}
+envelopes: [leef, leef_nodelim, rfc3164_leef]
+
+templates:
+
+  # LEEF:2.0|VendorY|WAF|3.1|BLOCK|^|src=..^dst=..^usrName=..^action=block
+  - id: leef_waf_block_caret
+    discriminator: "|WAF|3.1|BLOCK|"
+    body:
+      - {lit: "src="}
+      - {slot: src, type: ip}
+      - {lit: "^dst="}
+      - {slot: dst, type: ip}
+      - {lit: "^usrName="}
+      - {slot: usr_name, type: custom, pattern: '[^\^]*'}
+      - {lit: "^action="}
+      - {slot: action, type: enum, values: [block, allow, detect]}
+    ocsf:
+      class_uid: 2004
+      activity_id: 1
+      constants:
+        finding_info.analytic.type: Rule
+        finding_info.analytic.category: WAF
+        severity_id: 4
+        risk_level_id: 3
+      map:
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+        usr_name: user.name
+        action: [action, {path: action_id, enum: {block: 2, allow: 1, detect: 1}}]
+        event_id: [finding_info.uid, finding_info.title]
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+      unmapped_keep: [leef_version, delim]
+    tests: {samples: "tests/leef_waf_block_caret/*.log", expected: "tests/leef_waf_block_caret/*.json"}
+
+  # LEEF 2.0 with the same vendor but a tab-delimited extension (delim declared as x09).
+  - id: leef_waf_block_tab
+    discriminator: "|WAF|3.1|BLOCK2|"
+    body:
+      - {lit: "src="}
+      - {slot: src, type: ip}
+      - {lit: "\tdst="}
+      - {slot: dst, type: ip}
+      - {lit: "\tusrName="}
+      - {slot: usr_name, type: custom, pattern: '[^\t]*'}
+      - {lit: "\taction="}
+      - {slot: action, type: enum, values: [block, allow, detect]}
+    ocsf:
+      class_uid: 2004
+      activity_id: 1
+      constants:
+        finding_info.analytic.type: Rule
+        finding_info.analytic.category: WAF
+        severity_id: 4
+        risk_level_id: 3
+      map:
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+        usr_name: user.name
+        action: [action, {path: action_id, enum: {block: 2, allow: 1, detect: 1}}]
+        event_id: [finding_info.uid, finding_info.title]
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+      unmapped_keep: [leef_version, delim]
+    tests: {samples: "tests/leef_waf_block_tab/*.log", expected: "tests/leef_waf_block_tab/*.json"}
+
+  # LEEF 1.0 firewall traffic, tab separated, no delimiter field in the header.
+  - id: leef_fw_accept_tab
+    discriminator: "|FWALL|1.4|ACCEPT|"
+    body:
+      - {lit: "cat=traffic\tsrc="}
+      - {slot: src, type: ip}
+      - {lit: "\tsrcPort="}
+      - {slot: src_port, type: port}
+      - {lit: "\tdst="}
+      - {slot: dst, type: ip}
+      - {lit: "\tdstPort="}
+      - {slot: dst_port, type: port}
+      - {lit: "\tproto="}
+      - {slot: proto, type: enum, values: [tcp, udp, icmp]}
+      - {lit: "\taction="}
+      - {slot: action, type: enum, values: [accept, drop, reject]}
+      - {lit: "\tsrcBytes="}
+      - {slot: src_bytes, type: int}
+      - {lit: "\tdstBytes="}
+      - {slot: dst_bytes, type: int}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6
+      map:
+        src: src_endpoint.ip
+        src_port: {path: src_endpoint.port, transform: to_int}
+        dst: dst_endpoint.ip
+        dst_port: {path: dst_endpoint.port, transform: to_int}
+        proto: [connection_info.protocol_name,
+                {path: connection_info.protocol_num, enum: {tcp: 6, udp: 17, icmp: 1}}]
+        action: [action, {path: action_id, enum: {accept: 1, drop: 2, reject: 2}}]
+        src_bytes: {path: traffic.bytes_out, transform: to_int}
+        dst_bytes: {path: traffic.bytes_in, transform: to_int}
+        event_id: policy.name
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+      unmapped_keep: [leef_version]
+    tests: {samples: "tests/leef_fw_accept_tab/*.log", expected: "tests/leef_fw_accept_tab/*.json"}

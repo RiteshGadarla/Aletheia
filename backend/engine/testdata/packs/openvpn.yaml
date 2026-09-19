@@ -1,0 +1,33 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: openvpn
+version: 1
+applies_to:
+  vendor: OpenVPN
+  product: OpenVPN
+envelopes:
+- rfc3164_tag
+sources:
+- vpn01
+templates:
+- id: openvpn_tls_auth_ok
+  discriminator: tag:openvpn
+  body:
+  - slot: ip
+    type: ip
+  - lit: ':'
+  - slot: port
+    type: port
+  - lit: ' TLS: Username/Password authentication succeeded for username '''
+  - slot: user
+    type: custom
+    pattern: '[^'']*'
+  - lit: ''''
+  ocsf:
+    class_uid: 3002
+    activity_id: 1
+    constants:
+      status_id: 1
+    map:
+      ip: src_endpoint.ip
+      port: src_endpoint.port
+      user: actor.user.name

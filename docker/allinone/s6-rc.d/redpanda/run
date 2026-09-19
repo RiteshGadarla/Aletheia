@@ -1,0 +1,11 @@
+#!/command/with-contenv bash
+# Redpanda: raw bytes are replicated to disk before any parsing starts.
+set -eu
+exec 2>&1
+exec s6-setuidgid aletheia /opt/redpanda/bin/redpanda \
+  --redpanda-cfg /etc/aletheia/redpanda/redpanda.yaml \
+  --smp "${ALETHEIA_RP_CORES:-1}" \
+  --memory "${ALETHEIA_RP_MEMORY:-1G}" \
+  --overprovisioned \
+  --check=false \
+  --default-log-level=warn

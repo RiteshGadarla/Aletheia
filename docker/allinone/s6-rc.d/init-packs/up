@@ -1,0 +1,3 @@
+#!/command/execlineb -P
+with-contenv
+/opt/aletheia/init/init-packs.sh

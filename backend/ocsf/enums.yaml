@@ -31,3 +31,51 @@ protocol_num:
   47: gre
   50: esp
   58: ipv6-icmp
+
+# connection_info.direction_id (OCSF): 1 Inbound, 2 Outbound, 3 Local
+direction:
+  1: [in, inbound, ingress, incoming, recv]
+  2: [out, outbound, egress, outgoing, send]
+  3: [local, loopback]
+
+# status_id: 1 Success, 2 Failure (Authentication 3002, and any class with status)
+status:
+  1: [success, succeeded, ok, accept, accepted, allowed, established, connected]
+  2: [failure, failed, fail, error, denied, rejected, invalid, timeout]
+
+# HTTP method -> HTTP Activity (4002) activity_id
+http_method_activity:
+  1: [CONNECT]
+  2: [DELETE]
+  3: [GET]
+  4: [HEAD]
+  5: [OPTIONS]
+  6: [POST]
+  7: [PUT]
+  8: [TRACE]
+  9: [PATCH]
+
+# DNS RCODE name -> rcode_id (RFC 1035 / IANA values, as OCSF uses them)
+dns_rcode:
+  0: [NOERROR]
+  1: [FORMERR]
+  2: [SERVFAIL]
+  3: [NXDOMAIN]
+  4: [NOTIMP]
+  5: [REFUSED]
+
+# Suricata alert.severity (1 = most severe) -> OCSF severity_id
+suricata_severity:
+  1: 5   # Critical
+  2: 4   # High
+  3: 3   # Medium
+  4: 2   # Low
+
+# OCSF severity_id -> Detection Finding risk_level_id (1 Info .. 4 Critical)
+severity_to_risk_level:
+  1: 1
+  2: 1
+  3: 2
+  4: 3
+  5: 4
+  6: 4

@@ -1,0 +1,45 @@
+apiVersion: 1
+
+datasources:
+  - name: ClickHouse
+    uid: aletheia-clickhouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      host: clickhouse
+      port: 9000
+      protocol: native
+      secure: false
+      username: aletheia
+      defaultDatabase: aletheia
+      defaultTable: events
+    secureJsonData:
+      password: ${ALETHEIA_CH_PASSWORD}
+    editable: false
+
+  - name: Loki
+    uid: aletheia-loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      maxLines: 1000
+      # Link a Loki line back to the full record via structured metadata (spec §11.3).
+      derivedFields:
+        - name: event_uid
+          matcherType: label
+          matcherRegex: event_uid
+          url: /d/aletheia-events/aletheia-events?var-event_uid=${__value.raw}
+          datasourceUid: aletheia-clickhouse
+    editable: false
+
+  - name: Prometheus
+    uid: aletheia-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      httpMethod: POST
+      timeInterval: 10s
+    editable: false

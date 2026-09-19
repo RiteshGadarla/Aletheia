@@ -1,0 +1,374 @@
+# Aletheia production (multi-image) mode — spec §13.1/§13.5.
+# Versions come from docker/versions.env; override any of them in the shell or a .env file.
+# Secrets: deploy/secrets/aletheia.env (gitignored, optional). Never baked into an image.
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-llm-env: &llm-env
+  # CONTRACTS §9 — env is only a *default*; the settings table (set from the UI) wins.
+  ALETHEIA_LLM_PROVIDER: ${ALETHEIA_LLM_PROVIDER:-gemini}
+  ALETHEIA_LLM_MODEL: ${ALETHEIA_LLM_MODEL:-gemma-4-31b-it}
+  ALETHEIA_LLM_BASE_URL: ${ALETHEIA_LLM_BASE_URL:-}
+  ALETHEIA_LLM_API_KEY_FILE: ${ALETHEIA_LLM_API_KEY_FILE:-}
+  ALETHEIA_LLM_SEND_SAMPLES: ${ALETHEIA_LLM_SEND_SAMPLES:-masked}
+  ALETHEIA_AIRGAP: ${ALETHEIA_AIRGAP:-false}
+
+x-bus-env: &bus-env
+  ALETHEIA_BUS_BROKERS: redpanda:9092
+  ALETHEIA_CLICKHOUSE_ADDR: clickhouse:9000
+  ALETHEIA_CLICKHOUSE_DB: aletheia
+  ALETHEIA_POSTGRES_DSN: postgres://aletheia:${ALETHEIA_PG_PASSWORD:-aletheia}@postgres:5432/aletheia?sslmode=disable
+
+services:
+
+  # ---------- datastores ----------
+
+  postgres:
+    <<: *restart
+    image: postgres:${POSTGRES_VERSION:-16.6}-bookworm
+    environment:
+      POSTGRES_USER: aletheia
+      POSTGRES_PASSWORD: ${ALETHEIA_PG_PASSWORD:-aletheia}
+      POSTGRES_DB: aletheia
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aletheia -d aletheia"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  clickhouse:
+    <<: *restart
+    image: clickhouse/clickhouse-server:${CLICKHOUSE_VERSION:-24.8.14.39}
+    environment:
+      CLICKHOUSE_DB: aletheia
+      CLICKHOUSE_USER: aletheia
+      CLICKHOUSE_PASSWORD: ${ALETHEIA_CH_PASSWORD:-aletheia}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ulimits:
+      nofile: {soft: 262144, hard: 262144}
+    volumes:
+      - chdata:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+    ports:
+      - "${ALETHEIA_CH_HTTP_PORT:-8123}:8123"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  redpanda:
+    <<: *restart
+    image: redpandadata/redpanda:${REDPANDA_VERSION:-v24.3.6}
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=redpanda:33145
+      # Telemetry off at run time (spec §13.6).
+      - --set=redpanda.enable_usage_stats=false
+      - --set=pandaproxy.advertised_pandaproxy_api=[]
+    environment:
+      REDPANDA_ENVIRONMENT: production
+    volumes:
+      - rpdata:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=127.0.0.1:9092 | grep -q 'Healthy:.*true'"]
+      interval: 5s
+      timeout: 10s
+      retries: 40
+      start_period: 20s
+
+  minio:
+    <<: *restart
+    image: minio/minio:${MINIO_VERSION:-RELEASE.2024-12-18T13-15-44Z}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${ALETHEIA_S3_ACCESS_KEY:-aletheia}
+      MINIO_ROOT_PASSWORD: ${ALETHEIA_S3_SECRET_KEY:-aletheia-demo-secret}
+      MINIO_UPDATE: "off"           # no update check (spec §13.6)
+      MINIO_PROMETHEUS_AUTH_TYPE: public
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # ---------- one-shot init ----------
+
+  init-topics:
+    image: redpandadata/redpanda:${REDPANDA_VERSION:-v24.3.6}
+    depends_on:
+      redpanda: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "/init/create-topics.sh"]
+    environment:
+      REDPANDA_BROKERS: redpanda:9092
+      ALETHEIA_PARTITIONS: ${ALETHEIA_PARTITIONS:-12}
+      ALETHEIA_RAW_RETENTION_MS: ${ALETHEIA_RAW_RETENTION_MS:-604800000}
+    volumes:
+      - ./redpanda:/init:ro
+    restart: "no"
+
+  init-buckets:
+    image: minio/mc:${MINIO_MC_VERSION:-RELEASE.2024-11-21T17-21-54Z}
+    depends_on:
+      minio: {condition: service_healthy}
+    entrypoint: ["/bin/sh", "/init/create-buckets.sh"]
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${ALETHEIA_S3_ACCESS_KEY:-aletheia}
+      MINIO_SECRET_KEY: ${ALETHEIA_S3_SECRET_KEY:-aletheia-demo-secret}
+    volumes:
+      - ./minio:/init:ro
+    restart: "no"
+
+  # ---------- observability ----------
+
+  loki:
+    <<: *restart
+    image: grafana/loki:${LOKI_VERSION:-3.3.2}
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - lokidata:/data/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready | grep -q ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  prometheus:
+    <<: *restart
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v3.1.0}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - promdata:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/healthy | grep -q Healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  grafana:
+    <<: *restart
+    image: grafana/grafana:${GRAFANA_VERSION:-11.4.0}
+    depends_on:
+      prometheus: {condition: service_healthy}
+      loki: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${ALETHEIA_ADMIN_PASSWORD:-aletheia}
+      # Telemetry + update checks off (spec §13.6).
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_USAGE_STATS_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_INSTALL_PLUGINS: ""
+      ALETHEIA_CH_PASSWORD: ${ALETHEIA_CH_PASSWORD:-aletheia}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "${ALETHEIA_GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # ---------- aletheia services ----------
+
+  aletheia-worker:
+    <<: *restart
+    image: ${ALETHEIA_REGISTRY:-docker.io/aletheia}/aletheia-worker:${ALETHEIA_VERSION:-1.0.0}
+    build:
+      context: ..
+      dockerfile: docker/worker/Dockerfile
+    depends_on:
+      clickhouse: {condition: service_healthy}
+      postgres: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+      init-topics: {condition: service_completed_successfully}
+    environment:
+      <<: [*bus-env, *llm-env]
+      ALETHEIA_ROLE: worker
+      ALETHEIA_CONSUMER_GROUP: aletheia-workers
+      ALETHEIA_PACKS_DIR: /packs
+      ALETHEIA_METRICS_ADDR: ":9108"
+      ALETHEIA_BATCH_ROWS: ${ALETHEIA_BATCH_ROWS:-10000}
+      ALETHEIA_BATCH_INTERVAL: ${ALETHEIA_BATCH_INTERVAL:-1s}
+      ALETHEIA_CLICKHOUSE_USER: aletheia
+      ALETHEIA_CLICKHOUSE_PASSWORD: ${ALETHEIA_CH_PASSWORD:-aletheia}
+    env_file:
+      - path: ./secrets/aletheia.env
+        required: false
+    volumes:
+      - ../backend/packs:/packs:ro
+    deploy:
+      replicas: ${ALETHEIA_WORKERS:-2}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9108/healthz | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  aletheia-sealer:
+    <<: *restart
+    image: ${ALETHEIA_REGISTRY:-docker.io/aletheia}/aletheia-sealer:${ALETHEIA_VERSION:-1.0.0}
+    build:
+      context: ..
+      dockerfile: docker/sealer/Dockerfile
+    depends_on:
+      postgres: {condition: service_healthy}
+      minio: {condition: service_healthy}
+      init-buckets: {condition: service_completed_successfully}
+      aletheia-worker: {condition: service_started}
+    environment:
+      <<: *bus-env
+      ALETHEIA_ROLE: sealer
+      ALETHEIA_METRICS_ADDR: ":9109"
+      ALETHEIA_S3_ENDPOINT: http://minio:9000
+      ALETHEIA_S3_BUCKET: aletheia
+      ALETHEIA_S3_ACCESS_KEY: ${ALETHEIA_S3_ACCESS_KEY:-aletheia}
+      ALETHEIA_S3_SECRET_KEY: ${ALETHEIA_S3_SECRET_KEY:-aletheia-demo-secret}
+      ALETHEIA_CLICKHOUSE_USER: aletheia
+      ALETHEIA_CLICKHOUSE_PASSWORD: ${ALETHEIA_CH_PASSWORD:-aletheia}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9109/healthz | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  aletheia-studio:
+    <<: *restart
+    image: ${ALETHEIA_REGISTRY:-docker.io/aletheia}/aletheia-studio:${ALETHEIA_VERSION:-1.0.0}
+    build:
+      context: ..
+      dockerfile: docker/studio/Dockerfile
+    depends_on:
+      postgres: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      redpanda: {condition: service_healthy}
+    environment:
+      <<: [*bus-env, *llm-env]
+      ALETHEIA_ROLE: studio
+      ALETHEIA_PACKS_DIR: /packs
+      ALETHEIA_ENGINE_BIN: /usr/local/bin/aletheia
+      ALETHEIA_CLICKHOUSE_HTTP: http://clickhouse:8123
+      ALETHEIA_CLICKHOUSE_USER: aletheia
+      ALETHEIA_CLICKHOUSE_PASSWORD: ${ALETHEIA_CH_PASSWORD:-aletheia}
+      # Generated per deployment; overridden by secrets/aletheia.env when present.
+      ALETHEIA_SECRET: ${ALETHEIA_SECRET:-}
+    env_file:
+      - path: ./secrets/aletheia.env
+        required: false
+    volumes:
+      - ../backend/packs:/packs
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 25s
+
+  aletheia-ui:
+    <<: *restart
+    image: ${ALETHEIA_REGISTRY:-docker.io/aletheia}/aletheia-ui:${ALETHEIA_VERSION:-1.0.0}
+    build:
+      context: ..
+      dockerfile: docker/ui/Dockerfile
+    depends_on:
+      aletheia-studio: {condition: service_healthy}
+    environment:
+      ALETHEIA_STUDIO_UPSTREAM: http://aletheia-studio:8081
+      ALETHEIA_GRAFANA_UPSTREAM: http://grafana:3000
+    ports:
+      - "${ALETHEIA_UI_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # ---------- collection (last: nothing arrives before the pipeline is up) ----------
+
+  vector:
+    <<: *restart
+    image: timberio/vector:${VECTOR_VERSION:-0.44.0}-debian
+    depends_on:
+      redpanda: {condition: service_healthy}
+      init-topics: {condition: service_completed_successfully}
+      aletheia-worker: {condition: service_healthy}
+      loki: {condition: service_healthy}
+    command: ["--config-dir", "/etc/vector"]
+    environment:
+      VECTOR_CONFIG_DIR: /etc/vector
+      VECTOR_LOG: info
+      # Vector's own telemetry/usage reporting is opt-in; kept explicitly off.
+      VECTOR_INTERNAL_LOG_RATE_LIMIT: "10"
+      ALETHEIA_BUS_BROKERS: redpanda:9092
+      ALETHEIA_LOKI_ENDPOINT: http://loki:3100
+      ALETHEIA_HEC_ENDPOINT: ${ALETHEIA_HEC_ENDPOINT:-http://splunk-hec.invalid:8088}
+      ALETHEIA_HEC_TOKEN: ${ALETHEIA_HEC_TOKEN:-}
+      ALETHEIA_CEF_SYSLOG_ADDR: ${ALETHEIA_CEF_SYSLOG_ADDR:-siem.invalid:514}
+      ALETHEIA_TLS_DIR: /etc/vector/tls
+    volumes:
+      - ./vector/ingest.toml:/etc/vector/ingest.toml:ro
+      - ./vector/sinks.toml:/etc/vector/sinks.toml:ro
+      - ./vector/sources.csv:/etc/vector/sources.csv:ro
+      - ./vector/tls:/etc/vector/tls:ro
+      - vectordata:/var/lib/vector
+    ports:
+      - "${ALETHEIA_SYSLOG_PORT:-5514}:5514/udp"
+      - "${ALETHEIA_SYSLOG_PORT:-5514}:5514/tcp"
+      - "${ALETHEIA_SYSLOG_TLS_PORT:-6514}:6514/tcp"
+    healthcheck:
+      test: ["CMD-SHELL", "vector top --url http://127.0.0.1:8686/graphql --interval 1000 >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8686/health | grep -q ok"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  pgdata:
+  chdata:
+  rpdata:
+  miniodata:
+  lokidata:
+  promdata:
+  grafanadata:
+  vectordata:

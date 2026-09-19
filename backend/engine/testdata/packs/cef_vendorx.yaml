@@ -1,0 +1,78 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: cef_vendorx
+version: 1
+applies_to:
+  vendor: VendorX
+  product: NGFW
+envelopes:
+- rfc3164_std
+- bare
+sources:
+- ngfw01
+templates:
+- id: cef_1001_std
+  discriminator: CEF:VendorX|NGFW|1001
+  body:
+  - lit: 'CEF:'
+  - slot: cef_version
+    type: custom
+    pattern: \d+
+  - lit: '|'
+  - slot: cef_vendor
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: cef_product
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: cef_devver
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: cef_sigid
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: cef_name
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: cef_sev
+    type: custom
+    pattern: \d+
+  - lit: '|src='
+  - slot: src
+    type: ip
+  - lit: ' spt='
+  - slot: spt
+    type: port
+  - lit: ' dst='
+  - slot: dst
+    type: ip
+  - lit: ' dpt='
+  - slot: dpt
+    type: port
+  - lit: ' proto='
+  - slot: proto
+    type: word
+  - lit: ' act='
+  - slot: act
+    type: word
+  ocsf:
+    class_uid: 4001
+    activity_id: 1
+    map:
+      src: src_endpoint.ip
+      spt: src_endpoint.port
+      dst: dst_endpoint.ip
+      dpt: dst_endpoint.port
+      proto:
+        path: connection_info.protocol_name
+        transform: lowercase
+      act: action_id
+      cef_name: message
+      cef_sigid: metadata.event_code
+    unmapped_keep:
+    - cef_sev
+    - cef_devver

@@ -1,0 +1,6 @@
+#!/command/with-contenv bash
+# nginx serves the bundled UI on 8080 and proxies /api and /healthz.
+set -eu
+exec 2>&1
+/opt/aletheia/init/wait-for.sh tcp 127.0.0.1:8088 60
+exec nginx -c /etc/nginx/nginx.conf -g 'daemon off;'

@@ -1,0 +1,11 @@
+#!/command/with-contenv bash
+# PostgreSQL: sources, packs, approvals, audit log, Merkle roots (spec §5.4).
+set -eu
+exec 2>&1
+exec s6-setuidgid pgrun /usr/lib/postgresql/16/bin/postgres \
+  -D /data/postgres \
+  -c listen_addresses=127.0.0.1 \
+  -c port=5432 \
+  -c unix_socket_directories=/data/run \
+  -c log_min_messages=warning \
+  -c fsync=on

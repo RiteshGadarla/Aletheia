@@ -1,0 +1,22 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: generic_5424
+version: 1
+applies_to:
+  vendor: Generic
+  product: syslog
+envelopes:
+- rfc5424_std
+sources:
+- rtr01
+templates:
+- id: sshd_msg
+  discriminator: app:sshd
+  body:
+  - slot: msg
+    type: custom
+    pattern: .*
+  ocsf:
+    class_uid: 3002
+    activity_id: 1
+    map:
+      msg: message

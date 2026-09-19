@@ -1,0 +1,11 @@
+#!/command/with-contenv bash
+# LAST to start: no log may arrive before the pipeline can process it (spec §13.2).
+set -eu
+exec 2>&1
+/opt/aletheia/init/wait-for.sh tcp 127.0.0.1:9092 120
+/opt/aletheia/init/wait-for.sh http http://127.0.0.1:3100/ready 120
+export VECTOR_CONFIG_DIR=/etc/aletheia/vector
+export ALETHEIA_BUS_BROKERS=127.0.0.1:9092
+export ALETHEIA_LOKI_ENDPOINT=http://127.0.0.1:3100
+exec s6-setuidgid aletheia /usr/local/bin/vector \
+  --config-dir /etc/aletheia/vector --require-healthy false

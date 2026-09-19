@@ -1,0 +1,10 @@
+#!/command/with-contenv bash
+set -eu
+exec 2>&1
+exec s6-setuidgid aletheia /usr/local/bin/prometheus \
+  --config.file=/etc/aletheia/prometheus/prometheus.yml \
+  --storage.tsdb.path=/data/prometheus \
+  --storage.tsdb.retention.time=7d \
+  --web.listen-address=127.0.0.1:9090 \
+  --web.enable-lifecycle \
+  --log.level=warn

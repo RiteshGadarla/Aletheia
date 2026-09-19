@@ -1,0 +1,198 @@
+# Envelope templates (CONTRACTS §2, spec §6.4 / §9.1-§9.4).
+# Each envelope is a token list ending in the `body` slot. The engine substitutes the matched
+# body template's tokens for that slot, so the compiled regex covers the WHOLE raw line and
+# reconstruction is byte-exact including the syslog header.
+# RFC 3164 note: single-digit days are space padded ("Sep  9"); syslog3164_ts covers that.
+
+envelopes:
+
+  # <166>Sep 19 14:31:02 fw01 %ASA-6-302013: ...
+  rfc3164_std:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: host, type: hostname}
+    - {lit: " "}
+    - {slot: body, type: text}
+
+  # <166>Sep  9 04:05:06 %ASA-6-302013: ...   (ASA with "no device-id", hostname omitted)
+  rfc3164_nohost:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: body, type: text}
+
+  # <29>Sep 19 14:31:02 vpn01 openvpn[812]: ...
+  rfc3164_tag:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: host, type: hostname}
+    - {lit: " "}
+    - {slot: tag, type: custom, pattern: '[A-Za-z0-9._/-]+'}
+    - {lit: "["}
+    - {slot: pid, type: int}
+    - {lit: "]: "}
+    - {slot: body, type: text}
+
+  # <30>Sep 19 14:31:02 vpn01 openvpn: ...    (tag without pid)
+  rfc3164_tag_nopid:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: host, type: hostname}
+    - {lit: " "}
+    - {slot: tag, type: custom, pattern: '[A-Za-z0-9._/-]+'}
+    - {lit: ": "}
+    - {slot: body, type: text}
+
+  # <134>Sep 19 14:31:02 filterlog[1234]: ... (pfSense emits tag+pid with no hostname)
+  rfc3164_tag_nohost:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: tag, type: custom, pattern: '[A-Za-z0-9._/-]+'}
+    - {lit: "["}
+    - {slot: pid, type: int}
+    - {lit: "]: "}
+    - {slot: body, type: text}
+
+  # <165>1 2026-09-19T14:31:02.123+05:30 edge-rtr01 sshd 812 ID47 [meta sequenceId="29"] msg
+  rfc5424:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">1 "}
+    - {slot: ts, type: iso8601_ts}
+    - {lit: " "}
+    - {slot: host, type: hostname}
+    - {lit: " "}
+    - {slot: app, type: custom, pattern: '[^ ]+'}
+    - {lit: " "}
+    - {slot: procid, type: custom, pattern: '[^ ]+'}
+    - {lit: " "}
+    - {slot: msgid, type: custom, pattern: '[^ ]+'}
+    - {lit: " "}
+    - {slot: sd, type: custom, pattern: '(?:-|(?:\[[^\]]*\])+)'}
+    - {lit: " "}
+    - {slot: body, type: text}
+
+  # <189>date=2026-09-19 time=14:31:02 ...   (FortiGate: PRI only, no 3164 timestamp)
+  syslog_pri_only:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: body, type: text}
+
+  # CEF:0|VendorX|NGFW|4.2|1001|Connection allowed|3|<extension>
+  # Header escaping: \| and \\ are legal inside header fields (spec §9.3).
+  cef:
+    - {lit: "CEF:"}
+    - {slot: cef_version, type: int}
+    - {lit: "|"}
+    - {slot: dev_vendor, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: dev_product, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: dev_version, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: sig_id, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: name, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: cef_severity, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: body, type: text}
+
+  # <134>Sep 19 14:31:02 waf01 CEF:0|...|<extension>   (CEF carried over RFC 3164 syslog)
+  rfc3164_cef:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: host, type: hostname}
+    - {lit: " CEF:"}
+    - {slot: cef_version, type: int}
+    - {lit: "|"}
+    - {slot: dev_vendor, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: dev_product, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: dev_version, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: sig_id, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: name, type: custom, pattern: '(?:[^|\\]|\\.)*'}
+    - {lit: "|"}
+    - {slot: cef_severity, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: body, type: text}
+
+  # LEEF:2.0|VendorY|WAF|3.1|BLOCK|^|src=...   (LEEF 2.0 with a declared delimiter field)
+  leef:
+    - {lit: "LEEF:"}
+    - {slot: leef_version, type: custom, pattern: '\d+\.\d+'}
+    - {lit: "|"}
+    - {slot: dev_vendor, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: dev_product, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: dev_version, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: event_id, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: delim, type: custom, pattern: '(?:x[0-9A-Fa-f]{2}|\\t|[^|])'}
+    - {lit: "|"}
+    - {slot: body, type: text}
+
+  # LEEF:1.0|Vendor|Product|Version|EventID|src=...  (no delimiter field; tab is the default)
+  leef_nodelim:
+    - {lit: "LEEF:"}
+    - {slot: leef_version, type: custom, pattern: '\d+\.\d+'}
+    - {lit: "|"}
+    - {slot: dev_vendor, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: dev_product, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: dev_version, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: event_id, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: body, type: text}
+
+  # <134>Sep 19 14:31:02 waf01 LEEF:2.0|...|^|src=...
+  rfc3164_leef:
+    - {lit: "<"}
+    - {slot: pri, type: int}
+    - {lit: ">"}
+    - {slot: ts, type: syslog3164_ts}
+    - {lit: " "}
+    - {slot: host, type: hostname}
+    - {lit: " LEEF:"}
+    - {slot: leef_version, type: custom, pattern: '\d+\.\d+'}
+    - {lit: "|"}
+    - {slot: dev_vendor, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: dev_product, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: dev_version, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: event_id, type: custom, pattern: '[^|]*'}
+    - {lit: "|"}
+    - {slot: delim, type: custom, pattern: '(?:x[0-9A-Fa-f]{2}|\\t|[^|])'}
+    - {lit: "|"}
+    - {slot: body, type: text}
+
+  # No envelope at all: file tails (Squid access.log, Suricata eve.json).
+  bare:
+    - {slot: body, type: text}

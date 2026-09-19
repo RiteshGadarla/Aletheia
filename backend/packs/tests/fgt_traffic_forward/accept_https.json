@@ -1,0 +1,61 @@
+{
+  "action": "accept",
+  "action_id": 1,
+  "activity_id": 6,
+  "aletheia": {
+    "pack": "fortigate",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "template",
+    "template_id": "fgt_traffic_forward"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "connection_info": {
+    "direction_id": 2,
+    "protocol_name": "tcp",
+    "protocol_num": 6,
+    "uid": "8823"
+  },
+  "dst_endpoint": {
+    "interface_name": "port1",
+    "ip": "203.0.113.5",
+    "port": 443,
+    "svc_name": "HTTPS"
+  },
+  "metadata": {
+    "log_level": "notice",
+    "log_name": "FGT-EDGE",
+    "product": {
+      "name": "FortiGate",
+      "vendor_name": "Fortinet"
+    }
+  },
+  "policy": {
+    "uid": "12"
+  },
+  "severity_id": 2,
+  "src_endpoint": {
+    "interface_name": "port2",
+    "ip": "10.0.0.5",
+    "port": 52144
+  },
+  "traffic": {
+    "bytes_in": 5120,
+    "bytes_out": 1324,
+    "packets_in": 18,
+    "packets_out": 12
+  },
+  "type_uid": 400106,
+  "unmapped": {
+    "date": "2026-09-19",
+    "devid": "FG100D3G16800001",
+    "duration": "30",
+    "eventtime": "1789828262123456789",
+    "time": "14:31:02",
+    "trandisp": "snat",
+    "transip": "198.51.100.7",
+    "transport": "52144",
+    "vd": "root"
+  }
+}

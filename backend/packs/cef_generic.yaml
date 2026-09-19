@@ -1,0 +1,154 @@
+# Generic CEF (spec §9.3). Structural templating: the header pipes live in the `cef` envelope,
+# the ordered extension key list becomes the body literals and the values become slots.
+# KEY ORDER IS PART OF TEMPLATE IDENTITY - a device that reorders keys deterministically
+# produces a new template, no clustering needed.
+# Discriminator for CEF is the envelope-derived vendor|product|signature-id (spec §6.4); it is
+# written here as the header substring so it is still a literal check against the raw line.
+pack: cef_generic
+version: 1
+applies_to: {format: cef}
+envelopes: [cef, rfc3164_cef]
+
+templates:
+
+  # CEF:0|VendorX|NGFW|4.2|1001|Connection allowed|3|src=.. spt=.. dst=.. dpt=.. proto=.. act=..
+  - id: cef_ngfw_1001_conn
+    discriminator: "|NGFW|4.2|1001|"
+    body:
+      - {lit: "src="}
+      - {slot: src, type: ip}
+      - {lit: " spt="}
+      - {slot: spt, type: port}
+      - {lit: " dst="}
+      - {slot: dst, type: ip}
+      - {lit: " dpt="}
+      - {slot: dpt, type: port}
+      - {lit: " proto="}
+      - {slot: proto, type: enum, values: [TCP, UDP, ICMP, GRE, ESP]}
+      - {lit: " act="}
+      - {slot: act, type: enum, values: [allow, block, deny, drop, permit, reject]}
+    ocsf:
+      class_uid: 4001
+      activity_id: 6
+      map:
+        src: src_endpoint.ip
+        spt: {path: src_endpoint.port, transform: to_int}
+        dst: dst_endpoint.ip
+        dpt: {path: dst_endpoint.port, transform: to_int}
+        proto: [{path: connection_info.protocol_name, transform: lowercase},
+                {path: connection_info.protocol_num,
+                 enum: {TCP: 6, UDP: 17, ICMP: 1, GRE: 47, ESP: 50}}]
+        act: [action, {path: action_id, enum: {allow: 1, permit: 1,
+                                               block: 2, deny: 2, drop: 2, reject: 2}}]
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+        name: message
+        sig_id: metadata.product.feature.name
+        cef_severity: {path: severity_id,
+                       enum: {"0": 1, "1": 2, "2": 2, "3": 2, "4": 3, "5": 3,
+                              "6": 3, "7": 4, "8": 4, "9": 5, "10": 5}}
+      unmapped_keep: [cef_version]
+    tests: {samples: "tests/cef_ngfw_1001_conn/*.log", expected: "tests/cef_ngfw_1001_conn/*.json"}
+
+  # A denied connection with a richer, differently ordered key list and a free-text msg=.
+  - id: cef_ngfw_1002_deny
+    discriminator: "|NGFW|4.2|1002|"
+    body:
+      - {lit: "rt="}
+      - {slot: rt, type: int}
+      - {lit: " src="}
+      - {slot: src, type: ip}
+      - {lit: " spt="}
+      - {slot: spt, type: port}
+      - {lit: " dst="}
+      - {slot: dst, type: ip}
+      - {lit: " dpt="}
+      - {slot: dpt, type: port}
+      - {lit: " proto="}
+      - {slot: proto, type: enum, values: [TCP, UDP, ICMP, GRE, ESP]}
+      - {lit: " act="}
+      - {slot: act, type: enum, values: [allow, block, deny, drop, permit, reject]}
+      - {lit: " deviceInboundInterface="}
+      - {slot: dev_in_if, type: word}
+      - {lit: " cs1Label=Policy cs1="}
+      - {slot: cs1, type: word}
+      - {lit: " msg="}
+      - {slot: msg, type: text}
+    ocsf:
+      class_uid: 4001
+      activity_id: 5                       # Refuse
+      map:
+        src: src_endpoint.ip
+        spt: {path: src_endpoint.port, transform: to_int}
+        dst: dst_endpoint.ip
+        dpt: {path: dst_endpoint.port, transform: to_int}
+        dev_in_if: src_endpoint.interface_name
+        proto: [{path: connection_info.protocol_name, transform: lowercase},
+                {path: connection_info.protocol_num,
+                 enum: {TCP: 6, UDP: 17, ICMP: 1, GRE: 47, ESP: 50}}]
+        act: [action, {path: action_id, enum: {allow: 1, permit: 1,
+                                               block: 2, deny: 2, drop: 2, reject: 2}}]
+        cs1: policy.name
+        msg: message
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+        sig_id: metadata.product.feature.name
+        cef_severity: {path: severity_id,
+                       enum: {"0": 1, "1": 2, "2": 2, "3": 2, "4": 3, "5": 3,
+                              "6": 3, "7": 4, "8": 4, "9": 5, "10": 5}}
+      unmapped_keep: [cef_version, rt, name]
+    tests: {samples: "tests/cef_ngfw_1002_deny/*.log", expected: "tests/cef_ngfw_1002_deny/*.json"}
+
+  # WAF rule hit carried over RFC 3164 syslog -> Detection Finding.
+  - id: cef_waf_100_block
+    discriminator: "|WAF|2.0|100|"
+    body:
+      - {lit: "src="}
+      - {slot: src, type: ip}
+      - {lit: " spt="}
+      - {slot: spt, type: port}
+      - {lit: " dst="}
+      - {slot: dst, type: ip}
+      - {lit: " dpt="}
+      - {slot: dpt, type: port}
+      - {lit: " request="}
+      - {slot: request, type: word}
+      - {lit: " requestMethod="}
+      - {slot: request_method, type: custom, pattern: '[A-Z]+'}
+      - {lit: " suser="}
+      - {slot: suser, type: word}
+      - {lit: " act="}
+      - {slot: act, type: enum, values: [block, allow, detect]}
+      - {lit: " cs2Label=RuleId cs2="}
+      - {slot: cs2, type: word}
+      - {lit: " msg="}
+      - {slot: msg, type: text}
+    ocsf:
+      class_uid: 2004
+      activity_id: 1
+      constants:
+        finding_info.analytic.type: Rule
+        finding_info.analytic.category: WAF
+      map:
+        src: src_endpoint.ip
+        spt: {path: src_endpoint.port, transform: to_int}
+        dst: dst_endpoint.ip
+        dpt: {path: dst_endpoint.port, transform: to_int}
+        suser: user.name
+        cs2: [finding_info.uid, finding_info.analytic.uid]
+        name: finding_info.title
+        msg: [finding_info.desc, message]
+        act: [action, {path: action_id, enum: {block: 2, allow: 1, detect: 1}}]
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+        cef_severity: [{path: severity_id,
+                        enum: {"0": 1, "1": 2, "2": 2, "3": 2, "4": 3, "5": 3,
+                               "6": 3, "7": 4, "8": 4, "9": 5, "10": 5}},
+                       {path: risk_level_id,
+                        enum: {"0": 1, "1": 1, "2": 1, "3": 1, "4": 2, "5": 2,
+                               "6": 2, "7": 3, "8": 3, "9": 4, "10": 4}}]
+      unmapped_keep: [cef_version, sig_id, request, request_method]
+    tests: {samples: "tests/cef_waf_100_block/*.log", expected: "tests/cef_waf_100_block/*.json"}

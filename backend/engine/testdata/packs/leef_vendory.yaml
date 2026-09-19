@@ -1,0 +1,59 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: leef_vendory
+version: 1
+applies_to:
+  vendor: VendorY
+  product: WAF
+envelopes:
+- bare
+- rfc3164_std
+sources:
+- waf01
+templates:
+- id: leef_block
+  discriminator: LEEF:VendorY|WAF|BLOCK
+  body:
+  - lit: 'LEEF:'
+  - slot: leef_version
+    type: custom
+    pattern: '[0-9.]+'
+  - lit: '|'
+  - slot: leef_vendor
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: leef_product
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: leef_devver
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|'
+  - slot: leef_eventid
+    type: custom
+    pattern: (?:[^|\\]|\\.)*
+  - lit: '|^|src='
+  - slot: src
+    type: ip
+  - lit: ^dst=
+  - slot: dst
+    type: ip
+  - lit: ^usrName=
+  - slot: usrName
+    type: custom
+    pattern: '[^\^]*'
+  - lit: ^action=
+  - slot: action
+    type: custom
+    pattern: '[^\^]*'
+  ocsf:
+    class_uid: 4001
+    activity_id: 6
+    map:
+      src: src_endpoint.ip
+      dst: dst_endpoint.ip
+      usrName: actor.user.name
+      action: action_id
+    unmapped_keep:
+    - leef_devver

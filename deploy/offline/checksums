@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Generate or verify the air-gap transfer checksums (spec §13.4).
+#   ./checksums generate [bundle-dir]
+#   ./checksums verify   [bundle-dir]
+# Verification is the gate: nothing from an unverified transfer should be loaded.
+set -euo pipefail
+
+CMD="${1:-verify}"
+DIR="${2:-$(pwd)}"
+FILE="checksums.sha256"
+
+cd "$DIR"
+shopt -s nullglob
+
+case "$CMD" in
+  generate)
+    files=( ./*.tar ./*.tgz digests.txt )
+    [ ${#files[@]} -gt 0 ] || { echo "nothing to checksum in $DIR" >&2; exit 1; }
+    sha256sum "${files[@]}" > "$FILE"
+    echo "wrote $DIR/$FILE"
+    cat "$FILE"
+    ;;
+  verify)
+    [ -f "$FILE" ] || { echo "error: $DIR/$FILE missing" >&2; exit 1; }
+    if sha256sum -c "$FILE"; then
+      echo "OK — transfer intact"
+    else
+      echo "MISMATCH — do not load these images" >&2
+      exit 2
+    fi
+    ;;
+  *)
+    echo "usage: $0 {generate|verify} [bundle-dir]" >&2
+    exit 64
+    ;;
+esac

@@ -1,0 +1,150 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: pfsense_filterlog
+version: 3
+applies_to:
+  vendor: Netgate
+  product: pfSense
+envelopes:
+- rfc3164_nohost_tag
+- rfc3164_tag
+sources:
+- pf01
+templates:
+- id: filterlog_ipv4_tcp
+  discriminator: tag:filterlog
+  body:
+  - slot: rule
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: subrule
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: anchor
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: tracker
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: iface
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: reason
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: action
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: direction
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: ipver
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: tos
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: ecn
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: ttl
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: ipid
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: ipoffset
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: flags
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: protoid
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: proto
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: length
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: srcip
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: dstip
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: srcport
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: dstport
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: datalen
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: tcpflags
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: seq
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: ack
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: window
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: urg
+    type: custom
+    pattern: '[^,]*'
+  - lit: ','
+  - slot: opts
+    type: custom
+    pattern: '[^,]*'
+  ocsf:
+    class_uid: 4001
+    activity_id: 6
+    map:
+      srcip: src_endpoint.ip
+      dstip: dst_endpoint.ip
+      srcport:
+        path: src_endpoint.port
+        transform: to_int
+      dstport:
+        path: dst_endpoint.port
+        transform: to_int
+      proto: connection_info.protocol_name
+      action: action_id
+      iface: device.interface_name
+    unmapped_keep:
+    - rule
+    - tracker
+    - tcpflags
+    - opts

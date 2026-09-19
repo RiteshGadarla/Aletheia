@@ -1,0 +1,75 @@
+# Test fixture pack. Generated for the reconstruction round-trip suite.
+pack: squid_access
+version: 1
+applies_to:
+  vendor: Squid
+  product: squid
+envelopes:
+- bare
+sources:
+- proxy01
+templates:
+- id: squid_native
+  body:
+  - slot: ts
+    type: epoch_ts
+  - slot: pad
+    type: ws
+  - slot: elapsed
+    type: int
+  - lit: ' '
+  - slot: client
+    type: ip
+  - lit: ' '
+  - slot: code
+    type: custom
+    pattern: '[A-Z_]+'
+  - lit: /
+  - slot: status
+    type: int
+  - lit: ' '
+  - slot: bytes
+    type: int
+  - lit: ' '
+  - slot: method
+    type: custom
+    pattern: '[A-Z]+'
+  - lit: ' '
+  - slot: url
+    type: word
+  - lit: ' '
+  - slot: user
+    type: word
+  - lit: ' '
+  - slot: hier
+    type: custom
+    pattern: '[A-Z_]+'
+  - lit: /
+  - slot: peer
+    type: word
+  - lit: ' '
+  - slot: ctype
+    type: word
+  ocsf:
+    class_uid: 4002
+    activity_id: 1
+    map:
+      ts:
+        path: metadata.logged_time
+        transform: ts_parse
+      client: src_endpoint.ip
+      url: http_request.url.text
+      method: http_request.http_method
+      status:
+        path: http_response.code
+        transform: to_int
+      bytes:
+        path: traffic.bytes_out
+        transform: to_int
+    unmapped_keep:
+    - code
+    - hier
+    - peer
+    - ctype
+    - user
+    - elapsed
