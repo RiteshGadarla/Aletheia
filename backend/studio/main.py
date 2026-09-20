@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .api import sources as sources_api, stats as stats_api
+from .api import samples as samples_api, sources as sources_api, stats as stats_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -49,6 +49,7 @@ async def lifespan(_: FastAPI):
     watcher = asyncio.create_task(sources_api.auto_propose_loop())
     yield
     watcher.cancel()
+    samples_api.stop_all_managed()
     st.connectors.stop_all()
     await st.pipeline.stop()
 
@@ -854,4 +855,5 @@ def set_airgap(update: AirgapUpdate) -> dict[str, Any]:
 
 api.include_router(sources_api.router)
 api.include_router(stats_api.router)
+api.include_router(samples_api.router)
 app.include_router(api)

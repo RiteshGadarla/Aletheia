@@ -8,7 +8,7 @@ import { isCloudProvider } from '../lib/types';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
   IconClose, IconCloud, IconDemo, IconEvents, IconHome, IconInfo, IconLineage, IconMenu, IconMoon,
-  IconSettings, IconShieldAlert, IconSources, IconStudio, IconSun,
+  IconSettings, IconShieldAlert, IconSources, IconSun,
 } from './Icons';
 
 const NAV = [
@@ -16,8 +16,7 @@ const NAV = [
   { to: '/dashboard/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: false },
   { to: '/dashboard/lineage', label: 'Lineage', desc: 'Byte provenance', Icon: IconLineage, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
-  { to: '/dashboard/studio', label: 'Studio', desc: 'Onboard new formats', Icon: IconStudio, end: false },
-  { to: '/dashboard/demo', label: 'Demo', desc: 'Run the scenarios', Icon: IconDemo, end: false },
+  { to: '/dashboard/demo', label: 'Demo', desc: 'Sample servers', Icon: IconDemo, end: false },
   { to: '/dashboard/settings', label: 'Settings', desc: 'LLM & air-gap', Icon: IconSettings, end: false },
 ];
 

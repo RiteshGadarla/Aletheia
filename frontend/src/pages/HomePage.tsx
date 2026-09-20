@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import { useTheme } from '../lib/theme';
 import {
-  IconEvents, IconSources, IconLineage, IconStudio, IconDemo, IconSettings,
+  IconEvents, IconSources, IconLineage, IconDemo, IconSettings,
   IconShield, IconCheck, IconAlert, IconSpinner, IconMoon, IconSun,
 } from '../components/Icons';
 import type { ReactNode } from 'react';
@@ -77,7 +77,7 @@ const REQS: { id: string; title: string; desc: string }[] = [
   { id: 'b', title: 'Extract source attributes', desc: 'Templates capture every variable; unmapped kept in unmapped{}' },
   { id: 'c', title: 'Normalize to taxonomy', desc: 'OCSF classes and fields, pinned version across all sources' },
   { id: 'd', title: 'Traceability', desc: 'event_uid, raw_sha256, byte-level lineage, pack versioning' },
-  { id: 'e', title: 'Plug-and-play onboarding', desc: 'YAML parser packs, Studio UI, hot reload — no restarts' },
+  { id: 'e', title: 'Plug-and-play onboarding', desc: 'YAML parser packs, Sources UI, hot reload — no restarts' },
   { id: 'f', title: 'Unified visibility', desc: 'One schema across sources in ClickHouse, Grafana and Loki' },
   { id: 'g', title: 'SIEM / Data Lake integration', desc: 'Kafka, Splunk HEC, CEF re-emit, Loki, Parquet on MinIO' },
   { id: 'h', title: 'AI/ML ready', desc: 'Typed columns, Parquet exports partitioned by class and date' },
@@ -275,7 +275,6 @@ Variables (stored per event):
             <NavCard to="/dashboard/events" icon={<IconEvents size={20} />} title="Events Explorer" desc="Unified OCSF table — filter, search and paginate all sources." />
             <NavCard to="/dashboard/sources" icon={<IconSources size={20} />} title="Sources" desc="Connect log systems, then approve, reject or retry the mapping." />
             <NavCard to="/dashboard/lineage" icon={<IconLineage size={20} />} title="Lineage Viewer" desc="Byte provenance for every normalized field." />
-            <NavCard to="/dashboard/studio" icon={<IconStudio size={20} />} title="Onboarding Studio" desc="Cluster, derive templates, gate and approve." />
             <NavCard to="/dashboard/demo" icon={<IconDemo size={20} />} title="Demo Console" desc="Run the nine demonstration scenarios." />
             <NavCard to="/dashboard/settings" icon={<IconSettings size={20} />} title="Settings" desc="LLM provider, air-gap mode, connection test." />
           </div>

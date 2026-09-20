@@ -7,7 +7,6 @@ import { LineagePage } from './pages/LineagePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { SourcesPage } from './pages/SourcesPage';
-import { StudioPage } from './pages/StudioPage';
 
 export default function App() {
   return (
@@ -22,7 +21,7 @@ export default function App() {
         <Route path="lineage" element={<LineagePage />} />
         <Route path="lineage/:eventUid" element={<LineagePage />} />
         <Route path="sources" element={<SourcesPage />} />
-        <Route path="studio" element={<StudioPage />} />
+        <Route path="studio" element={<Navigate to="/dashboard/sources" replace />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="demo" element={<DemoPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -31,7 +30,7 @@ export default function App() {
       {/* Legacy redirects */}
       <Route path="/events" element={<Navigate to="/dashboard/events" replace />} />
       <Route path="/lineage/*" element={<Navigate to="/dashboard/lineage" replace />} />
-      <Route path="/studio" element={<Navigate to="/dashboard/studio" replace />} />
+      <Route path="/studio" element={<Navigate to="/dashboard/sources" replace />} />
       <Route path="/settings" element={<Navigate to="/dashboard/settings" replace />} />
       <Route path="/demo" element={<Navigate to="/dashboard/demo" replace />} />
       <Route path="*" element={<Navigate to="/" replace />} />

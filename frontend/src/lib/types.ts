@@ -374,3 +374,13 @@ export interface Overview {
   normalized: { available: boolean; total?: number; full?: number; partial?: number; raw_only?: number; templates?: number; normalized_pct?: number };
   history: { at: number; action: string; actor: string; source: string; reason?: string }[];
 }
+
+/* ---- demo sample servers ---- */
+export interface SamplePreset { id: string; type: string; config: Record<string, string> }
+export interface SampleServer {
+  id: string; title: string; format: string; transport: string; port: number; preset: SamplePreset;
+  running: boolean; managed: boolean;
+  stats: { total: number; avg_eps: number; base_rate: number; mood: string; risk: number; paused: boolean;
+    by_severity: Record<string, number>; subscribers: number } | null;
+}
+export interface SampleList { available: boolean; samples: SampleServer[] }

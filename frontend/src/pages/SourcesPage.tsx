@@ -1,5 +1,6 @@
 // Sources: connect any log system, watch raw lines land, then approve, reject or retry the mapping.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge, Confidence, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../components/Bits';
 import { api, errMessage } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
@@ -20,7 +21,7 @@ const TYPE_FIELDS: Record<string, { k: string; label: string; ph: string }[]> = 
   push: [],
 };
 
-function SeverityBar({ by }: { by: Record<string, number> }) {
+export function SeverityBar({ by }: { by: Record<string, number> }) {
   const total = Object.values(by).reduce((a, b) => a + b, 0);
   if (!total) return <span className="hint">no data</span>;
   return (
@@ -32,11 +33,23 @@ function SeverityBar({ by }: { by: Record<string, number> }) {
   );
 }
 
-function AddSource({ types, onDone }: { types: string[]; onDone: () => void }) {
-  const [id, setId] = useState('');
-  const [type, setType] = useState('tcp');
-  const [cfg, setCfg] = useState<Record<string, string>>({});
+interface Prefill { id: string; type: string; cfg: Record<string, string> }
+
+/** `?connect=1&id=..&type=..&host=..&port=..` (from the Demo page) pre-fills the form. */
+function prefillFrom(p: URLSearchParams): Prefill | null {
+  if (!p.get('connect')) return null;
+  const cfg: Record<string, string> = {};
+  p.forEach((v, k) => { if (!['connect', 'id', 'type'].includes(k)) cfg[k] = v; });
+  return { id: p.get('id') ?? '', type: p.get('type') ?? 'tcp', cfg };
+}
+
+function AddSource({ types, onDone, prefill }: { types: string[]; onDone: () => void; prefill: Prefill | null }) {
+  const [id, setId] = useState(prefill?.id ?? '');
+  const [type, setType] = useState(prefill?.type ?? 'tcp');
+  const [cfg, setCfg] = useState<Record<string, string>>(prefill?.cfg ?? {});
   const [err, setErr] = useState<string | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (prefill) box.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, [prefill]);
   const submit = async () => {
     setErr(null);
     try {
@@ -45,8 +58,8 @@ function AddSource({ types, onDone }: { types: string[]; onDone: () => void }) {
     } catch (e) { setErr(errMessage(e)); }
   };
   return (
-    <Panel title="Connect a source" subtitle="Pull from an external system, or point a shipper at Aletheia">
-      <div className="stack-sm">
+    <Panel title="Connect a source" subtitle={prefill ? 'Pre-filled from the demo. Review it and press Connect' : 'Pull from an external system, or point a shipper at Aletheia'}>
+      <div className="stack-sm" ref={box} style={prefill ? { outline: '2px solid var(--accent)', outlineOffset: 6, borderRadius: 8 } : undefined}>
         <div className="btn-row">
           <label className="field"><span className="lbl">Name</span>
             <input value={id} onChange={(e) => setId(e.target.value)} placeholder="edge-firewall" /></label>
@@ -171,6 +184,8 @@ function Review({ src, onChanged }: { src: SourceInfo; onChanged: () => void }) 
 
 export function SourcesPage() {
   const list = useAsync(() => api.listSources(), []);
+  const [params, setParams] = useSearchParams();
+  const prefill = prefillFrom(params);
   const [sel, setSel] = useState<string | null>(null);
   const { reload } = list;
   useEffect(() => { const t = setInterval(reload, 3000); return () => clearInterval(t); }, [reload]);
@@ -216,7 +231,8 @@ export function SourcesPage() {
         )}
       </Panel>
       {current && <Review key={current.id} src={current} onChanged={reload} />}
-      <AddSource types={list.data?.types ?? Object.keys(TYPE_FIELDS)} onDone={reload} />
+      <AddSource key={params.toString()} prefill={prefill} types={list.data?.types ?? Object.keys(TYPE_FIELDS)}
+        onDone={() => { setParams({}); reload(); }} />
     </div>
   );
 }

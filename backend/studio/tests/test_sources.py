@@ -159,3 +159,12 @@ def test_guess_severity_matches_regex_version() -> None:
     lines += ["", "plain text", "<>x", "<999>y", '{"level":"FATAL"}', "%ASA-x-1: a", "<164>%ASA-6-1: brute"]
     bad = [ln for ln in lines if guess_severity(ln) != _old_guess(ln)]
     assert not bad, bad[:3]
+
+
+def test_sample_catalogue_and_errors(client: Any) -> None:
+    from studio.api import samples
+    listing = client.get("/api/v1/demo/samples").json()
+    assert listing["available"] and {x["id"] for x in listing["samples"]} == set(samples.SAMPLES)
+    assert all(x["preset"]["type"] and x["preset"]["id"] for x in listing["samples"])
+    assert client.post("/api/v1/demo/samples/nope/start").status_code == 404
+    assert client.post("/api/v1/demo/samples/nope/control", json={"rate": 5}).status_code == 404

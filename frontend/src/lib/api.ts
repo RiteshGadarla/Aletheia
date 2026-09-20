@@ -6,7 +6,7 @@ import { mockApi } from './mocks';
 import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
-  Overview, QuarantineCluster, RawLine, ReplayDiff, SourceInfo, SourceList, SourceProposal,
+  Overview, QuarantineCluster, RawLine, SampleList, SampleServer, ReplayDiff, SourceInfo, SourceList, SourceProposal,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -109,6 +109,13 @@ export const api = {
 
   /* dashboard stats */
   overview: (): Promise<Overview> => http('/stats/overview'),
+
+  /* demo sample servers */
+  listSamples: (): Promise<SampleList> => http('/demo/samples'),
+  startSample: (id: string): Promise<SampleServer> => http(`/demo/samples/${id}/start`, { method: 'POST' }),
+  stopSample: (id: string): Promise<SampleServer> => http(`/demo/samples/${id}/stop`, { method: 'POST' }),
+  controlSample: (id: string, b: { rate?: number; risk?: number; clear_risk?: boolean; paused?: boolean; drift?: boolean }): Promise<SampleServer> =>
+    http(`/demo/samples/${id}/control`, { method: 'POST', body: JSON.stringify(b) }),
 
   /* sources */
   listSources: (): Promise<SourceList> => http('/sources'),
