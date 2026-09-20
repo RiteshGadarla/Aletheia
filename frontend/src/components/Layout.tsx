@@ -6,6 +6,7 @@ import { useTheme } from '../lib/theme';
 import { useAsync } from '../lib/useAsync';
 import { isCloudProvider } from '../lib/types';
 import { ErrorBoundary } from './ErrorBoundary';
+import { NotifyProvider, useNotify } from '../lib/notify';
 import {
   IconClose, IconCloud, IconDemo, IconEvents, IconHome, IconInfo, IconLineage, IconMenu, IconMoon,
   IconSettings, IconShieldAlert, IconSources, IconSun,
@@ -69,6 +70,11 @@ function ThemeToggle() {
 }
 
 export function Layout() {
+  return <NotifyProvider><LayoutInner /></NotifyProvider>;
+}
+
+function LayoutInner() {
+  const { pending } = useNotify();
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -119,6 +125,9 @@ export function Layout() {
                 {label}
                 <span className="desc">{desc}</span>
               </span>
+              {to === '/dashboard/sources' && pending.length > 0 && (
+                <span className="nav-badge" title={`${pending.length} ready for approval`}>{pending.length}</span>
+              )}
             </NavLink>
           ))}
         </nav>

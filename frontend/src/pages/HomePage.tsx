@@ -133,7 +133,7 @@ export function HomePage() {
       <section className="lp-hero">
         <div className="lp-hero-bg" aria-hidden="true" />
         <div className="lp-hero-inner">
-          <div className="lp-hero-badge">SIH 2024 · Problem Statement 26156</div>
+          <div className="lp-hero-badge">SIH 2026 · Problem Statement 26156</div>
           <h1>Universal Lossless Log<br />Pre-processing Framework</h1>
           <p className="lp-hero-tag">Normalize everything. Lose nothing. Prove it.</p>
           <p className="lp-hero-sub">

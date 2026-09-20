@@ -1199,3 +1199,44 @@ pre.out.bad { border-color: var(--bad-border); }
 .sbar i:first-child { border-radius: 4px 0 0 4px; } .sbar i:last-child { border-radius: 0 4px 4px 0; }
 .sbar-row { display: grid; grid-template-columns: 110px minmax(0, 1fr) 64px; gap: var(--s3); align-items: center; padding: 5px 0; }
 .sbar-row .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: var(--fs-sm); }
+
+/* ---------------------------------------------------------------- modal, toast, badges */
+.modal-scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-start; justify-content: center;
+  padding: 6vh var(--s4) var(--s4); background: rgba(10, 16, 24, .5); overflow-y: auto; }
+.modal { width: 100%; max-width: 640px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow-lg); display: flex; flex-direction: column; max-height: 88vh; outline: none; }
+.modal.wide { max-width: 1040px; }
+.modal-head { display: flex; align-items: flex-start; gap: var(--s3); padding: var(--s4) var(--s5); border-bottom: 1px solid var(--border); }
+.modal-head h2 { margin: 0; font-size: 18px; }
+.modal-body { padding: var(--s5); overflow-y: auto; min-height: 0; }
+.modal-foot { display: flex; justify-content: flex-end; gap: var(--s3); padding: var(--s4) var(--s5); border-top: 1px solid var(--border); }
+.tabs { display: flex; gap: var(--s1); border-bottom: 1px solid var(--border); margin-bottom: var(--s4); }
+.tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: var(--s2) var(--s4); color: var(--text-muted); }
+.tabs button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.toast-stack { position: fixed; bottom: var(--s4); right: var(--s4); z-index: 60; display: flex; flex-direction: column; gap: var(--s3); width: min(380px, calc(100vw - 32px)); }
+.toast { display: flex; gap: var(--s3); padding: var(--s4); background: var(--surface); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: 8px; box-shadow: var(--shadow-lg); }
+.toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
+.toast .t-title { font-weight: 600; } .toast .t-body { color: var(--text-muted); font-size: var(--fs-sm); margin: 2px 0 var(--s3); }
+.nav-badge { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--accent-fg);
+  font-size: 12px; font-weight: 600; line-height: 20px; text-align: center; }
+.progress { height: 6px; width: 96px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.progress i { display: block; height: 100%; background: var(--accent); }
+.ready-banner { display: flex; align-items: center; gap: var(--s4); flex-wrap: wrap; padding: var(--s4) var(--s5);
+  border: 1px solid var(--warn-border); background: var(--warn-soft); border-radius: 10px; }
+.src-row { cursor: pointer; } .src-row:hover td { background: var(--surface-hover); }
+.src-row.ready td { background: var(--warn-soft); }
+.kv { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--s2) var(--s4); font-size: var(--fs-sm); }
+.kv dt { color: var(--text-muted); margin: 0; } .kv dd { margin: 0; word-break: break-all; }
+
+/* Dominant "add source" call to action */
+.add-hero { display: flex; align-items: center; gap: var(--s5); width: 100%; padding: var(--s5) var(--s6); text-align: left;
+  border: 2px dashed var(--accent); border-radius: 14px; background: var(--accent-soft); color: var(--text); cursor: pointer;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease; }
+.add-hero:hover:not(:disabled) { background: var(--accent-soft); box-shadow: var(--shadow-md); transform: translateY(-1px); color: var(--text); }
+.add-hero .plus { display: grid; place-items: center; width: 52px; height: 52px; flex: none; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg); font-size: 32px; line-height: 1; font-weight: 300; }
+.add-hero .ah-title { display: block; font-size: 20px; font-weight: 650; }
+.add-hero .ah-sub { display: block; margin-top: 2px; color: var(--text-muted); font-size: var(--fs-md, 15px); }
+.add-hero .ah-cta { flex: none; padding: 12px 26px; border-radius: 10px; background: var(--accent); color: var(--accent-fg); font-size: 16px; font-weight: 600; }
+@media (max-width: 640px) { .add-hero { flex-wrap: wrap; } .add-hero .ah-cta { width: 100%; text-align: center; } }

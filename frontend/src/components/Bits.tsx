@@ -232,9 +232,8 @@ export function ErrorState({ error, what, fix }: { error: string; what?: string;
         <div className="detail">{error}</div>
         <div className="fix">
           {fix ?? (proxyish
-            ? <>The Studio API looks unreachable. Start it with <code>make studio</code>, or
-              <code> cd backend &amp;&amp; uvicorn studio.main:app --port 8081</code>, then retry.</>
-            : 'Retry, and check the Studio API logs if it keeps failing.')}
+            ? 'The server looks unreachable. Make sure it is running, then retry.'
+            : 'Retry. If it keeps failing, check the server logs.')}
         </div>
       </div>
     </div>

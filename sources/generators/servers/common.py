@@ -13,7 +13,7 @@ import time
 from collections import deque
 from urllib.parse import parse_qs, urlsplit
 
-RING = 2000
+RING = 5000
 SEVS = ("info", "notice", "warn", "risk")
 WS_GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -55,7 +55,7 @@ class Mood:
 
 
 class Feed:
-    """Endless log producer. gen(feed) -> (line, severity). Poisson arrivals, diurnal rate."""
+    """Endless log producer. gen(feed) -> (line, severity). Poisson arrivals at ~rate lines/s."""
 
     def __init__(self, name: str, gen, rate: float, seed: int):
         self.name, self.gen, self.rate = name, gen, rate
@@ -99,8 +99,8 @@ class Feed:
                 await asyncio.sleep(0.5)
                 continue
             lt = time.localtime()
-            diurnal = 1 + 0.5 * math.sin((lt.tm_hour + lt.tm_min / 60 - 9) / 24 * 2 * math.pi)
-            rate = max(self.rate * diurnal * (1 + 2 * self.mood.risk), 0.01)
+            diurnal = 1 + 0.05 * math.sin((lt.tm_hour + lt.tm_min / 60 - 9) / 24 * 2 * math.pi)
+            rate = max(self.rate * diurnal * (1 + 0.1 * self.mood.risk), 0.01)
             self.emit()
             await asyncio.sleep(self.rng.expovariate(rate))
 

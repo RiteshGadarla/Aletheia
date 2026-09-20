@@ -173,7 +173,7 @@ export function EventsPage() {
           >
             {filtered
               ? 'Try widening the source, class or parse-status filter, or clearing the search text.'
-              : 'Nothing has been ingested yet. Open the Demo console and run “Start traffic” to stream the seeded sources in.'}
+              : 'Nothing has been normalized yet. Connect a source on the Sources page and approve its mapping.'}
           </EmptyState>
         )}
 

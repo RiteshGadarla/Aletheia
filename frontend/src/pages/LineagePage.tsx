@@ -60,9 +60,8 @@ export function LineagePage() {
           {picker.error && <div className="panel-pad"><ErrorState error={picker.error} what="events" /></div>}
           {picker.data?.events.length === 0 && (
             <EmptyState title="No events yet" icon={<IconInbox size={22} />}
-              action={<Link className="btn-link" to="/dashboard/demo">Open the Demo Console</Link>}>
-              Run <strong>Start traffic</strong> in the Demo Console, or seed the store with{' '}
-              <code>bench/seed_clickhouse.py</code>.
+              action={<Link className="btn-link" to="/dashboard/sources">Open Sources</Link>}>
+              Connect a source and approve its mapping. Its events show up here.
             </EmptyState>
           )}
           {picker.data && picker.data.events.length > 0 && (

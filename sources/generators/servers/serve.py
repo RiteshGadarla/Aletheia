@@ -11,12 +11,12 @@ from common import Feed, http_handler, tcp_handler, udp_pusher
 
 # type: (generator factory, data port, control-http port, base eps, transport)
 SERVICES = {
-    "asa":       (formats.asa,       9101, 9201, 4.0, "tcp"),
-    "fortigate": (formats.fortigate, 9102, 9102, 3.0, "http"),
-    "web":       (formats.web,       9103, 9103, 6.0, "http"),
-    "vpn":       (formats.vpn,       9104, 9104, 1.0, "http"),
-    "cef":       (formats.cef,       9105, 9105, 2.0, "udp"),
-    "app":       (formats.app,       9106, 9106, 5.0, "http"),
+    "asa":       (formats.asa,       9101, 9201, 55.0, "tcp"),
+    "fortigate": (formats.fortigate, 9102, 9102, 55.0, "http"),
+    "web":       (formats.web,       9103, 9103, 55.0, "http"),
+    "vpn":       (formats.vpn,       9104, 9104, 55.0, "http"),
+    "cef":       (formats.cef,       9105, 9105, 55.0, "udp"),
+    "app":       (formats.app,       9106, 9106, 55.0, "http"),
 }
 
 

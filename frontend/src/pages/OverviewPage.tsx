@@ -138,7 +138,7 @@ export function OverviewPage() {
 
           {d.sources.length === 0 ? (
             <EmptyState title="Nothing ingesting yet">
-              Run <code>make gens</code>, then connect the servers on <Link to="/dashboard/sources">Sources</Link>.
+              Start a sample server on the <Link to="/dashboard/demo">Demo</Link> page, or add a source on <Link to="/dashboard/sources">Sources</Link>.
             </EmptyState>
           ) : (
             <div className="viz-grid">
@@ -177,7 +177,7 @@ export function OverviewPage() {
                     <Kpi label="Normalized" value={`${d.normalized.normalized_pct}%`} sub={`${int(d.normalized.raw_only ?? 0)} raw only`} />
                     <Kpi label="Templates" value={int(d.normalized.templates ?? 0)} />
                   </div>
-                ) : <p className="hint">ClickHouse is not reachable. Raw lines are still being stored. Start it with <code>make services</code>.</p>}
+                ) : <p className="hint">The event database is not reachable. Raw lines are still being stored.</p>}
               </Panel>
               <Panel title="Recent decisions">
                 {d.history.length === 0 ? <p className="hint">No approvals yet. Open a source in review on <Link to="/dashboard/sources">Sources</Link>.</p> : (
