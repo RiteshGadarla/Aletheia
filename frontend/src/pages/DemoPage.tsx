@@ -53,8 +53,8 @@ function SampleCard({ s, busy, onStart, onStop, onAttack, onConnect }: {
       <div className="sc-chips"><span>{s.format}</span><span>{s.transport}</span><span>port {s.port}</span></div>
       {st ? (
         <div className="sc-stats">
-          <span className="eps">{st.avg_eps}<small className="hint"> /s</small></span>
-          <span className="hint">{st.total.toLocaleString()} lines</span>
+          <span className="eps" title="lines in the last second">{st.eps_now}<small className="hint"> /s now</small></span>
+          <span className="hint" title="average since start">avg {Math.round(st.avg_eps)} · {st.total.toLocaleString()} lines</span>
           <Badge kind={st.mood === 'attack' ? 'bad' : st.mood === 'elevated' ? 'warn' : 'ok'}>{st.mood}</Badge>
           <SeverityBar by={st.by_severity} />
         </div>
@@ -94,7 +94,7 @@ function SampleServers() {
   };
   const samples = q.data?.samples ?? [];
   const running = samples.filter((x) => x.running);
-  const eps = running.reduce((a, x) => a + (x.stats?.avg_eps ?? 0), 0);
+  const eps = running.reduce((a, x) => a + (x.stats?.eps_now ?? 0), 0);
   const lines = running.reduce((a, x) => a + (x.stats?.total ?? 0), 0);
 
   return (

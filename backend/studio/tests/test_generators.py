@@ -39,3 +39,20 @@ def test_app_lines_are_json():
     f = _mix("app", 0.5, 50)
     assert all(json.loads(e[2])["level"] for e in f.ring)
 
+
+
+def test_rate_wanders_within_band_and_is_uneven() -> None:
+    f = Feed("x", formats.asa(1), 60, 11)
+    assert (f.lo, f.hi) == (44.0, 76.0)
+    seen = []
+    for _ in range(600):
+        f.wander()
+        seen.append(f.cur)
+    assert all(44.0 <= v <= 76.0 for v in seen)
+    assert max(seen) - min(seen) > 12 and len({round(v) for v in seen}) > 15      # not a flat number
+
+
+def test_rate_control_rescales_band() -> None:
+    f = Feed("x", formats.asa(1), 60, 11)
+    f.set_center(4)
+    assert f.lo < 4 < f.hi < 6

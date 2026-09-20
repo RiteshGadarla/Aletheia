@@ -380,7 +380,7 @@ export interface SamplePreset { id: string; type: string; config: Record<string,
 export interface SampleServer {
   id: string; title: string; format: string; transport: string; port: number; preset: SamplePreset;
   purpose: string; category: string; running: boolean; managed: boolean;
-  stats: { total: number; avg_eps: number; base_rate: number; mood: string; risk: number; paused: boolean;
+  stats: { total: number; avg_eps: number; eps_now: number; band: [number, number]; base_rate: number; mood: string; risk: number; paused: boolean;
     by_severity: Record<string, number>; subscribers: number } | null;
 }
 export interface SampleList { available: boolean; samples: SampleServer[] }

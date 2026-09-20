@@ -5,7 +5,6 @@ import asyncio
 import base64
 import hashlib
 import json
-import math
 import random
 import re
 import socket
@@ -55,10 +54,11 @@ class Mood:
 
 
 class Feed:
-    """Endless log producer. gen(feed) -> (line, severity). Poisson arrivals at ~rate lines/s."""
+    """Endless log producer. gen(feed) -> (line, severity). The rate wanders inside [lo, hi] lines/s
+    (random walk plus occasional bursts and dips), so per-second counts are uneven, never a flat N."""
 
     def __init__(self, name: str, gen, rate: float, seed: int):
-        self.name, self.gen, self.rate = name, gen, rate
+        self.name, self.gen = name, gen
         self.rng = random.Random(seed)
         self.mood = Mood(self.rng)
         self.ring: deque = deque(maxlen=RING)
@@ -67,6 +67,26 @@ class Feed:
         self.paused = self.drift = False
         self.counts = dict.fromkeys(SEVS, 0)
         self.started = time.time()
+        self.set_center(rate)
+        self.cur = self.center
+        self._sec, self._sec_n, self.eps_now = int(time.time()), 0, 0
+
+    def set_center(self, rate: float) -> None:
+        """Mean rate. Inside 40-80 the steering band is 44-76, so real per-second counts (which jitter a few
+        lines around it) stay within 40-80; outside that range it is +-33% around the mean."""
+        self.center = max(float(rate), 0.01)
+        self.lo, self.hi = (44.0, 76.0) if 40 <= self.center <= 80 else (self.center * 0.67, self.center * 1.33)
+
+    @property
+    def rate(self) -> float:
+        return self.center
+
+    def wander(self) -> None:
+        """One step per second: pulled toward the mean, jostled, and now and then a burst or a dip."""
+        c = self.cur + self.rng.gauss(0, 0.09 * self.center) + 0.2 * (self.center - self.cur)
+        if self.rng.random() < 0.07:
+            c += self.rng.choice((-1, 1)) * self.rng.uniform(0.15, 0.4) * self.center
+        self.cur = min(max(c, self.lo), self.hi)
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=1000)
@@ -81,6 +101,10 @@ class Feed:
         self.seq += 1
         self.total += 1
         self.counts[sev] += 1
+        sec = int(time.time())
+        if sec != self._sec:
+            self.eps_now, self._sec, self._sec_n = self._sec_n if sec == self._sec + 1 else 0, sec, 0
+        self._sec_n += 1
         e = (self.seq, time.time_ns(), line, sev)
         self.ring.append(e)
         for q in self.subs:
@@ -94,20 +118,21 @@ class Feed:
             now = time.time()
             if now - last >= 1:
                 self.mood.step(now)
+                self.wander()
                 last = now
             if self.paused:
                 await asyncio.sleep(0.5)
                 continue
-            lt = time.localtime()
-            diurnal = 1 + 0.05 * math.sin((lt.tm_hour + lt.tm_min / 60 - 9) / 24 * 2 * math.pi)
-            rate = max(self.rate * diurnal * (1 + 0.1 * self.mood.risk), 0.01)
+            rate = min(self.cur * (1 + 0.1 * self.mood.risk), self.hi * 1.05)
             self.emit()
-            await asyncio.sleep(self.rng.expovariate(rate))
+            # Gamma inter-arrivals (shape 5): steadier than Poisson, so the count follows `cur`.
+            await asyncio.sleep(self.rng.gammavariate(5, 1 / (5 * max(rate, 0.01))))
 
     def stats(self) -> dict:
         up = max(time.time() - self.started, 1)
         return {"name": self.name, "total": self.total, "seq": self.seq, "by_severity": self.counts,
-                "avg_eps": round(self.total / up, 2), "base_rate": self.rate, "mood": self.mood.label,
+                "avg_eps": round(self.total / up, 2), "eps_now": self.eps_now, "base_rate": self.center,
+                "band": [round(self.lo), round(self.hi)], "mood": self.mood.label,
                 "risk": round(self.mood.risk, 2), "paused": self.paused, "drift": self.drift,
                 "subscribers": len(self.subs), "uptime_s": int(up)}
 
@@ -185,7 +210,8 @@ def _control(feed: Feed, method: str, path: str, q: dict, body: bytes):
         try:
             c = json.loads(body or b"{}")
             if "rate" in c:
-                feed.rate = max(float(c["rate"]), 0.01)
+                feed.set_center(c["rate"])
+                feed.cur = feed.center
             if "paused" in c:
                 feed.paused = bool(c["paused"])
             if "drift" in c:

@@ -9,23 +9,24 @@ import os
 import formats
 from common import Feed, http_handler, tcp_handler, udp_pusher
 
-# type: (generator factory, data port, control-http port, base eps, transport)
+# type: (generator factory, data port, control-http port, mean lines/s, transport). Each mean differs;
+# the live rate wanders within 40-80 (see common.Feed.wander).
 SERVICES = {
-    "asa":       (formats.asa,       9101, 9201, 55.0, "tcp"),
-    "fortigate": (formats.fortigate, 9102, 9102, 55.0, "http"),
-    "web":       (formats.web,       9103, 9103, 55.0, "http"),
-    "vpn":       (formats.vpn,       9104, 9104, 55.0, "http"),
+    "asa":       (formats.asa,       9101, 9201, 48.0, "tcp"),
+    "fortigate": (formats.fortigate, 9102, 9102, 60.0, "http"),
+    "web":       (formats.web,       9103, 9103, 70.0, "http"),
+    "vpn":       (formats.vpn,       9104, 9104, 46.0, "http"),
     "cef":       (formats.cef,       9105, 9105, 55.0, "udp"),
-    "app":       (formats.app,       9106, 9106, 55.0, "http"),
-    "shop":      (formats.shop,      9107, 9107, 55.0, "http"),
-    "defense":   (formats.defense,   9110, 9210, 55.0, "tcp"),
+    "app":       (formats.app,       9106, 9106, 65.0, "http"),
+    "shop":      (formats.shop,      9107, 9107, 72.0, "http"),
+    "defense":   (formats.defense,   9110, 9210, 52.0, "tcp"),
 }
 
 
 async def start(name: str, seed: int, host: str) -> None:
     make, port, ctl, rate, transport = SERVICES[name]
     rate = float(os.environ.get("RATE", rate))
-    feed = Feed(name, make(seed), rate, seed)
+    feed = Feed(name, make(seed), rate, seed + sum(map(ord, name)))
     asyncio.create_task(feed.run())
     await asyncio.start_server(http_handler(feed), host, ctl)
     if transport == "tcp":
