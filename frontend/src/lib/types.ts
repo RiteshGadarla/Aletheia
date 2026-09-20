@@ -275,6 +275,7 @@ export interface ConnTest {
   error: string | null;
   provider: Provider;
   model: string;
+  sample_response?: string | null;
 }
 
 /** Gemini is the only provider that leaves the machine. */
@@ -284,7 +285,7 @@ export const isCloudProvider = (p: Provider): boolean => CLOUD_PROVIDERS.include
 export const PROVIDER_DEFAULTS: Record<Provider, { model: string; base_url: string }> = {
   none: { model: '', base_url: '' },
   gemini: { model: 'gemma-4-31b-it', base_url: 'https://generativelanguage.googleapis.com/v1beta' },
-  local: { model: '', base_url: 'http://localhost:11434/v1' },
+  local: { model: 'smollm:135m', base_url: 'http://localhost:11434/v1' },
 };
 
 /* ---------- Pack verification (GET /packs/verify) ---------- */

@@ -1,11 +1,9 @@
-// Events explorer: every source lands in one OCSF table. Pagination is server-side —
-// `limit`/`offset` go to the API and `total` comes back from it.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Badge, EmptyState, ErrorState, PageHead, Panel, ParseStatusBadge, TableSkeleton,
 } from '../components/Bits';
-import { IconInbox, IconSearch } from '../components/Icons';
+import { IconInbox, IconSearch, IconSources } from '../components/Icons';
 import { Pagination } from '../components/Pagination';
 import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
@@ -21,8 +19,6 @@ const fmtEndpoint = (e?: Endpoint): string => {
   if (!e) return '—';
   const host = e.ip ?? e.hostname ?? e.interface_name;
   if (!host) return '—';
-  // The API sends `port: null` for protocols that have none, and `!== undefined` let that
-  // through as the literal text ":null".
   return e.port != null ? `${host}:${e.port}` : host;
 };
 
@@ -100,25 +96,41 @@ export function EventsPage() {
 
   const clearAll = () => { setSourceId(''); setClassUid(''); setParseStatus(''); setQ(''); };
 
-  // One line of scope, so the page does not need a row of stat boxes above the table.
-  const summary = data
-    ? `${total.toLocaleString()}${filtered ? ' matching' : ''} events · ${facets.sources.length} sources`
-      + ` · ${facets.classes.length} OCSF classes`
-    : error ? 'unavailable' : 'loading…';
-
   return (
     <div className="stack">
-      <PageHead title="Events">
-        Every source normalises to the same OCSF columns. Filter, then open any row to see the exact
-        bytes each field came from.
+      <PageHead
+        title="Events Explorer"
+        right={
+          data && (
+            <div className="header-stats-row">
+              <div className="hs-chip">
+                <span className="hs-val">{total.toLocaleString()}</span>
+                <span className="hs-lbl">{filtered ? 'matching' : 'events'}</span>
+              </div>
+              <div className="hs-chip">
+                <span className="hs-val">{facets.sources.length}</span>
+                <span className="hs-lbl">sources</span>
+              </div>
+              <div className="hs-chip">
+                <span className="hs-val">{facets.classes.length}</span>
+                <span className="hs-lbl">classes</span>
+              </div>
+            </div>
+          )
+        }
+      >
+        Every log source normalizes to unified OCSF security schemas. Filter, search, or inspect exact byte provenance.
       </PageHead>
 
-      {/* One panel holds filters, table and pager, so the page is a single box, not three. */}
       <Panel
         flush
-        title="Event stream"
-        subtitle={loading ? 'refreshing…' : summary}
-        right={filtered && <button type="button" className="ghost" onClick={clearAll}>Clear filters</button>}
+        title="Normalized Event Stream"
+        subtitle={loading ? 'refreshing…' : undefined}
+        right={filtered && (
+          <button type="button" className="ghost" onClick={clearAll}>
+            Clear filters
+          </button>
+        )}
       >
         <div className="panel-pad">
           <div className="filter-bar">
@@ -131,17 +143,17 @@ export function EventsPage() {
             </label>
 
             <label className="field">
-              <span className="lbl">OCSF class</span>
+              <span className="lbl">OCSF Class</span>
               <select value={classUid} onChange={(e) => setClassUid(e.target.value)}>
                 <option value="">All classes</option>
                 {facets.classes.map((c) => (
-                  <option key={c.class_uid} value={c.class_uid}>{c.name} · {c.class_uid}</option>
+                  <option key={c.class_uid} value={c.class_uid}>{c.name} ({c.class_uid})</option>
                 ))}
               </select>
             </label>
 
             <label className="field">
-              <span className="lbl">Parse status</span>
+              <span className="lbl">Parse Status</span>
               <select value={parseStatus} onChange={(e) => setParseStatus(e.target.value)}>
                 <option value="">All statuses</option>
                 <option value="full">full</option>
@@ -152,11 +164,16 @@ export function EventsPage() {
 
             <label className="field search">
               <span className="lbl"><IconSearch size={12} /> Search</span>
-              <input
-                placeholder="substring across the event JSON — IP, user, message…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
+              <div className="lineage-search-box" style={{ width: '100%', minWidth: 0 }}>
+                <input
+                  placeholder="Filter across IP, user, message, host..."
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+                {q && (
+                  <button type="button" className="ghost icon-sm" onClick={() => setQ('')}>×</button>
+                )}
+              </div>
             </label>
           </div>
         </div>
@@ -188,10 +205,10 @@ export function EventsPage() {
                     <th>Class</th>
                     <th>Status</th>
                     <th>Severity</th>
-                    <th>Source endpoint</th>
+                    <th>Source Endpoint</th>
                     <th>Destination</th>
                     <th>Summary</th>
-                    <th>Template</th>
+                    <th>Lineage</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -199,16 +216,23 @@ export function EventsPage() {
                     const sev = SEVERITY[ev.severity_id];
                     return (
                       <tr
-                        // The API can repeat a row at deep offsets, so the uid alone is not
-                        // unique within a page and React drops the duplicates.
                         key={`${ev.aletheia.event_uid}:${i}`}
                         className="clickable"
                         onClick={() => navigate(`/dashboard/lineage/${ev.aletheia.event_uid}`)}
                         title="Open byte lineage for this event"
                       >
-                        <td className="mono nowrap">{fmtTime(ev.time)}</td>
-                        <td className="nowrap">{ev.aletheia.source_id}</td>
-                        <td className="nowrap">{className(ev.class_uid)}</td>
+                        <td className="mono nowrap">
+                          <span className="mono bold">{fmtTime(ev.time)}</span>
+                        </td>
+                        <td className="nowrap">
+                          <span className="source-pill">
+                            <IconSources size={13} />
+                            {ev.aletheia.source_id}
+                          </span>
+                        </td>
+                        <td className="nowrap">
+                          <Badge kind="plain">{className(ev.class_uid)}</Badge>
+                        </td>
                         <td><ParseStatusBadge status={ev.aletheia.parse_status} /></td>
                         <td className="nowrap">
                           {sev
@@ -224,8 +248,17 @@ export function EventsPage() {
                         <td className="wrap" title={summaryOf(ev) || undefined}>
                           <span className="clamp2">{summaryOf(ev) || <span className="dim">—</span>}</span>
                         </td>
-                        <td className="mono nowrap clip" title={ev.aletheia.template_id || undefined}>
-                          {ev.aletheia.template_id || <span className="dim">none</span>}
+                        <td className="nowrap">
+                          <button
+                            type="button"
+                            className="primary btn-sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/dashboard/lineage/${ev.aletheia.event_uid}`);
+                            }}
+                          >
+                            Inspect →
+                          </button>
                         </td>
                       </tr>
                     );
@@ -249,3 +282,4 @@ export function EventsPage() {
     </div>
   );
 }
+

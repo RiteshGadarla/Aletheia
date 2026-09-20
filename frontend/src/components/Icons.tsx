@@ -134,3 +134,44 @@ export const IconHome = (p: P) => (
 export const IconSources = (p: P) => (
   <Svg {...p}><circle cx="12" cy="12" r="2.4" /><path d="M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4 4a11 11 0 0 0 0 16M20 4a11 11 0 0 1 0 16" /></Svg>
 );
+
+export const IconOff = (p: P) => (
+  <Svg {...p}><circle cx="12" cy="12" r="9" /><path d="M5.5 5.5l13 13" /></Svg>
+);
+
+export const IconSparkles = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 3l1.9 4.1L18 9l-4.1 1.9L12 15l-1.9-4.1L6 9l4.1-1.9zM6 16l1 2 2 1-2 1-1 2-1-2-2-1 2-1z" />
+  </Svg>
+);
+
+export const IconCpu = (p: P) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <rect x="9" y="9" width="6" height="6" />
+    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M1 9h3M1 15h3M20 9h3M20 15h3" />
+  </Svg>
+);
+
+export const IconKey = (p: P) => (
+  <Svg {...p}>
+    <circle cx="7.5" cy="15.5" r="4.5" />
+    <path d="M10.7 12.3L21 2v4h-2v2h-2v2h-2.3" />
+  </Svg>
+);
+
+export const IconServer = (p: P) => (
+  <Svg {...p}>
+    <rect x="2" y="3" width="20" height="8" rx="2" />
+    <rect x="2" y="13" width="20" height="8" rx="2" />
+    <path d="M6 7h.01M6 17h.01" />
+  </Svg>
+);
+
+export const IconLock = (p: P) => (
+  <Svg {...p}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 018 0v4" />
+  </Svg>
+);
+

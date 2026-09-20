@@ -4,12 +4,11 @@ import { USE_MOCKS, api } from '../lib/api';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../lib/theme';
 import { useAsync } from '../lib/useAsync';
-import { isCloudProvider } from '../lib/types';
 import { ErrorBoundary } from './ErrorBoundary';
 import { NotifyProvider, useNotify } from '../lib/notify';
 import {
-  IconClose, IconCloud, IconDemo, IconEvents, IconHome, IconInfo, IconLineage, IconMenu, IconMoon,
-  IconSettings, IconShieldAlert, IconSources, IconSun,
+  IconClose, IconDemo, IconEvents, IconHome, IconInfo, IconLineage, IconLock, IconMenu, IconMoon,
+  IconSettings, IconSources, IconSun,
 } from './Icons';
 
 const NAV = [
@@ -18,7 +17,7 @@ const NAV = [
   { to: '/dashboard/lineage', label: 'Lineage', desc: 'Byte provenance', Icon: IconLineage, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
   { to: '/dashboard/demo', label: 'Demo', desc: 'Sample servers', Icon: IconDemo, end: false },
-  { to: '/dashboard/settings', label: 'Settings', desc: 'LLM & air-gap', Icon: IconSettings, end: false },
+  { to: '/dashboard/settings', label: 'Setting', desc: 'LLM & air-gap', Icon: IconSettings, end: false },
 ];
 
 /** Pack self-check plus event count: enough to tell at a glance that the stack is alive. */
@@ -54,17 +53,16 @@ function Health() {
 
 function ThemeToggle() {
   const { theme, toggle } = useTheme();
+  const isDark = theme === 'dark';
   return (
     <button
       type="button"
-      className="theme-toggle"
+      className="theme-box-toggle"
       onClick={toggle}
-      aria-pressed={theme === 'dark'}
-      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+      aria-pressed={isDark}
+      title={`Switch to ${isDark ? 'light' : 'dark'} theme`}
     >
-      {theme === 'dark' ? <IconMoon size={14} /> : <IconSun size={14} />}
-      <span>{theme === 'dark' ? 'Dark' : 'Light'} theme</span>
-      <span className="switch" aria-hidden="true" />
+      {isDark ? <IconMoon size={15} /> : <IconSun size={15} />}
     </button>
   );
 }
@@ -88,8 +86,6 @@ function LayoutInner() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const cloudActive = !!settings && isCloudProvider(settings.provider) && !settings.airgap;
-
   return (
     <div className="shell">
       <aside className={`sidebar${open ? ' open' : ''}`}>
@@ -106,6 +102,7 @@ function LayoutInner() {
               <span className="tag">Lossless log pipeline</span>
             </span>
           </Link>
+          <ThemeToggle />
           <button type="button" className="ghost icon sidebar-close" onClick={() => setOpen(false)} aria-label="Close navigation">
             <IconClose size={16} />
           </button>
@@ -132,9 +129,14 @@ function LayoutInner() {
           ))}
         </nav>
 
-        <div className="sidebar-foot">
+        <div className="sidebar-foot stack-sm" style={{ gap: 6 }}>
+          {settings?.airgap && (
+            <div className="sidebar-airgap-pill" title="Strict Offline Mode Active: External cloud API calls are refused. Zero data egress.">
+              <IconLock size={13} />
+              <span className="truncate">Strict Offline Active</span>
+            </div>
+          )}
           <Health />
-          <ThemeToggle />
         </div>
       </aside>
 
@@ -149,25 +151,11 @@ function LayoutInner() {
         </div>
 
         <div className="banner-strip">
-          {/* Persistent while a cloud provider is active (spec 8.12.6). */}
-          {cloudActive && (
-            <div className="banner warn">
-              <IconCloud size={15} />
-              <span>
-                <strong>Cloud AI enabled.</strong>{' '}
-                {settings!.send_samples === 'none' ? 'No samples' : `${settings!.send_samples} samples`} are sent to{' '}
-                {settings!.provider}{settings!.model ? ` (${settings!.model})` : ''} — one request per cluster during
-                onboarding, never on the hot path.
-              </span>
-              <Link to="/dashboard/settings">Change</Link>
-            </div>
-          )}
           {settings?.airgap && (
             <div className="banner info">
-              <IconShieldAlert size={15} />
+              <IconLock size={15} />
               <span>
-                <strong>Air-gap mode.</strong> Cloud providers are refused. Only <code>none</code> or a
-                self-hosted <code>local</code> endpoint is allowed.
+                <strong>Strict Offline Mode (Zero Data Egress).</strong> Cloud providers (Gemini) are refused. Only local self-hosted models or None are allowed.
               </span>
             </div>
           )}

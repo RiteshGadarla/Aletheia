@@ -145,6 +145,9 @@ export const api = {
   setAirgap: (on: boolean): Promise<LlmSettings> =>
     USE_MOCKS ? mockApi.setAirgap(on) : http('/settings/airgap', { method: 'POST', body: JSON.stringify({ airgap: on }) }),
 
+  resetSettings: (): Promise<LlmSettings> =>
+    USE_MOCKS ? mockApi.resetSettings() : http('/settings/reset', { method: 'POST' }),
+
   /* demo console, spec 21 */
   listScenarios: (): Promise<DemoScenario[]> => (USE_MOCKS ? mockApi.listScenarios() : http('/demo/scenarios')),
 

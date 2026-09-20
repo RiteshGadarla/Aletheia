@@ -853,6 +853,86 @@ def set_airgap(update: AirgapUpdate) -> dict[str, Any]:
     return _settings_payload()
 
 
+@api.post("/settings/reset")
+async def reset_settings() -> dict[str, Any]:
+    """Full system data reset: clears all sources, raw logs, proposals, history, and events while preserving LLM provider configuration."""
+    st = get_state()
+    # Preserve LLM provider configuration and Strict Offline (airgap) mode
+    cfg = st.settings.llm_config()
+    provider = cfg.provider
+    model = cfg.model
+    base_url = cfg.base_url
+    api_key = cfg.api_key
+    send_samples = cfg.send_samples
+    airgap = cfg.airgap
+
+    # 1. Reset connectors & source registry
+    try:
+        st.connectors.stop_all()
+    except Exception:                                               # noqa: BLE001
+        pass
+    with st.registry._lock:
+        st.registry._d.clear()
+        st.registry._save()
+
+    # 2. Reset raw store
+    if hasattr(st.raw, "_d") and hasattr(st.raw, "_lock"):
+        with st.raw._lock:
+            st.raw._d.clear()
+
+    # 3. Reset pipeline stats & buffers
+    st.pipeline.stats.clear()
+    st.pipeline._buf.clear()
+    st.pipeline.fmt.clear()
+    st.pipeline._n = 0
+
+    # 4. Clear proposals & approvals caches
+    from .ingest import onboarding
+    onboarding.PROPOSALS.clear()
+    _CLUSTER_CACHE.clear()
+    _DERIVED.clear()
+    _APPROVALS.clear()
+
+    # 5. Clear repo custom packs
+    try:
+        if hasattr(st.repo, "_packs") and hasattr(st.repo, "_lock"):
+            with st.repo._lock:
+                st.repo._packs.clear()
+    except Exception:                                               # noqa: BLE001
+        pass
+
+    # 6. Reset demo scenarios & ClickHouse tables if reachable
+    try:
+        _demo(["reset"])
+    except Exception:                                               # noqa: BLE001
+        pass
+    if _ch_up():
+        try:
+            _ch("TRUNCATE TABLE IF EXISTS events")
+            _ch("TRUNCATE TABLE IF EXISTS baseline_events")
+            _ch("TRUNCATE TABLE IF EXISTS templates")
+        except Exception:                                           # noqa: BLE001
+            pass
+
+    # 7. Reset settings preferences while preserving LLM config and airgap status
+    st.settings.set("airgap", "true" if airgap else "false")
+    st.settings.set("llm.timeout_s", "120")
+    st.settings.set("llm.max_output_tokens", "8192")
+    st.settings.set("llm.requests_per_hour", "60")
+    st.settings.set("llm.provider", provider)
+    st.settings.set("llm.model", model)
+    st.settings.set("llm.base_url", base_url)
+    st.settings.set("llm.send_samples", send_samples)
+    if api_key:
+        st.settings.set("llm.api_key", api_key)
+    else:
+        st.settings.unset("llm.api_key")
+
+    st.usage.reset()
+    st.connectors.start_all()
+    return _settings_payload()
+
+
 api.include_router(sources_api.router)
 api.include_router(stats_api.router)
 api.include_router(samples_api.router)

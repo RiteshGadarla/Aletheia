@@ -1,246 +1,783 @@
-// LLM settings (spec 8.12.8). One dropdown picks the assistant; each choice asks for the single
-// thing it actually needs. Model names and base URLs come from defaults, never from the user.
 import { useEffect, useState } from 'react';
 import {
-  Badge, Callout, Cli, ErrorState, PageHead, Panel, Spinner,
+  Badge, Callout, ErrorState, PageHead, Panel, Spinner,
 } from '../components/Bits';
-import { IconShield, IconShieldAlert } from '../components/Icons';
+import {
+  IconAlert, IconCheck, IconChevronLeft, IconChevronRight, IconClose, IconCpu,
+  IconExternal, IconInfo, IconKey, IconLock, IconOff, IconServer, IconSettings,
+  IconShield, IconShieldAlert, IconSparkles,
+} from '../components/Icons';
+import { Modal } from '../components/Modal';
 import { api, errMessage } from '../lib/api';
+import { useNotify } from '../lib/notify';
 import { useSettings } from '../lib/settings';
 import { isCloudProvider, PROVIDER_DEFAULTS, PROVIDERS } from '../lib/types';
 import type { ConnTest, LlmSettings, LlmSettingsUpdate, Provider } from '../lib/types';
 
-const PROVIDER_LABEL: Record<Provider, string> = {
-  none: 'None — heuristics only',
-  gemini: 'Gemini',
-  local: 'Local model',
+const PROVIDER_META: Record<Provider, {
+  name: string;
+  tag: string;
+  desc: string;
+  iconClass: string;
+  Icon: React.ComponentType<{ size?: number }>;
+}> = {
+  none: {
+    name: 'None',
+    tag: 'Heuristics only',
+    desc: 'No AI model connected. Local onboarding heuristics run independently. Nothing leaves your machine.',
+    iconClass: 'none-icon',
+    Icon: IconOff,
+  },
+  gemini: {
+    name: 'Gemini',
+    tag: 'Cloud AI',
+    desc: 'Google Gemini cloud model. Log sample data is masked before sending to protect privacy.',
+    iconClass: 'gemini-icon',
+    Icon: IconSparkles,
+  },
+  local: {
+    name: 'Local model',
+    tag: 'Self-hosted',
+    desc: 'Connect to Ollama, llama.cpp, vLLM, or LM Studio via local OpenAI-compatible API.',
+    iconClass: 'local-icon',
+    Icon: IconCpu,
+  },
 };
 
-const LOCAL_URL = PROVIDER_DEFAULTS.local.base_url;
+const LOCAL_URL_DEFAULT = PROVIDER_DEFAULTS.local.base_url;
+
+const LOCAL_PRESETS = [
+  {
+    id: 'ollama',
+    name: 'Ollama',
+    baseUrl: 'http://localhost:11434',
+    model: 'smollm:135m',
+    desc: 'Ollama local server',
+    Icon: IconServer,
+  },
+  {
+    id: 'llamacpp',
+    name: 'llama.cpp',
+    baseUrl: 'http://localhost:8080',
+    model: 'smollm-135m',
+    desc: 'llama.cpp server',
+    Icon: IconCpu,
+  },
+] as const;
+
+type ActiveModal = 'none_warning' | 'gemini_privacy' | 'gemini_config' | 'local_config' | 'reset_confirm' | null;
 
 export function SettingsPage() {
   const { settings, error: loadError, refresh, apply } = useSettings();
+  const { toast } = useNotify();
   const [form, setForm] = useState<LlmSettings | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [localUrl, setLocalUrl] = useState(LOCAL_URL_DEFAULT);
+  const [localModel, setLocalModel] = useState('smollm:135m');
+  const [selectedPreset, setSelectedPreset] = useState<'ollama' | 'llamacpp' | 'custom' | null>('ollama');
+  const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
   const [test, setTest] = useState<ConnTest | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
-  useEffect(() => { if (settings && !form) setForm(settings); }, [settings, form]);
+  useEffect(() => {
+    if (settings && !form) {
+      setForm(settings);
+      setLocalUrl(settings.base_url || LOCAL_URL_DEFAULT);
+      setLocalModel(settings.model || 'smollm:135m');
+      if (settings.base_url.includes('8080')) {
+        setSelectedPreset('llamacpp');
+      } else {
+        setSelectedPreset('ollama');
+      }
+    }
+  }, [settings, form]);
 
   if (!form) {
-    // Without this the page spins forever whenever the Studio API is down.
-    return loadError
-      ? (
-        <div className="stack">
-          <PageHead title="Settings" />
-          <ErrorState
-            error={loadError}
-            what="settings"
-            fix={<button type="button" onClick={() => void refresh()}>Retry</button>}
-          />
-        </div>
-      )
-      : <Spinner label="Loading settings" />;
+    return loadError ? (
+      <div className="stack">
+        <PageHead title="Setting" />
+        <ErrorState
+          error={loadError}
+          what="settings"
+          fix={<button type="button" onClick={() => void refresh()}><IconSettings size={14} /> Retry</button>}
+        />
+      </div>
+    ) : (
+      <Spinner label="Loading settings" />
+    );
   }
 
-  const provider = form.provider;
-  const cloud = isCloudProvider(provider);
-  const blockedByAirgap = form.airgap && cloud;
+  const currentProvider = form.provider;
+  const isAirgap = form.airgap;
 
-  const dirty = () => { setSaved(false); setTest(null); };
+  const handleCardClick = (p: Provider) => {
+    if (isAirgap && isCloudProvider(p)) return;
+    setTest(null);
+    setError(null);
 
-  const pickProvider = (p: Provider) => {
-    // Everything but the one visible field is a default, so switching never strands stale values.
-    setForm({ ...form, provider: p, model: PROVIDER_DEFAULTS[p].model, base_url: PROVIDER_DEFAULTS[p].base_url });
-    dirty();
+    if (p === 'none') {
+      setActiveModal('none_warning');
+    } else if (p === 'gemini') {
+      setActiveModal('gemini_privacy');
+    } else if (p === 'local') {
+      setLocalUrl(form.base_url || LOCAL_URL_DEFAULT);
+      setLocalModel(form.model || 'smollm:135m');
+      setActiveModal('local_config');
+    }
   };
 
-  const setLocalUrl = (url: string) => { setForm({ ...form, base_url: url }); dirty(); };
+  const selectPreset = (preset: typeof LOCAL_PRESETS[number]) => {
+    setTest(null);
+    setSelectedPreset(preset.id);
+    setLocalUrl(preset.baseUrl);
+    setLocalModel(preset.model);
+  };
 
-  const save = async () => {
-    setBusy('save'); setError(null);
+  const confirmSelectNone = async () => {
+    setBusy('save');
+    setError(null);
     const update: LlmSettingsUpdate = {
-      provider,
-      model: PROVIDER_DEFAULTS[provider].model,
-      base_url: provider === 'local'
-        ? (form.base_url.trim() || LOCAL_URL)
-        : PROVIDER_DEFAULTS[provider].base_url,
-      // Raw samples are refused for cloud, so never let a stored value block the save.
-      send_samples: cloud && form.send_samples === 'raw' ? 'masked' : form.send_samples,
-      ...(apiKey !== '' ? { api_key: apiKey } : {}),
+      provider: 'none',
+      model: PROVIDER_DEFAULTS.none.model,
+      base_url: PROVIDER_DEFAULTS.none.base_url,
+      send_samples: 'none',
     };
     try {
       const next = await api.putSettings(update);
-      apply(next); setForm(next); setApiKey(''); setSaved(true);
+      apply(next);
+      setForm(next);
+      setActiveModal(null);
+      toast({ kind: 'ok', title: 'Provider set to None' });
       await refresh();
-    } catch (e) { setError(errMessage(e)); } finally { setBusy(null); }
+    } catch (e) {
+      const msg = errMessage(e);
+      setError(msg);
+      toast({ kind: 'bad', title: 'Error', body: msg });
+    } finally {
+      setBusy(null);
+    }
   };
 
-  // A real generateContent call against Gemma takes 8-34s, and a disabled button for that
-  // long reads as a hang. Count the seconds up so the wait is visibly progress, not a freeze.
-  const runTest = async () => {
-    setBusy('test'); setError(null); setTest(null); setElapsed(0);
-    const started = Date.now();
-    const tick = window.setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
-    try { setTest(await api.testConnection()); }
-    catch (e) { setError(errMessage(e)); }
-    finally { window.clearInterval(tick); setBusy(null); }
+  const saveAndTestGemini = async () => {
+    setBusy('save');
+    setError(null);
+    setTest(null);
+    const update: LlmSettingsUpdate = {
+      provider: 'gemini',
+      model: PROVIDER_DEFAULTS.gemini.model,
+      base_url: PROVIDER_DEFAULTS.gemini.base_url,
+      send_samples: 'masked',
+      ...(apiKey.trim() !== '' ? { api_key: apiKey.trim() } : {}),
+    };
+    try {
+      const next = await api.putSettings(update);
+      apply(next);
+      setForm(next);
+      setApiKey('');
+      toast({ kind: 'ok', title: 'Gemini settings saved' });
+      await refresh();
+
+      setBusy('test');
+      setElapsed(0);
+      const started = Date.now();
+      const tick = window.setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+      try {
+        const testRes = await api.testConnection();
+        setTest(testRes);
+        if (testRes.ok) {
+          toast({ kind: 'ok', title: 'Connection successful & tested!' });
+        } else {
+          toast({ kind: 'bad', title: 'Connection Failed', body: testRes.error ?? 'Unable to reach provider.' });
+        }
+      } catch (testErr) {
+        const msg = errMessage(testErr);
+        setError(msg);
+        toast({ kind: 'bad', title: 'Connection Test Error', body: msg });
+      } finally {
+        window.clearInterval(tick);
+      }
+    } catch (e) {
+      const msg = errMessage(e);
+      setError(msg);
+      toast({ kind: 'bad', title: 'Error saving settings', body: msg });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const saveAndTestLocal = async () => {
+    setBusy('save');
+    setError(null);
+    setTest(null);
+    const targetUrl = localUrl.trim() || LOCAL_URL_DEFAULT;
+    const targetModel = localModel.trim() || 'smollm:135m';
+    const update: LlmSettingsUpdate = {
+      provider: 'local',
+      model: targetModel,
+      base_url: targetUrl,
+      send_samples: form.send_samples === 'raw' ? 'masked' : form.send_samples,
+    };
+    try {
+      const next = await api.putSettings(update);
+      apply(next);
+      setForm(next);
+      toast({ kind: 'ok', title: 'Local model settings saved' });
+      await refresh();
+
+      setBusy('test');
+      setElapsed(0);
+      const started = Date.now();
+      const tick = window.setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
+      try {
+        const testRes = await api.testConnection();
+        setTest(testRes);
+        if (testRes.ok) {
+          toast({ kind: 'ok', title: 'Connection successful & tested!' });
+        } else {
+          toast({ kind: 'bad', title: 'Connection Failed', body: testRes.error ?? 'Unable to reach local server.' });
+        }
+      } catch (testErr) {
+        const msg = errMessage(testErr);
+        setError(msg);
+        toast({ kind: 'bad', title: 'Connection Test Error', body: msg });
+      } finally {
+        window.clearInterval(tick);
+      }
+    } catch (e) {
+      const msg = errMessage(e);
+      setError(msg);
+      toast({ kind: 'bad', title: 'Error saving settings', body: msg });
+    } finally {
+      setBusy(null);
+    }
   };
 
   const toggleAirgap = async () => {
     setError(null);
     try {
       const next = await api.setAirgap(!form.airgap);
-      apply(next); setForm(next);
-    } catch (e) { setError(errMessage(e)); }
+      apply(next);
+      setForm(next);
+      toast({ kind: 'ok', title: `Strict Offline Mode ${!form.airgap ? 'enabled' : 'disabled'}` });
+    } catch (e) {
+      const msg = errMessage(e);
+      setError(msg);
+      toast({ kind: 'bad', title: 'Error', body: msg });
+    }
   };
 
-  const keyBadge = provider === 'gemini'
-    ? (form.api_key_set
-      ? <Badge kind="ok">key configured · …{form.api_key_last4}</Badge>
-      : <Badge kind="warn">no key set</Badge>)
-    : undefined;
+  const handleResetSettings = async () => {
+    setBusy('save');
+    setError(null);
+    try {
+      const next = await api.resetSettings();
+      apply(next);
+      setForm(next);
+      setActiveModal(null);
+      toast({ kind: 'ok', title: 'System data reset', body: 'All logs and event data cleared. LLM provider and Strict Offline mode saved.' });
+      await refresh();
+    } catch (e) {
+      const msg = errMessage(e);
+      setError(msg);
+      toast({ kind: 'bad', title: 'Reset Error', body: msg });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const keyBadge = currentProvider === 'gemini' ? (
+    form.api_key_set ? (
+      <Badge kind="ok"><IconKey size={12} /> key configured · …{form.api_key_last4}</Badge>
+    ) : (
+      <Badge kind="warn"><IconAlert size={12} /> no key set</Badge>
+    )
+  ) : undefined;
 
   return (
     <div className="stack">
-      <PageHead title="Settings">
-        The AI assistant is optional. Onboarding heuristics always run first, and every suggestion
-        still has to rebuild the original byte for byte before a human can approve it.
+      <PageHead title="Setting">
+        Configure AI assistant provider for log schema mapping and pack generation. Onboarding
+        heuristics always run first to ensure zero data loss.
       </PageHead>
 
-      {form.airgap && (
-        <Callout kind="info" icon={<IconShield size={15} />}>
-          <strong>Air-gap mode is on.</strong> Gemini is refused. Use <em>None</em> or a local model.
-        </Callout>
-      )}
-      {cloud && !form.airgap && (
-        <Callout kind="warn" icon={<IconShieldAlert size={15} />}>
-          <strong>Cloud AI enabled.</strong> Masked samples go to Gemini — one request per cluster
-          during onboarding, never per event.
+      {isAirgap && (
+        <Callout kind="info" icon={<IconLock size={16} />}>
+          <strong>Strict Offline Mode (Zero Cloud Data Egress) is enabled.</strong> External cloud APIs like Gemini are completely blocked. Select <em>None</em> or a <em>Local model</em>.
         </Callout>
       )}
 
       {error && <ErrorState error={error} what="settings" />}
 
-      <Panel title="AI assistant" right={keyBadge}>
-        <div className="form-narrow">
-          <label className="field">
-            <span className="lbl">Assistant</span>
-            <select
-              value={provider}
-              onChange={(e) => pickProvider(e.target.value as Provider)}
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p} value={p} disabled={form.airgap && isCloudProvider(p)}>
-                  {PROVIDER_LABEL[p]}{form.airgap && isCloudProvider(p) ? ' — blocked in air-gap mode' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+      <Panel title={<><IconSparkles size={18} /> LLM Provider</>} right={keyBadge}>
+        <p className="hint">Select an AI provider option below to configure assistant capabilities:</p>
+        <div className="provider-grid">
+          {PROVIDERS.map((p) => {
+            const isSelected = currentProvider === p;
+            const isBlocked = isAirgap && isCloudProvider(p);
+            const meta = PROVIDER_META[p];
+            const CardIcon = meta.Icon;
 
-          {provider === 'gemini' && (
-            <label className="field code">
-              <span className="lbl">API key</span>
+            return (
+              <button
+                type="button"
+                key={p}
+                className={`provider-card${isSelected ? ' selected' : ''}`}
+                onClick={() => handleCardClick(p)}
+                disabled={isBlocked}
+              >
+                <div className="provider-card-header">
+                  <div className="provider-card-icon-title">
+                    <div className={`provider-icon-wrapper ${meta.iconClass}`}>
+                      <CardIcon size={20} />
+                    </div>
+                    <span className="provider-card-title-text">{meta.name}</span>
+                  </div>
+                  <Badge kind={isSelected ? 'ok' : isBlocked ? 'bad' : 'plain'}>
+                    {isBlocked ? 'blocked' : meta.tag}
+                  </Badge>
+                </div>
+
+                <div className="provider-card-desc">{meta.desc}</div>
+
+                <div className="provider-card-footer">
+                  {isSelected ? (
+                    <Badge kind="ok"><IconCheck size={12} /> Active Provider ({form.model || 'default'})</Badge>
+                  ) : isBlocked ? (
+                    <Badge kind="bad"><IconLock size={12} /> Blocked by Strict Offline</Badge>
+                  ) : (
+                    <span className="hint" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      Click to configure <IconChevronRight size={12} />
+                    </span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Current Active Configuration Quick Action */}
+        <div className="btn-row" style={{ marginTop: 'var(--s3)' }}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => handleCardClick(currentProvider)}
+            disabled={isAirgap && isCloudProvider(currentProvider)}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <IconSettings size={15} />
+            {currentProvider === 'none' ? 'Review None Option' : `Configure & Test ${PROVIDER_META[currentProvider].name}`}
+          </button>
+        </div>
+      </Panel>
+
+      {/* Strict Offline Mode Panel */}
+      <Panel
+        title={<><IconShield size={18} /> Strict Offline & Data Privacy Guard</>}
+        right={<Badge kind={form.airgap ? 'ok' : 'plain'}>{form.airgap ? 'Strict Offline Active' : 'Standard Mode'}</Badge>}
+      >
+        <div className="stack" style={{ gap: 'var(--s3)' }}>
+          <div className="row between" style={{ alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--s3)' }}>
+            <p className="hint grow" style={{ margin: 0, maxWidth: '640px', fontSize: '13.5px', color: 'var(--text)' }}>
+              Strict Offline Mode prohibits any outbound network calls to external cloud AI services (e.g. Google Gemini), guaranteeing that log sample data, tokens, and schemas never leave your local infrastructure.
+            </p>
+            <button
+              type="button"
+              className={form.airgap ? 'secondary' : 'primary'}
+              onClick={toggleAirgap}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+            >
+              {form.airgap ? <IconLock size={15} /> : <IconShield size={15} />}
+              {form.airgap ? 'Disable Strict Offline' : 'Enable Strict Offline'}
+            </button>
+          </div>
+
+          <div className="privacy-feature-grid">
+            <div className="privacy-feature-card">
+              <div className="pfc-icon"><IconLock size={16} /></div>
+              <div>
+                <strong>Zero Outbound Egress</strong>
+                <p className="hint" style={{ margin: 0 }}>Blocks cloud model APIs</p>
+              </div>
+            </div>
+            <div className="privacy-feature-card">
+              <div className="pfc-icon"><IconCpu size={16} /></div>
+              <div>
+                <strong>Self-Hosted AI Ready</strong>
+                <p className="hint" style={{ margin: 0 }}>Ollama, llama.cpp, vLLM, LM Studio</p>
+              </div>
+            </div>
+            <div className="privacy-feature-card">
+              <div className="pfc-icon"><IconShield size={16} /></div>
+              <div>
+                <strong>Local Heuristics Only</strong>
+                <p className="hint" style={{ margin: 0 }}>Zero-loss offline schema onboarding</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Panel>
+
+      {/* System Data Reset Panel */}
+      <Panel
+        title={<><IconShieldAlert size={18} color="var(--bad)" /> Reset System Data</>}
+      >
+        <div className="row between" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 'var(--s3)' }}>
+          <div className="grow" style={{ maxWidth: '640px' }}>
+            <p className="hint" style={{ margin: 0, fontSize: '13.5px', color: 'var(--text)' }}>
+              Clear all stored raw logs, connected sources, proposals, human approvals, ClickHouse events, and lineage tracking.
+            </p>
+            <span className="hint" style={{ fontSize: '12px', color: 'var(--accent)', fontWeight: 500, display: 'inline-block', marginTop: '4px' }}>
+              LLM provider and Strict Offline mode saved.
+            </span>
+          </div>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => setActiveModal('reset_confirm')}
+            disabled={busy !== null}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              background: 'var(--bad)', borderColor: 'var(--bad-border)', color: '#ffffff',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <IconShieldAlert size={15} /> Clear All Log Data & Reset State
+          </button>
+        </div>
+      </Panel>
+
+      {/* --- MODAL 1: NONE WARNING POPUP --- */}
+      {activeModal === 'none_warning' && (
+        <Modal
+          title={<><IconShieldAlert size={20} color="var(--warn)" /> Warning: Disabling AI Provider</>}
+          onClose={() => setActiveModal(null)}
+          footer={
+            <>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <IconClose size={14} /> Cancel
+              </button>
+              <button type="button" className="primary" onClick={confirmSelectNone} disabled={busy !== null} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <IconCheck size={14} /> {busy === 'save' ? 'Saving…' : 'Confirm None'}
+              </button>
+            </>
+          }
+        >
+          <Callout kind="warn" icon={<IconShieldAlert size={20} />}>
+            <div>
+              <strong>This affects onboarding performance.</strong>
+              <p style={{ marginTop: 'var(--s2)', marginBottom: 0 }}>
+                Disabling the LLM provider turns off AI-assisted schema mapping and pack proposals. Onboarding will rely solely on baseline heuristics.
+              </p>
+              <p style={{ marginTop: 'var(--s2)', marginBottom: 0 }}>
+                We recommend choosing <strong>Gemini</strong> (cloud with data masking) or a <strong>Local model</strong> to optimize onboarding performance.
+              </p>
+            </div>
+          </Callout>
+        </Modal>
+      )}
+
+      {/* --- MODAL 2 STEP 1: GEMINI DATA PRIVACY NOTICE --- */}
+      {activeModal === 'gemini_privacy' && (
+        <Modal
+          title={<><IconShield size={20} color="var(--accent)" /> Data Privacy & Cloud Security</>}
+          subtitle="Google Gemini Assistant Notice"
+          onClose={() => setActiveModal(null)}
+          footer={
+            <>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <IconClose size={14} /> Cancel
+              </button>
+              <button type="button" className="primary" onClick={() => setActiveModal('gemini_config')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                OK / Proceed <IconChevronRight size={14} />
+              </button>
+            </>
+          }
+        >
+          <Callout kind="info" icon={<IconShield size={20} />}>
+            <div>
+              <strong>Data is masked before cloud transmission.</strong>
+              <p style={{ marginTop: 'var(--s2)', marginBottom: 0 }}>
+                To protect your sensitive information and data privacy, sample log values (IP addresses, usernames, tokens) are automatically masked before being sent to Gemini cloud models.
+              </p>
+            </div>
+          </Callout>
+          <p className="hint" style={{ marginTop: 'var(--s4)' }}>
+            Click OK to proceed to API key configuration.
+          </p>
+        </Modal>
+      )}
+
+      {/* --- MODAL 2 STEP 2: GEMINI API KEY & TEST CONNECTION --- */}
+      {activeModal === 'gemini_config' && (
+        <Modal
+          title={<><IconSparkles size={20} color="#9b59b6" /> Configure Gemini API Key</>}
+          subtitle="Google AI Studio Integration"
+          onClose={() => setActiveModal(null)}
+          footer={
+            <>
+              <button type="button" onClick={() => setActiveModal('gemini_privacy')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <IconChevronLeft size={14} /> Back
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={test?.ok ? () => setActiveModal(null) : saveAndTestGemini}
+                disabled={busy !== null}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <IconCheck size={14} />
+                {busy === 'save'
+                  ? 'Saving…'
+                  : busy === 'test'
+                    ? `Testing… (${elapsed}s)`
+                    : test?.ok
+                      ? 'Save & Close'
+                      : 'Save & Test Connection'}
+              </button>
+            </>
+          }
+        >
+          <div className="stack">
+            <Callout kind="info" icon={<IconInfo size={18} />}>
+              <div>
+                <strong>Works in Free Tier!</strong>
+                <p style={{ marginTop: 'var(--s1)', marginBottom: 0 }}>
+                  You can get a free API key directly from Google AI Studio:
+                </p>
+                <a
+                  href="https://aistudio.google.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: 'var(--accent)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: 'var(--s1)' }}
+                >
+                  https://aistudio.google.com/api-keys <IconExternal size={13} />
+                </a>
+              </div>
+            </Callout>
+
+            <label className="field code" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s1)' }}>
+              <span className="lbl" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <IconKey size={14} /> Gemini API Key
+              </span>
               <input
                 type="password"
                 value={apiKey}
-                placeholder={form.api_key_set ? `stored — ends …${form.api_key_last4}` : 'paste your Gemini API key'}
-                onChange={(e) => { setApiKey(e.target.value); dirty(); }}
+                placeholder={form.api_key_set ? `stored — ends …${form.api_key_last4}` : 'Paste your Gemini API key'}
+                onChange={(e) => { setTest(null); setApiKey(e.target.value); }}
                 autoComplete="off"
               />
-              <span className="help">Write-only. Leave blank to keep the stored key.</span>
+              <span className="help">Write-only. Leave blank to keep existing key.</span>
             </label>
-          )}
 
-          {provider === 'local' && (
-            <label className="field code">
-              <span className="lbl">Server URL</span>
+            {busy === 'test' && (
+              <div className="row" style={{ gap: 'var(--s2)', alignItems: 'center' }}>
+                <Spinner label="Testing connection to Gemini..." />
+              </div>
+            )}
+
+            {test && !test.ok && (
+              <Callout kind="bad" icon={<IconAlert size={18} />}>
+                <div>
+                  <strong>Connection Failed</strong>
+                  <p style={{ margin: 'var(--s1) 0 0 0' }}>{test.error ?? 'Unable to reach provider.'}</p>
+                </div>
+              </Callout>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* --- MODAL 3: LOCAL MODEL CONFIG & TEST CONNECTION --- */}
+      {activeModal === 'local_config' && (
+        <Modal
+          title={<><IconCpu size={20} color="var(--accent)" /> Configure Local Model Server</>}
+          subtitle="OpenAI-Compatible Local Endpoint"
+          onClose={() => setActiveModal(null)}
+          footer={
+            <>
+              <button type="button" onClick={() => setActiveModal(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <IconClose size={14} /> Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={test?.ok ? () => setActiveModal(null) : saveAndTestLocal}
+                disabled={busy !== null || !selectedPreset}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <IconCheck size={14} />
+                {busy === 'save'
+                  ? 'Saving…'
+                  : busy === 'test'
+                    ? `Testing… (${elapsed}s)`
+                    : test?.ok
+                      ? 'Save & Close'
+                      : 'Save & Test Connection'}
+              </button>
+            </>
+          }
+        >
+          <div className="stack">
+            <p className="hint">
+              Select an engine supporter below to load and enable configuration fields:
+            </p>
+
+            {/* Supporter Presets */}
+            <div style={{ display: 'flex', gap: 'var(--s3)', marginBottom: 'var(--s2)' }}>
+              {LOCAL_PRESETS.map((p) => {
+                const PresetIcon = p.Icon;
+                const active = selectedPreset === p.id;
+                return (
+                  <button
+                    type="button"
+                    key={p.id}
+                    className={`button ${active ? 'primary' : 'secondary'}`}
+                    onClick={() => selectPreset(p)}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: 'var(--s3)', height: 'auto', gap: '4px' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                      <PresetIcon size={16} /> {p.name}
+                    </div>
+                    <div style={{ fontSize: '11px', opacity: 0.8 }}>Base URL: {p.baseUrl}</div>
+                    <div style={{ fontSize: '11px', opacity: 0.8 }}>Default Model: {p.model}</div>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className={`button ${selectedPreset === 'custom' ? 'primary' : 'secondary'}`}
+                onClick={() => { setTest(null); setSelectedPreset('custom'); }}
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: 'var(--s3)', height: 'auto', gap: '4px' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                  <IconSettings size={16} /> Custom
+                </div>
+                <div style={{ fontSize: '11px', opacity: 0.8 }}>Enter Custom URL & Model</div>
+              </button>
+            </div>
+
+            <label className="field code" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s1)' }}>
+              <span className="lbl" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <IconServer size={14} /> Server Base URL
+              </span>
               <input
-                value={form.base_url}
-                placeholder={LOCAL_URL}
-                onChange={(e) => setLocalUrl(e.target.value)}
+                type="text"
+                value={localUrl}
+                disabled={!selectedPreset}
+                placeholder={
+                  !selectedPreset
+                    ? "Select an engine above to enable editing"
+                    : selectedPreset === 'ollama'
+                      ? "http://localhost:11434"
+                      : selectedPreset === 'llamacpp'
+                        ? "http://localhost:8080"
+                        : "http://localhost:11434"
+                }
+                onChange={(e) => { setTest(null); setLocalUrl(e.target.value); setSelectedPreset('custom'); }}
                 autoComplete="off"
               />
               <span className="help">
-                Any OpenAI-compatible server you run — Ollama, vLLM, llama.cpp, LM Studio.
+                {selectedPreset === 'ollama'
+                  ? 'Base URL of your local server for Ollama (e.g., http://localhost:11434)'
+                  : selectedPreset === 'llamacpp'
+                    ? 'Base URL of your local server for llama.cpp (e.g., http://localhost:8080)'
+                    : 'Base URL of your local server (e.g., http://localhost:11434 or http://localhost:8080)'}
               </span>
             </label>
-          )}
 
-          {provider === 'none' && (
-            <p className="hint">
-              No provider is configured. Onboarding heuristics run on their own, and nothing leaves
-              this machine.
-            </p>
-          )}
-
-          {blockedByAirgap && (
-            <ErrorState error="Air-gap mode refuses cloud providers." what="" fix="Choose None or a local model." />
-          )}
-
-          <div className="btn-row">
-            <button className="primary" onClick={save} disabled={busy !== null || blockedByAirgap}>
-              {busy === 'save' ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={runTest} disabled={busy !== null || provider === 'none'}>
-              {busy === 'test' ? `Testing… ${elapsed}s` : 'Test connection'}
-            </button>
-            {busy === 'test' && (
-              <span className="hint">
-                The model is asked one real question, so this can take up to a minute.
+            <label className="field code" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s1)' }}>
+              <span className="lbl" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <IconCpu size={14} /> Model Name <span style={{ color: 'var(--warn)', fontSize: '12px' }}>*required</span>
               </span>
+              <input
+                type="text"
+                value={localModel}
+                disabled={!selectedPreset}
+                placeholder={
+                  !selectedPreset
+                    ? "Select an engine above to enable editing"
+                    : selectedPreset === 'ollama'
+                      ? "e.g. smollm:135m"
+                      : selectedPreset === 'llamacpp'
+                        ? "e.g. smollm-135m"
+                        : "e.g. smollm:135m"
+                }
+                onChange={(e) => { setTest(null); setLocalModel(e.target.value); setSelectedPreset('custom'); }}
+                autoComplete="off"
+              />
+              <span className="help">
+                {selectedPreset === 'ollama'
+                  ? 'Exact model identifier for Ollama (e.g., smollm:135m)'
+                  : selectedPreset === 'llamacpp'
+                    ? 'Exact model identifier for llama.cpp (e.g., smollm-135m)'
+                    : 'Exact model identifier (e.g., smollm:135m for Ollama, smollm-135m for llama.cpp)'}
+              </span>
+            </label>
+
+            {busy === 'test' && (
+              <div className="row" style={{ gap: 'var(--s2)', alignItems: 'center' }}>
+                <Spinner label="Connecting to local server & running test..." />
+              </div>
             )}
-            {saved && <Badge kind="ok">saved · no restart needed</Badge>}
+
+            {test && !test.ok && (
+              <Callout kind="bad" icon={<IconAlert size={18} />}>
+                <div>
+                  <strong>Connection Failed</strong>
+                  <p style={{ margin: 'var(--s1) 0 0 0' }}>{test.error ?? 'Unable to reach local server.'}</p>
+                </div>
+              </Callout>
+            )}
           </div>
+        </Modal>
+      )}
 
-          {test && (
-            <Callout kind={test.ok ? 'ok' : 'bad'}>
-              {test.ok
-                ? <><strong>Reachable.</strong> {test.provider}/{test.model} answered in {test.latency_ms} ms.</>
-                : <><strong>Could not reach {test.provider}.</strong> {test.error ?? 'No response.'}</>}
+      {/* --- MODAL 4: FULL SYSTEM DATA RESET CONFIRMATION --- */}
+      {activeModal === 'reset_confirm' && (
+        <Modal
+          title={<><IconShieldAlert size={20} color="var(--bad)" /> Clear All System Data & Reset State</>}
+          subtitle="System Reset Confirmation"
+          onClose={() => setActiveModal(null)}
+          footer={
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveModal(null)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <IconClose size={14} /> Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={handleResetSettings}
+                disabled={busy !== null}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'var(--bad)', borderColor: 'var(--bad-border)' }}
+              >
+                <IconShieldAlert size={14} /> {busy === 'save' ? 'Clearing Data…' : 'Clear All Data & Reset'}
+              </button>
+            </>
+          }
+        >
+          <div className="stack" style={{ gap: 'var(--s3)' }}>
+            <Callout kind="bad" icon={<IconShieldAlert size={20} />}>
+              <div>
+                <strong>Permanently Delete All System Data</strong>
+                <p style={{ marginTop: 'var(--s2)', marginBottom: 0 }}>
+                  This will delete all raw logs, connected sources, proposals, approvals, ClickHouse events, and lineage records.
+                </p>
+              </div>
             </Callout>
-          )}
-        </div>
-      </Panel>
 
-      <Panel
-        title="Air-gap mode"
-        right={<Badge kind={form.airgap ? 'ok' : 'plain'}>{form.airgap ? 'on' : 'off'}</Badge>}
-      >
-        <div className="row between">
-          <p className="hint grow">
-            Refuses every cloud provider, so the assistant is either off or a model inside your own
-            network. The real air-gap is the network; this is the safety net.
-          </p>
-          <button onClick={toggleAirgap}>{form.airgap ? 'Disable' : 'Enable'}</button>
-        </div>
-      </Panel>
-
-      <details className="panel-details">
-        <summary>Usage and environment variables</summary>
-        <div className="details-body">
-          <dl className="kv">
-            <dt>Requests ({form.usage.window})</dt>
-            <dd>{form.usage.requests} of {form.usage.cap_per_hour}</dd>
-            <dt>Tokens</dt>
-            <dd>{form.usage.tokens ?? '—'}</dd>
-            <dt>Provenance</dt>
-            <dd className="mono">{provider === 'none' ? 'heuristic' : `ai:${provider}/${form.model}`}</dd>
-          </dl>
-          <p className="hint">
-            One request per cluster during onboarding, plus at most one retry. No model call ever
-            touches a live event.
-          </p>
-          <Cli
-            cmd={`ALETHEIA_LLM_PROVIDER=${provider}
-ALETHEIA_LLM_BASE_URL=${form.base_url}
-ALETHEIA_LLM_API_KEY_FILE=/run/secrets/llm_key`}
-          />
-        </div>
-      </details>
+            <div style={{ padding: 'var(--s3) var(--s4)', borderRadius: 'var(--r-md)', background: 'var(--bg-subtle)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text)' }}>
+              <IconCheck size={16} color="var(--accent)" />
+              <span><strong>Preserved:</strong> LLM provider and Strict Offline mode saved.</span>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

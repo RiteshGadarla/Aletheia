@@ -182,7 +182,12 @@ frontend:
 dev:
 	@echo "Studio  -> http://localhost:8081"
 	@echo "Frontend-> http://localhost:5173"
-	@$(MAKE) -j2 studio frontend
+	@if [ -x $(BIN)/aletheia-worker ]; then \
+	  echo "Worker  -> engine metrics on :9108"; \
+	  $(MAKE) -j3 studio frontend worker; \
+	else \
+	  $(MAKE) -j2 studio frontend; \
+	fi
 
 # Dockerless end-to-end: generate logs, parse them, reconstruct, verify byte-equality.
 # Proves the core claim on this machine with no bus and no databases.

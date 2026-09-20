@@ -82,6 +82,8 @@ class ConnTest(BaseModel):
     error: str | None = None
     provider: str | None = None
     model: str | None = None
+    sample_response: str | None = None
+
 
 
 class GateCheck(BaseModel):

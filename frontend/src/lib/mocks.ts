@@ -580,6 +580,11 @@ export const mockApi = {
     return delay(state.settings, 100);
   },
 
+  async resetSettings(): Promise<LlmSettings> {
+    state.settings = { ...state.settings, airgap: false };
+    return delay(state.settings, 100);
+  },
+
   async testConnection(): Promise<ConnTest> {
     const s = state.settings;
     const base = { provider: s.provider, model: s.model };

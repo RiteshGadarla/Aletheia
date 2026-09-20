@@ -136,8 +136,18 @@ class ConnectorManager:
         self.runners: dict[str, Runner] = {}
         self.loop: asyncio.AbstractEventLoop | None = None
 
-    def start_all(self) -> None:
-        self.loop = asyncio.get_running_loop()
+    def start_all(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
+        if loop is not None:
+            self.loop = loop
+        else:
+            try:
+                self.loop = asyncio.get_running_loop()
+            except RuntimeError:
+                if self.loop is None:
+                    try:
+                        self.loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        pass
         for s in self.registry.list():
             self.sync(s)
 

@@ -71,3 +71,7 @@ class UsageCounter:
         with self._lock:
             self._prune(time.time())
             return self.usage.public()
+
+    def reset(self) -> None:
+        with self._lock:
+            self.usage = Usage()

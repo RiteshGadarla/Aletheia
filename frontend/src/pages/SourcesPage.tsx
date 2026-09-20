@@ -162,7 +162,11 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
         const r = await api.sourceDecide(src.id, { action, approver, reason: note, feedback: note });
         if (r.proposal) setProp(r.proposal);
         if (action === 'approve') {
-          toast({ kind: 'ok', title: `${src.id} approved`, body: `${r.packs?.length ?? 0} parser pack(s) published${r.backfilled ? `, ${r.backfilled} stored lines replayed` : ''}.` });
+          if (r.bus === false) {
+            toast({ kind: 'bad', sticky: true, title: `${src.id} approved, but no events yet`, body: 'The event pipeline is not connected, so Events and Lineage stay empty until it is. See the notice on Sources.' });
+          } else {
+            toast({ kind: 'ok', title: `${src.id} approved`, body: `${r.packs?.length ?? 0} parser pack(s) published${r.backfilled ? `, ${r.backfilled} stored lines sent for processing` : ''}. Events will appear in a few seconds.` });
+          }
           onClose();
         } else if (action === 'reject') {
           toast({ kind: 'bad', title: `${src.id} rejected`, body: 'Raw logs keep being stored. Nothing is normalized.' });
@@ -340,11 +344,32 @@ export function SourcesPage() {
 
   return (
     <div className="stack">
-      <PageHead title="Sources"
-        right={list.data && <Badge kind="info">raw store: {list.data.store}</Badge>}>
+      <PageHead title="Sources">
         Connect any log system. Lines are stored raw first; you approve the mapping before anything is normalized.
       </PageHead>
       {list.error && <ErrorState error={list.error} what="sources" />}
+
+      {list.data && (!list.data.bus || !list.data.worker) && (
+        <div className="ready-banner" role="alert" style={{ borderColor: 'var(--bad-border)', background: 'var(--bad-soft)' }}>
+          <div className="grow stack-sm" style={{ gap: 4 }}>
+            <div className="row-tight" style={{ gap: 8 }}>
+              <b>The event pipeline is offline.</b>
+              <Badge kind={list.data.bus ? 'ok' : 'bad'}>Bus: {list.data.bus ? 'connected' : 'offline'}</Badge>
+              <Badge kind={list.data.worker ? 'ok' : 'bad'}>Worker: {list.data.worker ? 'online' : 'offline'}</Badge>
+            </div>
+            <div>
+              {!list.data.bus
+                ? 'Studio is not connected to the message bus, so approved logs are not sent for processing.'
+                : 'The engine worker is not running on port 9108, so approved logs are not turned into events.'}{' '}
+              Approving still saves the parser, but Events and Lineage stay empty until the pipeline is running.
+              <div className="hint" style={{ marginTop: 4 }}>
+                Run <code>make worker</code> or <code>make run</code> in your terminal to start the engine worker.
+              </div>
+            </div>
+          </div>
+          <button className="btn-sm" onClick={() => void reload()}>Re-check status</button>
+        </div>
+      )}
 
       <button type="button" className="add-hero" onClick={() => setAdding('blank')}>
         <span className="plus" aria-hidden="true">+</span>
