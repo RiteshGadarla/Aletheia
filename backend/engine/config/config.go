@@ -24,6 +24,9 @@ const (
 	DefaultTopicDLQ        = "dlq"
 )
 
+// DefaultPostgresDSN matches deploy/postgres and the services compose file.
+const DefaultPostgresDSN = "postgres://aletheia:aletheia@127.0.0.1:5432/aletheia"
+
 // Kafka headers carried on `raw` messages (CONTRACTS §3).
 const (
 	HeaderRecvMS   = "pr_recv_ms"
@@ -87,10 +90,13 @@ func Load() *Config {
 		ClickHouseUser: str("ALETHEIA_CLICKHOUSE_USER", "default"),
 		ClickHousePass: str("ALETHEIA_CLICKHOUSE_PASSWORD", ""),
 
+		// Defaulted like every ClickHouse setting: without a DSN `verify`
+		// silently skips the Merkle chain instead of checking it.
 		PostgresDSN: firstNonEmpty(
 			os.Getenv("ALETHEIA_PG_DSN"),
 			os.Getenv("ALETHEIA_POSTGRES_DSN"),
 			os.Getenv("DATABASE_URL"),
+			DefaultPostgresDSN,
 		),
 
 		PacksDir:    str("ALETHEIA_PACKS_DIR", "/packs"),

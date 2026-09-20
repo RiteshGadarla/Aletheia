@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -230,4 +232,27 @@ func VerifyBatch(k Key, hashesByUID map[string][32]byte, prev, wantRoot, wantCha
 	root = Root(hs)
 	chained = Chain(prev, root, k)
 	return root, chained, root == wantRoot && chained == wantChained
+}
+
+// ParseKey reverses Key.String(). The source id may itself contain "/", so the
+// partition and minute are split off from the right.
+func ParseKey(s string) (Key, error) {
+	slash := strings.LastIndexByte(s, '/')
+	if slash < 0 {
+		return Key{}, fmt.Errorf("merkle key %q: no minute separator", s)
+	}
+	min, err := time.Parse("2006-01-02T15:04Z", s[slash+1:])
+	if err != nil {
+		return Key{}, fmt.Errorf("merkle key %q: %w", s, err)
+	}
+	rest := s[:slash]
+	slash = strings.LastIndexByte(rest, '/')
+	if slash < 0 || slash+1 >= len(rest) || rest[slash+1] != 'p' {
+		return Key{}, fmt.Errorf("merkle key %q: no partition segment", s)
+	}
+	part, err := strconv.Atoi(rest[slash+2:])
+	if err != nil {
+		return Key{}, fmt.Errorf("merkle key %q: bad partition: %w", s, err)
+	}
+	return Key{SourceID: rest[:slash], Partition: int32(part), Minute: min.UTC()}, nil
 }

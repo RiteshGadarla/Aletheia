@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field, asdict
@@ -20,27 +21,44 @@ from typing import Callable
 
 CH_URL = os.environ.get("ALETHEIA_CH_URL", "http://localhost:8123")
 CH_DB = os.environ.get("ALETHEIA_CH_DB", "aletheia")
+CH_USER = os.environ.get("ALETHEIA_CH_USER", "aletheia")
+CH_PASS = os.environ.get("ALETHEIA_CH_PASSWORD", "aletheia")
 SYSLOG_HOST = os.environ.get("ALETHEIA_SYSLOG_HOST", "localhost")
 SYSLOG_PORT = int(os.environ.get("ALETHEIA_SYSLOG_PORT", "5514"))
-ALETHEIA_BIN = os.environ.get("ALETHEIA_BIN", "aletheia")
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _find_bin() -> str:
+    """Prefer the locally built binary; fall back to PATH."""
+    local = os.path.join(REPO, "bin", "aletheia")
+    if os.access(local, os.X_OK):
+        return local
+    return shutil.which("aletheia") or "aletheia"
+
+
+ALETHEIA_BIN = os.environ.get("ALETHEIA_BIN") or _find_bin()
 
 
 # --------------------------------------------------------------------------- helpers
 def ch(sql: str, timeout: int = 60) -> str:
-    """Run SQL against ClickHouse over HTTP and return the raw body."""
-    q = urllib.parse.urlencode({"query": sql, "database": CH_DB})
-    with urllib.request.urlopen(f"{CH_URL}/?{q}", timeout=timeout) as r:
-        return r.read().decode().strip()
+    """Run SQL against ClickHouse. The statement goes in the POST body — long mutations do
+    not survive being stuffed into a URL query string."""
+    q = urllib.parse.urlencode({"database": CH_DB, "user": CH_USER, "password": CH_PASS})
+    req = urllib.request.Request(f"{CH_URL}/?{q}", data=sql.encode())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read().decode().strip()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"ClickHouse: {e.read().decode()[:300]}") from e
 
 
-def run(cmd: list[str], timeout: int = 300) -> tuple[int, str]:
-    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+def run(cmd: list[str], timeout: int = 300, env: dict | None = None) -> tuple[int, str]:
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
     return p.returncode, (p.stdout + p.stderr).strip()
 
 
 def have_engine() -> bool:
-    return shutil.which(ALETHEIA_BIN) is not None
+    return os.access(ALETHEIA_BIN, os.X_OK) or shutil.which(ALETHEIA_BIN) is not None
 
 
 @dataclass
@@ -65,25 +83,44 @@ class Scenario:
 
 
 # --------------------------------------------------------------------------- scenarios
-def s1_start_traffic(a) -> Result:
-    """Eight source types stream in; one table shows them all in identical OCSF columns."""
+def _generate_and_ingest(formats: str | None, count: int) -> tuple[int, str, dict]:
+    """Generate lines, then run them through the worker's own decision path (bench/ingest.py)."""
     gen = os.path.join(REPO, "sources", "generators", "log_generator.py")
-    cli = (f"python3 sources/generators/log_generator.py --seed 1337 --rate {a.rate} "
-           f"--duration {a.duration} --syslog {SYSLOG_HOST}:{SYSLOG_PORT}")
-    if not os.path.exists(gen):
-        return Result("1 unified output", False, "b, c, f", "eight sources, one OCSF table", cli,
-                      message="generator not found — build sources/generators first")
-    rc, out = run([sys.executable, gen, "--seed", "1337", "--rate", str(a.rate),
-                   "--duration", str(a.duration), "--syslog", f"{SYSLOG_HOST}:{SYSLOG_PORT}"])
-    detail = {}
+    out_file = os.path.join(REPO, ".demo-traffic.log")
+    if os.path.exists(out_file):
+        os.remove(out_file)
+    cmd = [sys.executable, gen, "--count", str(count), "--out", out_file]
+    if formats:
+        cmd += ["--formats", formats]
+    rc, out = run(cmd)
+    if rc != 0:
+        return rc, out, {}
+    rc2, out2 = run([sys.executable, os.path.join(REPO, "bench", "ingest.py"),
+                     "--file", out_file, "--json"])
+    stats = {}
     try:
-        detail["by_source"] = ch(
+        stats = json.loads(out2.strip().splitlines()[-1])
+    except (json.JSONDecodeError, IndexError):
+        stats = {"raw": out2[-300:]}
+    return rc2, out + "\n" + out2, stats
+
+
+def s1_start_traffic(a) -> Result:
+    """Every source lands in one OCSF table with identical columns."""
+    cli = (f"python3 sources/generators/log_generator.py --count {a.count} --out traffic.log && "
+           f"python3 bench/ingest.py --file traffic.log")
+    rc, out, stats = _generate_and_ingest(None, a.count)
+    detail = dict(stats)
+    try:
+        detail["by_source"] = json.loads(ch(
             "SELECT source_id, count() AS n, countIf(parse_status='full') AS full "
-            "FROM events GROUP BY source_id ORDER BY n DESC FORMAT JSON")
+            "FROM events GROUP BY source_id ORDER BY n DESC FORMAT JSON")).get("data", [])
     except Exception as exc:                                        # noqa: BLE001
         detail["clickhouse"] = f"unavailable: {exc}"
-    return Result("1 unified output", rc == 0, "b, c, f",
-                  "eight source types visible with identical OCSF columns", cli, detail, out[-400:])
+    n = stats.get("ingested", 0)
+    return Result("1 unified output", rc == 0 and n > 0, "b, c, f",
+                  "every source visible with identical OCSF columns", cli, detail,
+                  f"{n} events ingested, {stats.get('matched', 0)} normalized")
 
 
 def s2_lineage(a) -> Result:
@@ -103,12 +140,39 @@ def s2_lineage(a) -> Result:
                       message=f"ClickHouse unavailable: {exc}")
 
 
+def _engine_env() -> dict:
+    """The CLI defaults packs to /packs, which only exists inside the container image."""
+    env = dict(os.environ)
+    env.setdefault("ALETHEIA_PACKS_DIR", os.path.join(REPO, "backend", "packs"))
+    env.setdefault("ALETHEIA_CLICKHOUSE_ADDR",
+                   os.environ.get("ALETHEIA_CLICKHOUSE_ADDR", "127.0.0.1:9000"))
+    env.setdefault("ALETHEIA_CLICKHOUSE_DB", CH_DB)
+    env.setdefault("ALETHEIA_CLICKHOUSE_USER", CH_USER)
+    env.setdefault("ALETHEIA_CLICKHOUSE_PASSWORD", CH_PASS)
+    # Without a DSN the Merkle chain simply is not checked, and verify fails for that alone.
+    env.setdefault("ALETHEIA_PG_DSN",
+                   os.environ.get("ALETHEIA_PG_DSN",
+                                  "postgres://aletheia:aletheia@127.0.0.1:5432/aletheia"))
+    return env
+
+
+def _busiest_source() -> str:
+    try:
+        rows = json.loads(ch("SELECT source_id FROM events GROUP BY source_id "
+                             "ORDER BY count() DESC LIMIT 1 FORMAT JSON")).get("data", [])
+        return rows[0]["source_id"] if rows else ""
+    except Exception:                                               # noqa: BLE001
+        return ""
+
+
 def s3_verify(a) -> Result:
-    cli = f"{ALETHEIA_BIN} verify --source {a.source} --last 15m --json"
+    src = a.source if a.source != "fw01" else (_busiest_source() or a.source)
+    cli = f"aletheia verify --source {src} --last 24h --json"
     if not have_engine():
         return Result("3 integrity: verify", False, "a, tamper evidence",
                       "verify passes over the range", cli, message="aletheia binary not on PATH")
-    rc, out = run([ALETHEIA_BIN, "verify", "--source", a.source, "--last", "15m", "--json"])
+    rc, out = run([ALETHEIA_BIN, "verify", "--source", src, "--last", "24h", "--json"],
+                  env=_engine_env())
     try:
         detail = json.loads(out)
     except json.JSONDecodeError:
@@ -123,7 +187,8 @@ def s3b_tamper(a) -> Result:
     This is what an attacker with database access would do. Verification must then fail and name
     the exact batch and event.
     """
-    cli = ("clickhouse-client -q \"ALTER TABLE events UPDATE vars[1] = 'TAMPERED' "
+    cli = ("clickhouse-client -q \"ALTER TABLE events UPDATE vars = arrayMap((x,i) -> "
+           "if(i = 1, concat(x,'X'), x), vars, arrayEnumerate(vars)) "
            "WHERE event_uid = '<uid>' SETTINGS mutations_sync=1\"")
     try:
         row = ch("SELECT event_uid FROM events WHERE storage_mode='template' "
@@ -135,12 +200,18 @@ def s3b_tamper(a) -> Result:
                           message="no template-mode events to tamper — run scenario 1 first")
         uid = data[0]["event_uid"]
         before = ch(f"SELECT vars[1] FROM events WHERE event_uid = '{uid}' LIMIT 1")
-        ch(f"ALTER TABLE events UPDATE vars[1] = concat(vars[1], 'X') "
-           f"WHERE event_uid = '{uid}' SETTINGS mutations_sync=1")
+        sha = ch(f"SELECT hex(raw_sha256) FROM events WHERE event_uid = '{uid}' LIMIT 1")
+        # ClickHouse cannot assign to one array element, so the whole column is rewritten
+        # with only the first entry altered. Still a direct DB edit that bypasses Aletheia.
+        ch(f"ALTER TABLE events UPDATE vars = arrayMap((x, i) -> if(i = 1, concat(x, 'X'), x), "
+           f"vars, arrayEnumerate(vars)) WHERE event_uid = '{uid}' SETTINGS mutations_sync=1")
         detail = {"event_uid": uid, "vars_before": before,
-                  "vars_after": ch(f"SELECT vars[1] FROM events WHERE event_uid='{uid}' LIMIT 1")}
+                  "vars_after": ch(f"SELECT vars[1] FROM events WHERE event_uid='{uid}' LIMIT 1"),
+                  "stored_sha256": sha[:16] + "...",
+                  "note": "the stored hash is untouched, so the rebuilt line no longer matches it"}
         if have_engine():
-            rc, out = run([ALETHEIA_BIN, "verify", "--source", a.source, "--last", "60m", "--json"])
+            rc, out = run([ALETHEIA_BIN, "verify", "--source", _busiest_source() or a.source,
+                           "--last", "24h", "--json"], env=_engine_env())
             detail["verify_exit_code"] = rc
             detail["verify"] = out[-600:]
             # verify SHOULD fail now; a zero exit would mean tampering went undetected
@@ -169,25 +240,23 @@ def s4_storage(a) -> Result:
 
 
 def s5_drift(a) -> Result:
-    """Emit the ASA firmware-drift variant; those lines must land in quarantine, not be dropped."""
-    gen = os.path.join(REPO, "sources", "generators", "log_generator.py")
-    cli = (f"python3 sources/generators/log_generator.py --source asa --drift --count 200 "
-           f"--syslog {SYSLOG_HOST}:{SYSLOG_PORT}")
-    if not os.path.exists(gen):
-        return Result("5 drift + onboarding", False, "e, i", "drifted events quarantined", cli,
-                      message="generator not found")
-    rc, out = run([sys.executable, gen, "--source", "asa", "--drift", "--count", "200",
-                   "--syslog", f"{SYSLOG_HOST}:{SYSLOG_PORT}"])
-    time.sleep(3)
-    detail = {}
+    """The ASA firmware-drift variant must land in quarantine, stored in full — never dropped."""
+    cli = ("python3 sources/generators/log_generator.py --formats asa_drift --count 200 "
+           "--out drift.log && python3 bench/ingest.py --file drift.log")
+    rc, out, stats = _generate_and_ingest("asa_drift", 200)
+    detail = dict(stats)
     try:
-        detail["raw_only"] = ch("SELECT count() FROM events WHERE parse_status='raw_only' "
-                                "AND recv_time > now() - INTERVAL 5 MINUTE")
+        detail["raw_only_total"] = json.loads(ch(
+            "SELECT count() AS n FROM events WHERE parse_status='raw_only' FORMAT JSON")
+        ).get("data", [{}])[0].get("n", 0)
     except Exception as exc:                                        # noqa: BLE001
         detail["clickhouse"] = f"unavailable: {exc}"
-    return Result("5 drift + onboarding", rc == 0, "e, i",
-                  "drifted lines stored verbatim as raw_only and quarantined — never dropped",
-                  cli, detail, out[-300:])
+    q = stats.get("quarantined", 0)
+    # Drifted lines SHOULD fail to match — that is the whole point of the scenario.
+    return Result("5 drift + onboarding", rc == 0 and q > 0, "e, i",
+                  "drifted lines stored verbatim as raw_only and queued for onboarding",
+                  cli, detail,
+                  f"{q} of {stats.get('ingested', 0)} lines quarantined, none dropped")
 
 
 def s8_bench(a) -> Result:
@@ -259,6 +328,7 @@ def main() -> int:
     ap.add_argument("scenario", choices=[*SCENARIOS, "list", "all"])
     ap.add_argument("--source", default="fw01")
     ap.add_argument("--rate", type=int, default=200)
+    ap.add_argument("--count", type=int, default=400)
     ap.add_argument("--duration", type=int, default=20)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()

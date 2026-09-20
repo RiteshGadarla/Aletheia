@@ -23,3 +23,10 @@ venv/
 .gocache/
 /bin/
 .venv/
+
+.claude/
+.dev-logs/
+
+# Run logs only. NOT *.log — golden parser samples are .log files and must stay tracked.
+/*.log
+/.demo-traffic.log

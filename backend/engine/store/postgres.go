@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -168,4 +169,76 @@ func PacksAtVersion(ctx context.Context, pool *pgxpool.Pool, version uint32) ([]
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// SealAndChain persists one sealed batch with the chained root that CONTRACTS
+// §4 defines: over the roots of that (source, partition) in minute order. The
+// predecessor is read from the table rather than from whatever the process
+// sealed last, so re-sealing a minute is idempotent, and every later batch is
+// re-chained so a backfilled minute cannot leave the chain broken.
+func SealAndChain(ctx context.Context, pool *pgxpool.Pool, b SealedBatch) ([32]byte, error) {
+	if len(b.Root) != 32 {
+		return [32]byte{}, fmt.Errorf("merkle batch %s: root is %d bytes, want 32", b.Key(), len(b.Root))
+	}
+	var root [32]byte
+	copy(root[:], b.Root)
+	prev, _, err := PrevChained(ctx, pool, b.SourceID, b.Partition, b.Minute)
+	if err != nil {
+		return [32]byte{}, err
+	}
+	chained := merkle.Chain(prev, root, b.Key())
+	b.ChainedRoot = chained[:]
+	if err := UpsertBatch(ctx, pool, b); err != nil {
+		return [32]byte{}, err
+	}
+	return rechainAfter(ctx, pool, b.SourceID, b.Partition, b.Minute, chained)
+}
+
+// rechainAfter recomputes the chained root of every batch later than minute on
+// one (source, partition) chain and returns the resulting chain head.
+func rechainAfter(ctx context.Context, pool *pgxpool.Pool, source string, partition int32,
+	minute time.Time, head [32]byte) ([32]byte, error) {
+
+	rows, err := pool.Query(ctx, `SELECT minute, root, chained_root FROM merkle_batches
+		WHERE source_id = $1 AND partition = $2 AND minute > $3 ORDER BY minute`,
+		source, partition, minute)
+	if err != nil {
+		return head, err
+	}
+	type upd struct {
+		minute  time.Time
+		chained [32]byte
+	}
+	var todo []upd
+	for rows.Next() {
+		var m time.Time
+		var r, c []byte
+		if err := rows.Scan(&m, &r, &c); err != nil {
+			rows.Close()
+			return head, err
+		}
+		if len(r) != 32 {
+			rows.Close()
+			return head, fmt.Errorf("merkle batch %s/p%d/%s: root is not 32 bytes", source, partition, m)
+		}
+		var root, was [32]byte
+		copy(root[:], r)
+		copy(was[:], c)
+		head = merkle.Chain(head, root, merkle.Key{SourceID: source, Partition: partition, Minute: m.UTC()})
+		if head != was {
+			todo = append(todo, upd{m, head})
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return head, err
+	}
+	for _, u := range todo {
+		if _, err := pool.Exec(ctx, `UPDATE merkle_batches SET chained_root = $4
+			WHERE source_id = $1 AND partition = $2 AND minute = $3`,
+			source, partition, u.minute, u.chained[:]); err != nil {
+			return head, err
+		}
+	}
+	return head, nil
 }

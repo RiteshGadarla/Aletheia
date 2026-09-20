@@ -1,4 +1,4 @@
-"""OpenAI Chat Completions adapter: openai, groq, ollama, openai_compatible (spec §8.12.3)."""
+"""OpenAI Chat Completions adapter — used for every local server (Ollama, vLLM, llama.cpp, LM Studio)."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class OpenAICompatibleProvider:
 
     def __init__(self, model: str, api_key: str = "", base_url: str = "",
                  timeout_s: int = 30, max_output_tokens: int = 2048,
-                 name: str = "openai_compatible", client: httpx.Client | None = None) -> None:
+                 name: str = "local", client: httpx.Client | None = None) -> None:
         self.name = name
         self.model = model
         self._key = api_key

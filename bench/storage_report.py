@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.parse
 import urllib.request
@@ -46,10 +47,10 @@ def human(n: float) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--url", default="http://localhost:8123")
+    ap.add_argument("--url", default=os.environ.get("ALETHEIA_CH_URL", "http://localhost:8123"))
     ap.add_argument("--db", default="aletheia")
-    ap.add_argument("--user", default="default")
-    ap.add_argument("--password", default="")
+    ap.add_argument("--user", default=os.environ.get("ALETHEIA_CH_USER", "aletheia"))
+    ap.add_argument("--password", default=os.environ.get("ALETHEIA_CH_PASSWORD", "aletheia"))
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     a = ap.parse_args()
 

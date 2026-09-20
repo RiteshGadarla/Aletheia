@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from ..core.settings import DEFAULT_BASE_URLS, LLMConfig
 from . import airgap
-from .anthropic import AnthropicProvider
 from .base import LLMUnavailable, Provider
 from .gemini import GeminiProvider
 from .none import NoneProvider
 from .openai_compat import OpenAICompatibleProvider
 
-OPENAI_FAMILY = {"openai", "groq", "ollama", "openai_compatible"}
+# Only two shapes: Gemini (cloud) and a local OpenAI-compatible server.
+# "ollama" is accepted as an alias so older configs keep working.
+LOCAL_FAMILY = {"local", "ollama"}
 
 
 def build_provider(cfg: LLMConfig) -> Provider:
@@ -29,18 +30,13 @@ def build_provider(cfg: LLMConfig) -> Provider:
             raise LLMUnavailable("gemini is configured but no API key is set (Settings page)")
         return GeminiProvider(cfg.model, cfg.api_key, base_url or DEFAULT_BASE_URLS["gemini"],
                               cfg.timeout_s, cfg.max_output_tokens)
-    if provider == "anthropic":
-        if not cfg.api_key:
-            raise LLMUnavailable("anthropic is configured but no API key is set (Settings page)")
-        return AnthropicProvider(cfg.model, cfg.api_key,
-                                 base_url or DEFAULT_BASE_URLS["anthropic"],
-                                 cfg.timeout_s, cfg.max_output_tokens)
-    if provider in OPENAI_FAMILY:
-        if provider in ("openai", "groq") and not cfg.api_key:
-            raise LLMUnavailable(f"{provider} is configured but no API key is set (Settings page)")
+    if provider in LOCAL_FAMILY:
+        # Local servers (Ollama, vLLM, llama.cpp, LM Studio) all speak the OpenAI shape.
+        if not base_url:
+            raise LLMUnavailable(f"{provider} needs a base URL (Settings page)")
         return OpenAICompatibleProvider(cfg.model, cfg.api_key, base_url, cfg.timeout_s,
                                         cfg.max_output_tokens, name=provider)
-    raise LLMUnavailable(f"unknown provider {provider!r}")
+    raise LLMUnavailable(f"unknown provider {provider!r} — supported: none, gemini, local")
 
 
 def origin_tag(cfg: LLMConfig) -> str:

@@ -403,7 +403,7 @@ function demoOutput(id: string): { ok: boolean; output: string } {
       return { ok: false, output: 'gate REJECTED\n  samples 412, reconstructed 0\n  sample 1: literal mismatch at byte offset 168\n  a pack that cannot rebuild the original byte for byte is never approved' };
     case 'scn5c':
       return state.settings.provider === 'none'
-        ? { ok: false, output: 'no LLM provider configured. Set one on the Settings page, or run with ALETHEIA_LLM_PROVIDER=ollama and a local model.' }
+        ? { ok: false, output: 'no LLM provider configured. Set one on the Settings page, or run with ALETHEIA_LLM_PROVIDER=local and a local model.' }
         : { ok: true, output: `asked ${state.settings.provider}/${state.settings.model} (samples ${state.settings.send_samples})\n  1 request for the whole cluster, 0 on the hot path\n  suggestion returned and labelled ai:${state.settings.provider}/${state.settings.model}` };
     case 'scn6':
       return { ok: true, output: 'replay diff fw01 v4 -> v5 over 5000 events\n  newly matched 412 (raw_only -> full)\n  regressions 0\n  report sha256 e3b0c442...b855 recorded with the approval' };
@@ -489,7 +489,7 @@ export const mockApi = {
       return delay({
         ok: false,
         reason: 'airgap_blocked' as const,
-        error: `Air-gap mode is on, so the cloud provider ${s.provider} is refused. Use ollama or openai_compatible with a private address.`,
+        error: `Air-gap mode is on, so the cloud provider ${s.provider} is refused. Use provider 'local' pointed at a private address.`,
       });
     }
     if (isCloudProvider(s.provider) && !s.api_key_set) {
@@ -598,7 +598,7 @@ export const mockApi = {
         models: ['gemma-4-31b-it', 'gemini-2.5-flash', 'gemini-2.5-pro'], error: null,
       }, 900);
     }
-    if (s.provider === 'ollama') {
+    if (s.provider === 'local') {
       return delay({
         ...base, ok: true, latency_ms: 143, json_mode: 'json_object' as const,
         models: ['qwen2.5-coder:7b', 'llama3.1:8b'], error: null,

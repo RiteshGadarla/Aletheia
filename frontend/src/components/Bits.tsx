@@ -1,79 +1,268 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
+import {
+  IconAlert, IconCaret, IconCheck, IconCopy, IconInbox, IconShield, IconShieldAlert,
+  IconSpinner, IconTerminal,
+} from './Icons';
 import type { ParseStatus } from '../lib/types';
 
-export function Panel(props: { title?: ReactNode; right?: ReactNode; children: ReactNode; className?: string }) {
+/* ---------------------------------------------------------------- surfaces */
+
+export function Panel(props: {
+  title?: ReactNode;
+  subtitle?: ReactNode;
+  right?: ReactNode;
+  children: ReactNode;
+  flush?: boolean;
+  className?: string;
+}) {
+  const hasHeader = props.title !== undefined || props.right !== undefined;
   return (
     <section className={`panel ${props.className ?? ''}`}>
-      {(props.title || props.right) && (
+      {hasHeader && (
         <header>
-          <span>{props.title}</span>
-          {props.right && <span className="spacer">{props.right}</span>}
+          <div className="panel-title">
+            {props.title}
+            {props.subtitle && <span className="panel-sub">{props.subtitle}</span>}
+          </div>
+          {props.right && <div className="panel-right">{props.right}</div>}
         </header>
       )}
-      <div className="body">{props.children}</div>
+      <div className={`panel-body${props.flush ? ' flush' : ''}`}>{props.children}</div>
     </section>
   );
 }
 
-export function Badge(props: { kind?: 'ok' | 'warn' | 'bad' | 'info' | 'plain'; title?: string; children: ReactNode }) {
-  return <span className={`badge ${props.kind ?? ''}`} title={props.title}>{props.children}</span>;
-}
-
-export function ParseStatusBadge({ status }: { status: ParseStatus }) {
-  const kind = status === 'full' ? 'ok' : status === 'partial' ? 'warn' : 'bad';
-  return <Badge kind={kind} title="CONTRACTS section 5: full | partial | raw_only">{status}</Badge>;
-}
-
-/** Losslessness proof: hash of the raw bytes plus whether reconstruction matched it. */
-export function VerifiedBadge({ verified, sha256 }: { verified: boolean; sha256: string }) {
+/** Every page opens the same way: title, one line of purpose, optional action on the right. */
+export function PageHead({ title, children, right }: { title: string; children?: ReactNode; right?: ReactNode }) {
   return (
-    <span className="row" style={{ gap: 6 }}>
-      <Badge kind={verified ? 'ok' : 'bad'} title="Reconstruction hashed and compared with the hash taken at ingest">
-        {verified ? 'verified' : 'NOT VERIFIED'}
-      </Badge>
-      <Badge kind="plain" title={`raw_sha256 = ${sha256}`}>
-        raw_sha256 {sha256 ? `${sha256.slice(0, 12)}...${sha256.slice(-4)}` : 'n/a'}
-      </Badge>
+    <div className="page-head-row">
+      <div className="page-head">
+        <h1>{title}</h1>
+        {children && <p className="sub">{children}</p>}
+      </div>
+      {right && <div className="page-head-actions">{right}</div>}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- badges */
+
+export type BadgeKind = 'ok' | 'warn' | 'bad' | 'info' | 'plain';
+
+export function Badge({ kind = 'plain', title, mono, children }: {
+  kind?: BadgeKind; title?: string; mono?: boolean; children: ReactNode;
+}) {
+  const cls = kind === 'plain' ? '' : kind;
+  return <span className={`badge ${cls}${mono ? ' mono' : ''}`} title={title}>{children}</span>;
+}
+
+const STATUS_HELP: Record<ParseStatus, string> = {
+  full: 'Every slot matched a template and mapped to OCSF.',
+  partial: 'The line matched, but some fields stayed unmapped.',
+  raw_only: 'No template matched. Stored verbatim — nothing was dropped.',
+};
+
+/** CONTRACTS section 5 enum, one colour per value everywhere in the product. */
+export function ParseStatusBadge({ status }: { status: ParseStatus }) {
+  return (
+    <span className={`status-pill status-${status}`} title={STATUS_HELP[status]}>
+      <span className="dot" />
+      {status}
     </span>
+  );
+}
+
+/** Losslessness proof: the hash taken at ingest, and whether reconstruction still matches it. */
+export type Recheck = 'pending' | 'match' | 'mismatch' | 'unavailable';
+
+const RECHECK_TEXT: Record<Recheck, string> = {
+  pending: 're-hashing in your browser…',
+  match: 're-hashed here: the bytes match raw_sha256',
+  mismatch: 're-hashed here: the bytes do NOT match raw_sha256',
+  unavailable: 'browser re-check needs a secure origin',
+};
+
+export function VerifiedSeal({ verified, sha256, recheck }: {
+  verified: boolean; sha256: string; recheck?: Recheck;
+}) {
+  // A mismatch means the reconstruction is not byte-identical, whatever the server claims.
+  const bad = !verified || recheck === 'mismatch';
+  return (
+    <div className={`proof${bad ? ' bad' : ''}`}>
+      <span className="seal">{bad ? <IconShieldAlert size={24} /> : <IconShield size={24} />}</span>
+      <div className="proof-text">
+        <div className="proof-title">
+          {recheck === 'mismatch' ? 'Reconstruction does not match'
+            : verified ? 'Verified lossless' : 'Verification failed'}
+        </div>
+        <div className="hash">
+          <span className="faint">raw_sha256</span>
+          <span className="full" title={sha256}>{sha256 || 'n/a'}</span>
+          <CopyButton text={sha256} label="Copy hash" />
+        </div>
+        {recheck && (
+          <div className={`recheck ${recheck}`}>{RECHECK_TEXT[recheck]}</div>
+        )}
+      </div>
+    </div>
   );
 }
 
 export function Confidence({ value }: { value: number }) {
   const cls = value >= 0.85 ? '' : value >= 0.65 ? 'low' : 'vlow';
   return (
-    <span className="row" style={{ gap: 6 }} title={`confidence ${value.toFixed(2)}`}>
+    <span className="row-tight row-nowrap" title={`confidence ${value.toFixed(2)}`}>
       <span className={`meter ${cls}`}><i style={{ width: `${Math.round(value * 100)}%` }} /></span>
-      <span className="mono" style={{ fontSize: 11 }}>{value.toFixed(2)}</span>
+      <span className="conf-val mono">{value.toFixed(2)}</span>
     </span>
   );
 }
 
-/** The equivalent CLI command, always shown in the open (spec 21.1). */
+/* ---------------------------------------------------------------- actions */
+
+export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="ghost icon"
+      title={label}
+      aria-label={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        void navigator.clipboard?.writeText(text);
+        setDone(true);
+        window.setTimeout(() => setDone(false), 1200);
+      }}
+    >
+      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
+    </button>
+  );
+}
+
+/** The equivalent CLI command. Available, but never the headline. */
+export function CliDisclosure({ cmd, label = 'Show equivalent command' }: { cmd: string; label?: string }) {
+  return (
+    <details className="disclosure">
+      <summary>
+        <IconCaret size={12} className="caret" />
+        <IconTerminal size={13} />
+        {label}
+      </summary>
+      <Cli cmd={cmd} />
+    </details>
+  );
+}
+
 export function Cli({ cmd }: { cmd: string }) {
   return (
     <div className="cli">
       <span className="prompt">$</span>
       <span className="cmd">{cmd}</span>
-      <button
-        type="button"
-        className="ghost"
-        title="Copy command"
-        onClick={() => { void navigator.clipboard?.writeText(cmd); }}
-      >
-        copy
-      </button>
+      <CopyButton text={cmd} label="Copy command" />
     </div>
   );
 }
 
-export function Loading({ what }: { what: string }) {
-  return <div className="spinner">loading {what}...</div>;
+/* ---------------------------------------------------------------- states */
+
+export function Spinner({ label }: { label?: string }) {
+  return (
+    <span className="spinner row-tight row-nowrap muted">
+      <IconSpinner size={14} />
+      {label}
+    </span>
+  );
 }
 
-export function ErrorBox({ error }: { error: string }) {
-  return <pre className="out bad">{error}</pre>;
+/** Table-shaped loading skeleton: same rhythm as the real rows, so nothing jumps. */
+export function TableSkeleton({ rows = 8, cols = 6 }: { rows?: number; cols?: number }) {
+  return (
+    <div className="skel-rows" aria-busy="true" aria-label="loading">
+      {Array.from({ length: rows }, (_, r) => (
+        <div className="skel-row" key={r}>
+          {Array.from({ length: cols }, (_, c) => (
+            <span
+              key={c}
+              className="skel"
+              style={{ flex: c === cols - 1 ? 2 : 1, opacity: 1 - r * 0.07 }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div className="empty">{children}</div>;
+export function BlockSkeleton({ lines = 4 }: { lines?: number }) {
+  return (
+    <div className="skel-rows" aria-busy="true" aria-label="loading">
+      {Array.from({ length: lines }, (_, i) => (
+        <span key={i} className="skel" style={{ width: `${100 - i * 11}%` }} />
+      ))}
+    </div>
+  );
+}
+
+export function EmptyState({ title, children, action, icon }: {
+  title: string; children?: ReactNode; action?: ReactNode; icon?: ReactNode;
+}) {
+  return (
+    <div className="empty-state">
+      <span className="icon">{icon ?? <IconInbox size={22} />}</span>
+      <div className="title">{title}</div>
+      {children && <div className="body">{children}</div>}
+      {action}
+    </div>
+  );
+}
+
+/** Errors always say what to do next, not just what broke. */
+export function ErrorState({ error, what, fix }: { error: string; what?: string; fix?: ReactNode }) {
+  const proxyish = /not JSON|Failed to fetch|NetworkError|ECONNREFUSED/i.test(error);
+  return (
+    <div className="error-state" role="alert">
+      <IconAlert size={18} />
+      <div className="grow">
+        <div className="title">{what ? `Could not load ${what}` : 'Something went wrong'}</div>
+        <div className="detail">{error}</div>
+        <div className="fix">
+          {fix ?? (proxyish
+            ? <>The Studio API looks unreachable. Start it with <code>make studio</code>, or
+              <code> cd backend &amp;&amp; uvicorn studio.main:app --port 8081</code>, then retry.</>
+            : 'Retry, and check the Studio API logs if it keeps failing.')}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function Callout({ kind = 'info', icon, children }: {
+  kind?: 'info' | 'ok' | 'warn' | 'bad'; icon?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <div className={`callout ${kind}`}>
+      {icon ?? <IconAlert size={15} />}
+      <div className="grow">{children}</div>
+    </div>
+  );
+}
+
+export function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 'ok' | 'warn' | 'bad' }) {
+  return (
+    <div className="stat">
+      <div className="k">{label}</div>
+      <div className={`v ${tone ?? ''}`}>{value}</div>
+    </div>
+  );
+}
+
+export function MetaItem({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
+  return (
+    <div className="meta-item" title={title}>
+      <span className="k">{label}</span>
+      <span className="v">{value}</span>
+    </div>
+  );
 }

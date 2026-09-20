@@ -137,11 +137,36 @@ func ParseLEEF(b string) LEEFHeader {
 	return h
 }
 
+// isDelimiterField reports whether a LEEF 2.0 sixth header field declares the
+// delimiter: one literal character, or its hex code as `x09` or `0x09`.
 func isDelimiterField(s string) bool {
 	if len(s) == 1 {
 		return true
 	}
-	return len(s) == 4 && (strings.HasPrefix(s, "x") || strings.HasPrefix(s, "0x"))
+	hex := ""
+	switch {
+	case len(s) == 3 && s[0] == 'x':
+		hex = s[1:]
+	case len(s) == 4 && strings.HasPrefix(s, "0x"):
+		hex = s[2:]
+	default:
+		return false
+	}
+	return isHexPair(hex)
+}
+
+// isHexPair reports whether s is exactly two hex digits.
+func isHexPair(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for i := 0; i < 2; i++ {
+		c := s[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
 }
 
 func decodeDelimiter(s string) string {

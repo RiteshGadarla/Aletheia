@@ -48,6 +48,20 @@ def _write_samples_dir(samples: list[str], root: Path) -> Path:
     return d
 
 
+# The engine loads envelope templates from _envelopes.yaml beside the pack. Without it the
+# proposed pack cannot be spliced and every sample "fails" for the wrong reason.
+_REPO_ENVELOPES = Path(__file__).resolve().parents[3] / "backend" / "packs" / "_envelopes.yaml"
+
+
+def _write_envelopes(root: Path) -> None:
+    if _REPO_ENVELOPES.is_file():
+        shutil.copyfile(_REPO_ENVELOPES, root / "_envelopes.yaml")
+        return
+    # Minimal fallback: a bare envelope is just the body, which is what proposals use.
+    (root / "_envelopes.yaml").write_text(
+        "envelopes:\n  bare:\n    - {slot: body, type: text}\n", encoding="utf-8")
+
+
 def run_test_pack(pack_yaml_text: str, samples: list[str], *, engine_bin: str = "aletheia",
                   timeout_s: int = DEFAULT_TIMEOUT_S) -> dict[str, Any]:
     """`aletheia test-pack --pack <file.yaml> --samples <dir> --json` (CONTRACTS §8).
@@ -68,6 +82,7 @@ def run_test_pack(pack_yaml_text: str, samples: list[str], *, engine_bin: str = 
         root = Path(tmp)
         pack_path = root / "pack.yaml"
         pack_path.write_text(pack_yaml_text, encoding="utf-8")
+        _write_envelopes(root)
         samples_dir = _write_samples_dir(samples, root)
         cmd = [engine_bin, "test-pack", "--pack", str(pack_path),
                "--samples", str(samples_dir), "--json"]

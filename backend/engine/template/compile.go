@@ -120,11 +120,13 @@ func (t *Template) Match(b []byte) ([]string, bool) {
 
 // Reconstruct rebuilds the original bytes from tokens and captured vars.
 func Reconstruct(toks []Token, vars []string) ([]byte, error) {
-	n := 0
+	n, slots := 0, 0
 	for _, t := range toks {
 		if t.IsLit() {
 			n += len(t.Lit)
+			continue
 		}
+		slots++
 	}
 	for _, v := range vars {
 		n += len(v)
@@ -137,13 +139,15 @@ func Reconstruct(toks []Token, vars []string) ([]byte, error) {
 			continue
 		}
 		if vi >= len(vars) {
-			return nil, fmt.Errorf("reconstruct: missing var for slot %q", t.Slot)
+			// Usually a stored envelope_id that is not the envelope that matched.
+			return nil, fmt.Errorf("reconstruct: %d vars for %d slots, none left for slot %q",
+				len(vars), slots, t.Slot)
 		}
 		out = append(out, vars[vi]...)
 		vi++
 	}
 	if vi != len(vars) {
-		return nil, fmt.Errorf("reconstruct: %d vars for %d slots", len(vars), vi)
+		return nil, fmt.Errorf("reconstruct: %d vars for %d slots", len(vars), slots)
 	}
 	return out, nil
 }

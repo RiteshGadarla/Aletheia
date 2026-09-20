@@ -77,13 +77,13 @@ type Conditional struct {
 
 // OCSF is the normalization block of a template.
 type OCSF struct {
-	ClassUID     int                  `yaml:"class_uid"     json:"class_uid"`
-	ActivityID   int                  `yaml:"activity_id"   json:"activity_id"`
-	SeverityID   *int                 `yaml:"severity_id"   json:"severity_id,omitempty"`
-	Constants    map[string]any       `yaml:"constants"     json:"constants,omitempty"`
-	Map          map[string]Targets   `yaml:"map"           json:"map,omitempty"`
-	Conditional  []Conditional        `yaml:"conditional"   json:"conditional,omitempty"`
-	UnmappedKeep []string             `yaml:"unmapped_keep" json:"unmapped_keep,omitempty"`
+	ClassUID     int                `yaml:"class_uid"     json:"class_uid"`
+	ActivityID   int                `yaml:"activity_id"   json:"activity_id"`
+	SeverityID   *int               `yaml:"severity_id"   json:"severity_id,omitempty"`
+	Constants    map[string]any     `yaml:"constants"     json:"constants,omitempty"`
+	Map          map[string]Targets `yaml:"map"           json:"map,omitempty"`
+	Conditional  []Conditional      `yaml:"conditional"   json:"conditional,omitempty"`
+	UnmappedKeep []string           `yaml:"unmapped_keep" json:"unmapped_keep,omitempty"`
 }
 
 // Tests points at golden samples for the reconstruction gate.
@@ -94,12 +94,12 @@ type Tests struct {
 
 // TemplateDef is one template inside a pack, after compilation.
 type TemplateDef struct {
-	ID            string            `yaml:"id"            json:"id"`
-	Discriminator string            `yaml:"discriminator" json:"discriminator,omitempty"`
-	Envelopes     []string          `yaml:"envelopes"     json:"envelopes,omitempty"`
-	Body          []template.Token  `yaml:"body"          json:"body"`
-	OCSF          OCSF              `yaml:"ocsf"          json:"ocsf"`
-	Tests         Tests             `yaml:"tests"         json:"tests,omitempty"`
+	ID            string           `yaml:"id"            json:"id"`
+	Discriminator string           `yaml:"discriminator" json:"discriminator,omitempty"`
+	Envelopes     []string         `yaml:"envelopes"     json:"envelopes,omitempty"`
+	Body          []template.Token `yaml:"body"          json:"body"`
+	OCSF          OCSF             `yaml:"ocsf"          json:"ocsf"`
+	Tests         Tests            `yaml:"tests"         json:"tests,omitempty"`
 
 	Pack        string             `yaml:"-" json:"pack"`
 	PackVersion uint32             `yaml:"-" json:"pack_version"`

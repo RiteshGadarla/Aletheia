@@ -5,8 +5,8 @@
 import { mockApi } from './mocks';
 import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
-  GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, QuarantineCluster,
-  ReplayDiff,
+  GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
+  QuarantineCluster, ReplayDiff,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -127,6 +127,12 @@ export const api = {
 
   resetDemo: (): Promise<{ ok: boolean; output: string }> =>
     USE_MOCKS ? mockApi.resetDemo() : http('/demo/reset', { method: 'POST' }),
+
+  /* pack self-check, used by the sidebar health indicator */
+  verifyPacks: (): Promise<PackVerify> =>
+    USE_MOCKS
+      ? Promise.resolve({ ok: true, samples: 30, reconstructed: 30, normalized: 30, failures: 0 })
+      : http('/packs/verify'),
 };
 
 export const errMessage = (e: unknown): string =>

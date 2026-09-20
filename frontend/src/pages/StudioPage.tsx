@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Badge, Cli, Confidence, Empty, ErrorBox, Loading, Panel, ParseStatusBadge,
+  Badge, CliDisclosure, Confidence, EmptyState, ErrorState, PageHead, Panel, ParseStatusBadge,
+  Spinner,
 } from '../components/Bits';
 import { TemplateView } from '../components/TemplateView';
+import { normalizeApproval, normalizeAskAi, normalizeProposal } from '../lib/adapt';
 import { api, errMessage } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import type {
@@ -37,9 +39,12 @@ function originBadge(origin: string) {
 function MappingTable({ mappings, hover, onHover }: {
   mappings: MappingProposal[]; hover: string | null; onHover: (slot: string | null) => void;
 }) {
+  if (mappings.length === 0) {
+    return <p className="hint">No slot was mapped to an OCSF field. Every slot is kept under <code>unmapped</code>.</p>;
+  }
   return (
-    <div className="tbl-wrap">
-      <table className="tbl">
+    <div className="table-scroll">
+      <table className="data">
         <thead>
           <tr><th>Slot</th><th>OCSF path</th><th>Confidence</th><th>Origin</th><th>Evidence</th></tr>
         </thead>
@@ -47,12 +52,12 @@ function MappingTable({ mappings, hover, onHover }: {
           {mappings.map((m) => (
             <tr
               key={m.slot}
+              className={hover === m.slot ? 'on' : undefined}
               onMouseEnter={() => onHover(m.slot)}
               onMouseLeave={() => onHover(null)}
-              style={hover === m.slot ? { background: 'var(--bg-3)' } : undefined}
             >
-              <td>{m.slot}</td>
-              <td>{m.ocsf_path}</td>
+              <td className="mono nowrap">{m.slot}</td>
+              <td className="mono nowrap">{m.ocsf_path}</td>
               <td><Confidence value={m.confidence} /></td>
               <td>{originBadge(m.origin)}</td>
               <td className="wrap">{m.evidence}</td>
@@ -90,7 +95,7 @@ export function StudioPage() {
   const [rejectReason, setRejectReason] = useState('');
 
   const proposal = useAsync(
-    () => (selected ? api.getProposal(selected) : Promise.resolve(null)),
+    () => (selected ? api.getProposal(selected).then(normalizeProposal) : Promise.resolve(null)),
     [selected],
   );
   const active = override ?? proposal.data;
@@ -98,10 +103,10 @@ export function StudioPage() {
   const ai = useAction<AskAiResult>();
   const gate = useAction<GateResult>();
   const replay = useAction<ReplayDiff>();
-  const approveAction = useAction<ApprovalState>();
-  const rejectAction = useAction<ApprovalState>();
+  const approveAction = useAction<ApprovalState | null>();
+  const rejectAction = useAction<ApprovalState | null>();
   const approvalLoad = useAsync(
-    () => (active ? api.getApproval(active.proposal_id) : Promise.resolve(null)),
+    () => (active ? api.getApproval(active.proposal_id).then(normalizeApproval) : Promise.resolve(null)),
     [active?.proposal_id],
   );
   const approvalState = approveAction.data ?? rejectAction.data ?? approvalLoad.data;
@@ -114,7 +119,7 @@ export function StudioPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected]);
 
-  function useAiMappings() {
+  function applyAiMappings() {
     if (ai.data?.ok && ai.data.proposal) setOverride(ai.data.proposal);
   }
 
@@ -122,45 +127,46 @@ export function StudioPage() {
     const rd = replay.data;
     if (!active || !rd) return;
     const proposalId = active.proposal_id;
-    void approveAction.run(() => api.approve(proposalId, approver, rd.report_sha256));
+    void approveAction.run(() => api.approve(proposalId, approver, rd.report_sha256).then(normalizeApproval));
   }
 
   function doReject() {
     if (!active || !rejectReason) return;
     const proposalId = active.proposal_id;
-    void rejectAction.run(() => api.reject(proposalId, approver, rejectReason));
+    void rejectAction.run(() => api.reject(proposalId, approver, rejectReason).then(normalizeApproval));
   }
 
   return (
     <div className="stack">
-      <div>
-        <h1>Onboarding Studio</h1>
-        <p className="sub">
-          Quarantined clusters get a proposed template and mappings, must clear the reconstruction
-          gate and a replay diff, and only then can be approved. AI is an optional second opinion,
-          never a shortcut past the gate.
-        </p>
-      </div>
+      <PageHead title="Onboarding Studio">
+        Quarantined clusters get a proposed template and mappings, must clear the reconstruction
+        gate and a replay diff, and only then can be approved. AI is an optional second opinion,
+        never a shortcut past the gate.
+      </PageHead>
 
       <div className="grid-side">
-        <Panel title="Quarantine clusters">
-          {clusters.loading && <Loading what="clusters" />}
-          {clusters.error && <ErrorBox error={clusters.error} />}
+        <Panel
+          title="Quarantine clusters"
+          subtitle={clusters.data ? `${clusters.data.length} waiting` : undefined}
+          flush
+        >
+          {clusters.loading && <div className="panel-pad"><Spinner label="clusters" /></div>}
+          {clusters.error && <div className="panel-pad"><ErrorState error={clusters.error} /></div>}
           {clusters.data && clusters.data.length === 0 && (
-            <Empty>No quarantined clusters. Trigger drift from the Demo Console.</Empty>
+            <EmptyState title="No quarantined clusters">Trigger drift from the Demo Console.</EmptyState>
           )}
           {clusters.data && clusters.data.length > 0 && (
-            <div className="selectable-list">
+            <div className="pick-list">
               {clusters.data.map((c) => (
                 <button
                   key={c.cluster_id}
                   type="button"
-                  className={`sel-item ${selected === c.cluster_id ? 'active' : ''}`}
+                  className={`pick-item${selected === c.cluster_id ? ' on' : ''}`}
                   onClick={() => setSelected(c.cluster_id)}
                 >
-                  <div className="title">{c.cluster_id}</div>
-                  <div className="meta">{c.source_id} &middot; {c.sample_count} samples</div>
-                  <div className="meta mono" style={{ marginTop: 4 }}>{c.drain_template}</div>
+                  <span className="t mono">{c.cluster_id}</span>
+                  <span className="m">{c.source_id} &middot; {c.sample_count} samples</span>
+                  <span className="m mono">{c.drain_template}</span>
                 </button>
               ))}
             </div>
@@ -168,15 +174,23 @@ export function StudioPage() {
         </Panel>
 
         <div className="stack">
-          {!selected && <Empty>Select a quarantine cluster to see its proposed template.</Empty>}
-          {selected && proposal.loading && <Loading what="proposal" />}
-          {selected && proposal.error && <ErrorBox error={proposal.error} />}
+          {!selected && (
+            <Panel flush>
+              <EmptyState title="Select a cluster">
+                Pick a quarantined cluster on the left to see its proposed template and mappings.
+              </EmptyState>
+            </Panel>
+          )}
+          {selected && proposal.loading && <Spinner label="proposal" />}
+          {selected && proposal.error && <ErrorState error={proposal.error} />}
 
           {active && (
             <>
               <Panel title="Proposed template" right={originBadge(active.origin)}>
-                <TemplateView tokens={active.tokens} active={hover} onActive={setHover} />
-                <p className="hint" style={{ marginTop: 10 }}>
+                {active.tokens.length > 0
+                  ? <TemplateView tokens={active.tokens} active={hover} onActive={setHover} />
+                  : <p className="hint">This proposal came back without a token list, so there is nothing to draw.</p>}
+                <p className="hint">
                   pack {active.pack} v{active.pack_version} &middot; class_uid {active.class_uid}{' '}
                   &middot; activity_id {active.activity_id}
                 </p>
@@ -187,7 +201,7 @@ export function StudioPage() {
                 right={(
                   <button
                     type="button"
-                    onClick={() => void ai.run(() => api.askAi(active.cluster_id))}
+                    onClick={() => void ai.run(() => api.askAi(active.cluster_id).then(normalizeAskAi))}
                     disabled={ai.loading}
                   >
                     {ai.loading ? 'asking...' : 'Ask AI'}
@@ -200,9 +214,12 @@ export function StudioPage() {
               {(ai.error || (ai.data && !ai.data.ok)) && (
                 <div className="blocking">
                   <h4>AI suggestion unavailable</h4>
-                  <p style={{ margin: '0 0 6px' }}>Heuristic proposal is unaffected.</p>
                   <p className="hint">
-                    {ai.data?.error ?? ai.error}{ai.data?.reason ? ` (${ai.data.reason})` : ''}
+                    {ai.data?.error || ai.error || 'The provider did not return a usable suggestion.'}
+                    {ai.data?.reason ? ` (${ai.data.reason})` : ''}
+                  </p>
+                  <p className="hint">
+                    The heuristic proposal above is unaffected — it is still the one that gets gated.
                   </p>
                   <Link to="/settings">Configure a provider in Settings</Link>
                 </div>
@@ -211,7 +228,7 @@ export function StudioPage() {
               {ai.data?.ok && ai.data.proposal && (
                 <Panel
                   title={`AI suggestion: ${ai.data.provider ?? 'unknown'}/${ai.data.model ?? 'unknown'}`}
-                  right={<button type="button" onClick={useAiMappings}>Use AI mappings</button>}
+                  right={<button type="button" onClick={applyAiMappings}>Use AI mappings</button>}
                 >
                   <MappingTable mappings={ai.data.proposal.mappings} hover={hover} onHover={setHover} />
                 </Panel>
@@ -238,7 +255,7 @@ export function StudioPage() {
                   </span>
                 )}
               >
-                {gate.error && <ErrorBox error={gate.error} />}
+                {gate.error && <ErrorState error={gate.error} />}
                 {!gate.data && !gate.error && <p className="hint">Not run yet.</p>}
                 {gate.data && (
                   <div className="stack">
@@ -259,7 +276,7 @@ export function StudioPage() {
                         <FailureLine sample={f.sample} offset={f.offset} />
                       </div>
                     ))}
-                    <Cli cmd={gate.data.cli} />
+                    <CliDisclosure cmd={gate.data.cli} />
                   </div>
                 )}
               </Panel>
@@ -276,7 +293,7 @@ export function StudioPage() {
                   </button>
                 )}
               >
-                {replay.error && <ErrorBox error={replay.error} />}
+                {replay.error && <ErrorState error={replay.error} />}
                 {!replay.data && !replay.error && <p className="hint">Not run yet.</p>}
                 {replay.data && (
                   <div className="stack">
@@ -291,16 +308,18 @@ export function StudioPage() {
                         regressions {replay.data.regressions.length}
                       </Badge>
                     </div>
-                    <div className="tbl-wrap">
-                      <table className="tbl">
-                        <thead><tr><th>Field</th><th>Changed</th><th>Before</th><th>After</th></tr></thead>
+                    <div className="table-scroll">
+                      <table className="data">
+                        <thead>
+                          <tr><th>Field</th><th className="num">Changed</th><th>Before</th><th>After</th></tr>
+                        </thead>
                         <tbody>
                           {replay.data.fields.map((f) => (
                             <tr key={f.path}>
-                              <td>{f.path}</td>
-                              <td>{f.changed}</td>
-                              <td>{f.before_example ?? '—'}</td>
-                              <td>{f.after_example ?? '—'}</td>
+                              <td className="mono nowrap">{f.path}</td>
+                              <td className="num">{f.changed}</td>
+                              <td className="wrap">{f.before_example ?? <span className="dim">—</span>}</td>
+                              <td className="wrap">{f.after_example ?? <span className="dim">—</span>}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -310,7 +329,7 @@ export function StudioPage() {
                       <div className="blocking">
                         <h4>Regressions &mdash; blocking, an event would get worse</h4>
                         {replay.data.regressions.map((r) => (
-                          <div key={r.event_uid} className="stack" style={{ marginBottom: 8 }}>
+                          <div key={r.event_uid} className="stack-sm">
                             <div className="row">
                               <span className="mono">{r.event_uid}</span>
                               <ParseStatusBadge status={r.from} /> &rarr; <ParseStatusBadge status={r.to} />
@@ -320,14 +339,14 @@ export function StudioPage() {
                         ))}
                       </div>
                     )}
-                    <Cli cmd={replay.data.cli} />
+                    <CliDisclosure cmd={replay.data.cli} />
                   </div>
                 )}
               </Panel>
 
               <Panel title="Approval">
-                {approvalLoad.loading && <Loading what="approval state" />}
-                {approvalLoad.error && <ErrorBox error={approvalLoad.error} />}
+                {approvalLoad.loading && <Spinner label="approval state" />}
+                {approvalLoad.error && <ErrorState error={approvalLoad.error} />}
                 {approvalState && (
                   <div className="stack">
                     <Badge kind={
@@ -352,10 +371,10 @@ export function StudioPage() {
                       <p className="hint err">Regressions are blocking: review carefully before approving.</p>
                     )}
                     <div className="row">
-                      <div style={{ minWidth: 220 }}>
-                        <label>Approver</label>
+                      <label className="field grow">
+                        <span className="lbl">Approver</span>
                         <input value={approver} onChange={(e) => setApprover(e.target.value)} />
-                      </div>
+                      </label>
                       <button
                         type="button"
                         className="primary"
@@ -367,10 +386,10 @@ export function StudioPage() {
                       </button>
                     </div>
                     <div className="row">
-                      <div style={{ flex: 1 }}>
-                        <label>Rejection reason</label>
+                      <label className="field grow">
+                        <span className="lbl">Rejection reason</span>
                         <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
-                      </div>
+                      </label>
                       <button
                         type="button"
                         className="danger"
@@ -380,8 +399,8 @@ export function StudioPage() {
                         {rejectAction.loading ? 'rejecting...' : 'Reject'}
                       </button>
                     </div>
-                    {approveAction.error && <ErrorBox error={approveAction.error} />}
-                    {rejectAction.error && <ErrorBox error={rejectAction.error} />}
+                    {approveAction.error && <ErrorState error={approveAction.error} />}
+                    {rejectAction.error && <ErrorState error={rejectAction.error} />}
                   </div>
                 )}
               </Panel>

@@ -16,6 +16,7 @@ const usage = `aletheia — Aletheia engine CLI
 
   aletheia test-pack --pack <file.yaml> --samples <dir> [--json]
   aletheia verify    --source <id> (--last 15m | --from T --to T) [--json]
+  aletheia seal      [--source <id>] (--last 24h | --from T --to T) [--dry-run] [--json]
   aletheia replay    --source <id> --from-version A --to-version B --last N [--json]
   aletheia bench     --workers 1,2,4 --duration 60s [--json]
   aletheia version
@@ -34,6 +35,8 @@ func main() {
 		os.Exit(cmdTestPack(args))
 	case "verify":
 		os.Exit(cmdVerify(args))
+	case "seal":
+		os.Exit(cmdSeal(args))
 	case "replay":
 		os.Exit(cmdReplay(args))
 	case "bench":

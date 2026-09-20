@@ -114,7 +114,10 @@ source = '''
 peer_ip = to_string(.host) ?? "0.0.0.0"
 peer_port = to_string(.port) ?? "0"
 .pr_peer = peer_ip + ":" + peer_port
-.pr_recv_ms = to_string(to_unix_timestamp(to_timestamp(.timestamp) ?? now(), unit: "milliseconds"))
+# The socket source stamps `.timestamp`; fall back to now() if it is missing.
+recv = now()
+if is_timestamp(.timestamp) { recv = timestamp!(.timestamp) }
+.pr_recv_ms = to_string(to_unix_timestamp(recv, unit: "milliseconds"))
 
 # Registry lookup; unknown peers are tagged, never guessed.
 matched = find_enrichment_table_records("sources", { "peer_ip": peer_ip }) ?? []

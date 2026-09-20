@@ -69,7 +69,7 @@ const bodyPattern = `(?s).*`
 const sd5424Pattern = `(?:-|(?:\[(?:[^\\\]]|\\.)*\])+)`
 const ts5424Pattern = `(?:-|\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)`
 
-func lit(s string) template.Token  { return template.Token{Lit: s} }
+func lit(s string) template.Token     { return template.Token{Lit: s} }
 func slot(n, t string) template.Token { return template.Token{Slot: n, Type: t} }
 func custom(n, p string) template.Token {
 	return template.Token{Slot: n, Type: template.TypeCustom, Pattern: p}
@@ -329,8 +329,13 @@ func (r Result) Full(bodyTokens []template.Token) ([]template.Token, bool) {
 	return toks, ok
 }
 
-// FullVars interleaves envelope vars with body vars in capture order.
+// FullVars interleaves envelope vars with body vars in capture order. A Result
+// with no body slot contributes no header captures, so the body vars stand
+// alone: nothing on this path may panic (CONTRACTS §10.2).
 func (r Result) FullVars(bodyVars []string) []string {
+	if r.BodyVarIdx < 0 || r.BodyVarIdx >= len(r.Vars) {
+		return append([]string(nil), bodyVars...)
+	}
 	out := make([]string, 0, len(r.Vars)-1+len(bodyVars))
 	out = append(out, r.Vars[:r.BodyVarIdx]...)
 	out = append(out, bodyVars...)

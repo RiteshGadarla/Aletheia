@@ -89,3 +89,11 @@ export function atPath(obj: unknown, path: string): unknown {
     obj,
   );
 }
+
+/** Losslessness re-checked in the browser, so the seal is not just repeating the server. */
+export async function sha256Hex(s: string): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return null; // insecure origin: fall back to the server's own verdict
+  const digest = await subtle.digest('SHA-256', enc.encode(s));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+}

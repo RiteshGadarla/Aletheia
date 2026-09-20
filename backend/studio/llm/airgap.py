@@ -6,8 +6,8 @@ import ipaddress
 import socket
 from urllib.parse import urlparse
 
-CLOUD_PROVIDERS = {"openai", "gemini", "groq", "anthropic"}
-SELF_HOSTED_PROVIDERS = {"ollama", "openai_compatible"}
+CLOUD_PROVIDERS = {"gemini"}
+SELF_HOSTED_PROVIDERS = {"local", "ollama"}   # ollama kept as an alias
 ALWAYS_PRIVATE_HOSTS = {"host.docker.internal", "localhost", "gateway.docker.internal"}
 
 

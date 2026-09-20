@@ -51,12 +51,17 @@ export function OcsfTree({ value, fieldMap, active, onActive, onPick, prefix = '
           <div
             key={path}
             className={`leaf ${slot ? 'linked' : ''} ${hit ? 'hit' : ''}`}
-            title={slot ? `${path} came from slot ${slot}` : path}
+            title={slot ? `${path} came from slot "${slot}"` : path}
+            role={slot ? 'button' : undefined}
+            tabIndex={slot ? 0 : undefined}
             onMouseEnter={() => slot && onActive(slot)}
-            onMouseLeave={() => slot && onActive(null)}
+            onFocus={() => slot && onActive(slot)}
             onClick={() => slot && onPick(slot)}
+            onKeyDown={(e) => {
+              if (slot && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onPick(slot); }
+            }}
           >
-            <span className={`key ${slot ? 'linked' : ''}`}>{k}:</span>
+            <span className="key">{k}:</span>
             <span className={`val ${valueClass(v)}`}>{Array.isArray(v) ? JSON.stringify(v) : render(v)}</span>
             {slot && <span className="slotref">&larr; {slot}</span>}
           </div>

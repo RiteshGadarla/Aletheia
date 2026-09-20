@@ -211,8 +211,8 @@ Three modes:
 | Mode | You provide | Data leaves the machine? | Air-gap |
 |---|---|---|---|
 | **None** (default) | nothing | no | yes |
-| **Self-hosted** | a URL of a model server you run (Ollama, vLLM, llama.cpp, LM Studio) | only to that server | yes, if the address is private |
-| **Cloud vendor** | an API key (Gemini, OpenAI, Groq, Anthropic, or any OpenAI-compatible vendor) | masked samples only | no |
+| **Local** | a URL of a model server you run (Ollama, vLLM, llama.cpp, LM Studio) | only to that server | yes, if the address is private |
+| **Cloud** | a Gemini API key | masked samples only | no |
 
 ### Configuring it from the UI (recommended)
 
@@ -243,8 +243,8 @@ Precedence is **UI setting > environment variable > default**.
 
 | Provider | Model | Notes |
 |---|---|---|
-| `gemini` | **`gemma-4-31b-it`** | Default for this build. Verified against the live API. |
-| `ollama` | any instruction-following model, e.g. `qwen2.5-coder:7b` | air-gap friendly; a 4-bit 7–8B model runs on CPU in ~5–8 GB RAM |
+| `gemini` | **`gemma-4-31b-it`** | Default for this build. The only cloud option. Verified against the live API. |
+| `local` | any instruction-following model, e.g. `qwen2.5-coder:7b` | Ollama, vLLM, llama.cpp or LM Studio — they share one API, so the base URL is what picks the server. Air-gap friendly; a 4-bit 7–8B model runs on CPU in ~5–8 GB RAM. |
 
 Provider quirks we measured and handle (retries, thinking-part filtering, JSON-schema mode) are
 documented in [`docs/llm-provider-notes.md`](docs/llm-provider-notes.md).
@@ -264,7 +264,7 @@ OLLAMA_HOST=0.0.0.0 ollama serve          # Linux only
 
 docker run -d --name aletheia \
   --add-host=host.docker.internal:host-gateway \
-  -e ALETHEIA_LLM_PROVIDER=ollama -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
+  -e ALETHEIA_LLM_PROVIDER=local -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
   -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```

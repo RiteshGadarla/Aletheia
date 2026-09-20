@@ -1,26 +1,48 @@
-// Events explorer: every source normalized to identical OCSF columns (spec scenario 1).
-import { useMemo, useState } from 'react';
+// Events explorer: every source lands in one OCSF table. Pagination is server-side —
+// `limit`/`offset` go to the API and `total` comes back from it.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Badge, Empty, ErrorBox, Loading, Panel, ParseStatusBadge,
+  Badge, EmptyState, ErrorState, PageHead, Panel, ParseStatusBadge, TableSkeleton,
 } from '../components/Bits';
+import { IconInbox, IconSearch } from '../components/Icons';
+import { Pagination } from '../components/Pagination';
 import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
-import type {
-  Endpoint, EventQuery, NormalizedEvent, ParseStatus,
-} from '../lib/types';
+import type { Endpoint, EventQuery, NormalizedEvent, ParseStatus } from '../lib/types';
 
-const fmtTime = (ms: number): string => new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
+const fmtTime = (ms: number): string => {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toISOString().replace('T', ' ').replace('Z', '').slice(0, 19);
+};
 
 const fmtEndpoint = (e?: Endpoint): string => {
   if (!e) return '—';
-  const host = e.ip ?? e.hostname ?? e.interface_name ?? '—';
+  const host = e.ip ?? e.hostname ?? e.interface_name;
+  if (!host) return '—';
   return e.port !== undefined ? `${host}:${e.port}` : host;
 };
 
 /** One human-readable summary column, whichever field this OCSF class populated. */
-const summaryOf = (ev: NormalizedEvent): string =>
-  ev.message ?? ev.http_request?.url?.text ?? ev.actor?.user?.name ?? ev.user?.name ?? '';
+const summaryOf = (ev: NormalizedEvent): string => {
+  const finding = ev.finding_info as { title?: string } | undefined;
+  return ev.message
+    ?? finding?.title
+    ?? ev.http_request?.url?.text
+    ?? ev.actor?.user?.name
+    ?? ev.user?.name
+    ?? '';
+};
+
+const SEVERITY: Record<number, { label: string; tone: 'ok' | 'warn' | 'bad' | 'plain' }> = {
+  1: { label: 'Informational', tone: 'plain' },
+  2: { label: 'Low', tone: 'plain' },
+  3: { label: 'Medium', tone: 'warn' },
+  4: { label: 'High', tone: 'warn' },
+  5: { label: 'Critical', tone: 'bad' },
+  6: { label: 'Fatal', tone: 'bad' },
+};
 
 export function EventsPage() {
   const navigate = useNavigate();
@@ -28,95 +50,186 @@ export function EventsPage() {
   const [classUid, setClassUid] = useState('');
   const [parseStatus, setParseStatus] = useState('');
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+  const [limit, setLimit] = useState(25);
+  const [offset, setOffset] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(q), 250);
+    return () => window.clearTimeout(t);
+  }, [q]);
+
+  // Any filter change invalidates the current page position.
+  useEffect(() => { setOffset(0); }, [sourceId, classUid, parseStatus, debouncedQ]);
 
   const query = useMemo<EventQuery>(() => ({
     source_id: sourceId || undefined,
     class_uid: classUid ? Number(classUid) : undefined,
     parse_status: (parseStatus || undefined) as ParseStatus | undefined,
-    q: q || undefined,
-    limit: 500,
-  }), [sourceId, classUid, parseStatus, q]);
+    q: debouncedQ || undefined,
+    limit,
+    offset,
+  }), [sourceId, classUid, parseStatus, debouncedQ, limit, offset]);
 
   const { data, loading, error } = useAsync(() => api.listEvents(query), [JSON.stringify(query)]);
 
+  // Keep filter dropdowns populated while a later request is in flight.
+  const facetsRef = useRef<{ sources: string[]; classes: { class_uid: number; name: string }[] }>({
+    sources: [], classes: [],
+  });
+  if (data) facetsRef.current = { sources: data.sources, classes: data.classes };
+  const facets = facetsRef.current;
+
+  const className = (uid: number) =>
+    facets.classes.find((c) => c.class_uid === uid)?.name ?? String(uid);
+
+  const filtered = !!(sourceId || classUid || parseStatus || debouncedQ);
+  const total = data?.total ?? 0;
+
+  const goPage = (next: number) => {
+    setOffset(next);
+    scrollRef.current?.scrollTo({ top: 0 });
+  };
+
+  const clearAll = () => { setSourceId(''); setClassUid(''); setParseStatus(''); setQ(''); };
+
+  // One line of scope, so the page does not need a row of stat boxes above the table.
+  const summary = data
+    ? `${total.toLocaleString()}${filtered ? ' matching' : ''} events · ${facets.sources.length} sources`
+      + ` · ${facets.classes.length} OCSF classes`
+    : error ? 'unavailable' : 'loading…';
+
   return (
     <div className="stack">
-      <div>
-        <h1>Events explorer</h1>
-        <p className="sub">
-          All sources land in one table with identical OCSF columns. Filter by source, class or parse
-          status, then open any row in the lineage viewer to see its exact byte provenance.
-        </p>
-      </div>
+      <PageHead title="Events">
+        Every source normalises to the same OCSF columns. Filter, then open any row to see the exact
+        bytes each field came from.
+      </PageHead>
 
-      <Panel title="Filters">
-        <div className="row">
-          <div style={{ minWidth: 160 }}>
-            <label>Source</label>
-            <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
-              <option value="">all sources</option>
-              {data?.sources.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div style={{ minWidth: 220 }}>
-            <label>Class</label>
-            <select value={classUid} onChange={(e) => setClassUid(e.target.value)}>
-              <option value="">all classes</option>
-              {data?.classes.map((c) => (
-                <option key={c.class_uid} value={c.class_uid}>{c.name} ({c.class_uid})</option>
-              ))}
-            </select>
-          </div>
-          <div style={{ minWidth: 160 }}>
-            <label>Parse status</label>
-            <select value={parseStatus} onChange={(e) => setParseStatus(e.target.value)}>
-              <option value="">all</option>
-              <option value="full">full</option>
-              <option value="partial">partial</option>
-              <option value="raw_only">raw_only</option>
-            </select>
-          </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <label>Search</label>
-            <input placeholder="substring over the event JSON" value={q} onChange={(e) => setQ(e.target.value)} />
+      {/* One panel holds filters, table and pager, so the page is a single box, not three. */}
+      <Panel
+        flush
+        title="Event stream"
+        subtitle={loading ? 'refreshing…' : summary}
+        right={filtered && <button type="button" className="ghost" onClick={clearAll}>Clear filters</button>}
+      >
+        <div className="panel-pad">
+          <div className="filter-bar">
+            <label className="field">
+              <span className="lbl">Source</span>
+              <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
+                <option value="">All sources</option>
+                {facets.sources.map((s2) => <option key={s2} value={s2}>{s2}</option>)}
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="lbl">OCSF class</span>
+              <select value={classUid} onChange={(e) => setClassUid(e.target.value)}>
+                <option value="">All classes</option>
+                {facets.classes.map((c) => (
+                  <option key={c.class_uid} value={c.class_uid}>{c.name} · {c.class_uid}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="lbl">Parse status</span>
+              <select value={parseStatus} onChange={(e) => setParseStatus(e.target.value)}>
+                <option value="">All statuses</option>
+                <option value="full">full</option>
+                <option value="partial">partial</option>
+                <option value="raw_only">raw_only</option>
+              </select>
+            </label>
+
+            <label className="field search">
+              <span className="lbl"><IconSearch size={12} /> Search</span>
+              <input
+                placeholder="substring across the event JSON — IP, user, message…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </label>
           </div>
         </div>
-      </Panel>
 
-      <Panel title={data ? `${data.total} events` : 'Events'}>
-        {loading && <Loading what="events" />}
-        {error && <ErrorBox error={error} />}
-        {data && data.events.length === 0 && <Empty>No events match these filters.</Empty>}
-        {data && data.events.length > 0 && (
-          <div className="tbl-wrap">
-            <table className="tbl">
-              <thead>
-                <tr>
-                  <th>Time</th><th>Source</th><th>Class</th><th>Parse</th>
-                  <th>Src</th><th>Dst</th><th>Summary</th><th>Template</th><th>Event UID</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.events.map((ev) => (
-                  <tr
-                    key={ev.aletheia.event_uid}
-                    className="clickable"
-                    onClick={() => navigate(`/lineage/${ev.aletheia.event_uid}`)}
-                  >
-                    <td>{fmtTime(ev.time)}</td>
-                    <td>{ev.aletheia.source_id}</td>
-                    <td>{data.classes.find((c) => c.class_uid === ev.class_uid)?.name ?? ev.class_uid}</td>
-                    <td><ParseStatusBadge status={ev.aletheia.parse_status} /></td>
-                    <td>{fmtEndpoint(ev.src_endpoint)}</td>
-                    <td>{fmtEndpoint(ev.dst_endpoint)}</td>
-                    <td className="wrap">{summaryOf(ev)}</td>
-                    <td>{ev.aletheia.template_id || <Badge kind="plain">none</Badge>}</td>
-                    <td>{ev.aletheia.event_uid}</td>
+        {error && <div className="panel-pad"><ErrorState error={error} what="events" /></div>}
+
+        {!error && loading && !data && <TableSkeleton rows={9} cols={7} />}
+
+        {!error && data && data.events.length === 0 && (
+          <EmptyState
+            title={filtered ? 'No events match these filters' : 'No events yet'}
+            icon={<IconInbox size={22} />}
+            action={filtered ? <button type="button" onClick={clearAll}>Clear filters</button> : undefined}
+          >
+            {filtered
+              ? 'Try widening the source, class or parse-status filter, or clearing the search text.'
+              : 'Nothing has been ingested yet. Open the Demo console and run “Start traffic” to stream the seeded sources in.'}
+          </EmptyState>
+        )}
+
+        {!error && data && data.events.length > 0 && (
+          <>
+            <div className="table-scroll" ref={scrollRef}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Time (UTC)</th>
+                    <th>Source</th>
+                    <th>Class</th>
+                    <th>Status</th>
+                    <th>Severity</th>
+                    <th>Source endpoint</th>
+                    <th>Destination</th>
+                    <th>Summary</th>
+                    <th>Template</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {data.events.map((ev) => {
+                    const sev = SEVERITY[ev.severity_id];
+                    return (
+                      <tr
+                        key={ev.aletheia.event_uid}
+                        className="clickable"
+                        onClick={() => navigate(`/lineage/${ev.aletheia.event_uid}`)}
+                        title="Open byte lineage for this event"
+                      >
+                        <td className="mono nowrap">{fmtTime(ev.time)}</td>
+                        <td className="nowrap">{ev.aletheia.source_id}</td>
+                        <td className="nowrap">{className(ev.class_uid)}</td>
+                        <td><ParseStatusBadge status={ev.aletheia.parse_status} /></td>
+                        <td className="nowrap">
+                          {sev
+                            ? <Badge kind={sev.tone === 'plain' ? 'plain' : sev.tone}>{sev.label}</Badge>
+                            : <span className="dim">—</span>}
+                        </td>
+                        <td className="mono nowrap">{fmtEndpoint(ev.src_endpoint)}</td>
+                        <td className="mono nowrap">{fmtEndpoint(ev.dst_endpoint)}</td>
+                        <td className="wrap">{summaryOf(ev) || <span className="dim">—</span>}</td>
+                        <td className="mono nowrap">
+                          {ev.aletheia.template_id || <span className="dim">none</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              offset={offset}
+              limit={limit}
+              total={total}
+              onOffset={goPage}
+              onLimit={setLimit}
+              noun="events"
+              busy={loading}
+            />
+          </>
         )}
       </Panel>
     </div>

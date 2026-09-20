@@ -124,7 +124,7 @@ def main() -> int:
                     doc = vp.normalize(pack, tpl, tokens, vars_, enums, raw)
                     templates[tpl["id"]] = (pack["pack"], int(pack.get("version", 1)),
                                             json.dumps(tokens, separators=(",", ":")))
-                    units.append((pack, tpl, raw, names, m.groups(), doc))
+                    units.append((pack, tpl, raw, names, m.groups(), doc, env_id))
                     break
     if not units:
         print("error: no reconstructable samples found", file=sys.stderr)
@@ -133,7 +133,7 @@ def main() -> int:
     now = datetime.now(timezone.utc)
     rows, baseline = [], []
     for n in range(a.repeat):
-        for k, (pack, tpl, raw, names, groups, doc) in enumerate(units):
+        for k, (pack, tpl, raw, names, groups, doc, env_id) in enumerate(units):
             ts = now - timedelta(seconds=rng.randint(0, 3600))
             ts_ms = int(ts.timestamp() * 1000)
             ent = hashlib.sha256(f"seed|{n}|{k}".encode()).digest()
@@ -144,7 +144,7 @@ def main() -> int:
             cls = int(dig(doc, "class_uid") or 0)
             rows.append({
                 "event_uid": uid, "recv_time": tstr, "event_time": tstr,
-                "source_id": src, "envelope_id": (pack.get("envelopes") or ["bare"])[0],
+                "source_id": src, "envelope_id": env_id,
                 "template_id": tpl["id"], "pack_version": int(pack.get("version", 1)),
                 "storage_mode": "template", "parse_status": "full",
                 "vars": list(groups),

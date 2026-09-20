@@ -12,18 +12,31 @@ const LEGEND: { label: string; cls: string }[] = [
   { label: 'whitespace', cls: 'ws' },
 ];
 
+export function SlotLegend() {
+  return (
+    <div className="legend">
+      {LEGEND.map((l) => (
+        <span key={l.cls}>
+          <i style={{ background: `var(--t-${l.cls})` }} />
+          {l.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** Token list with slots coloured by type (spec 6.14, Studio screens). */
 export function TemplateView({
   tokens, active, onActive,
 }: { tokens: Token[]; active?: string | null; onActive?: (slot: string | null) => void }) {
   return (
-    <div>
+    <div className="stack-sm">
       <div className="tokens">
         {tokens.map((t, i) =>
           t.slot ? (
             <span
               key={i}
-              className={`slot ${typeClass(t.type)}${active === t.slot ? ' hit' : ''}`}
+              className={`slot slot-${typeClass(t.type)}${active === t.slot ? ' hit' : ''}`}
               title={t.values ? `values: ${t.values.join(' | ')}` : t.pattern ? `pattern: ${t.pattern}` : t.type}
               onMouseEnter={() => onActive?.(t.slot!)}
               onMouseLeave={() => onActive?.(null)}
@@ -35,11 +48,7 @@ export function TemplateView({
           ),
         )}
       </div>
-      <div className="legend" style={{ marginTop: 10 }}>
-        {LEGEND.map((l) => (
-          <span key={l.cls} style={{ color: `var(--t-${l.cls})` }}>{l.label}</span>
-        ))}
-      </div>
+      <SlotLegend />
     </div>
   );
 }

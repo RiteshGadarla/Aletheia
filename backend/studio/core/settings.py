@@ -32,15 +32,16 @@ SPEC: dict[str, tuple[str | None, Any, bool]] = {
 
 SECRET_KEYS = {k for k, (_, _, enc) in SPEC.items() if enc}
 
+# Two shapes only: Gemini (the one cloud option) and a local OpenAI-compatible server.
+# "local" covers Ollama, vLLM, llama.cpp and LM Studio alike — they share the same API,
+# so the base URL is what distinguishes them, not the provider name.
 DEFAULT_BASE_URLS = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
-    "openai": "https://api.openai.com/v1",
-    "groq": "https://api.groq.com/openai/v1",
-    "anthropic": "https://api.anthropic.com/v1",
-    "ollama": "http://host.docker.internal:11434/v1",
-    "openai_compatible": "",
+    "local": "http://localhost:11434/v1",      # Ollama's default; change for vLLM etc.
     "none": "",
 }
+
+PROVIDERS = ("none", "gemini", "local")
 
 
 def _as_bool(v: Any) -> bool:

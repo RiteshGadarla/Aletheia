@@ -62,7 +62,9 @@ func (t Token) IsLit() bool { return t.Slot == "" }
 Every slot is exactly one capture group, in order. RE2 only (Go `regexp`), never backtracking.
 
 **Validation rule (compiler must enforce):** two adjacent slots are rejected unless both are
-fixed-width types. Reject `text` not followed by a literal.
+fixed-width types. Reject `text` that is followed by a **slot**; `text` followed by a literal, or
+as the **last** token, is legal — every envelope in `_envelopes.yaml` ends in
+`{slot: body, type: text}`, and a trailing lazy `.*?` under the `$` anchor is unambiguous in RE2.
 
 **Reconstruct:** concatenate `lit` bytes and `vars[i]` in token order. Must be byte-identical.
 
@@ -121,7 +123,9 @@ merkle batch key = (source_id, partition, floor(recv_ms → minute))
 leaf   = sha256(0x00 || raw_sha256)          # domain separation
 node   = sha256(0x01 || left || right)       # odd node paired with itself
 root   = tree over leaves ordered by event_uid
-chained_root_n = sha256(chained_root_(n-1) || root_n || source_id || partition || minute)
+chained_root_n = sha256(chained_root_(n-1) || root_n || KEY)
+   where KEY is the batch key's canonical string form, exactly as below —
+   any reimplementation must use this serialization or chains will not match
 ```
 
 `merkle_batch` string form: `<source_id>/p<partition>/<RFC3339 minute>` e.g. `fw01/p3/2026-09-19T14:31Z`.
@@ -185,6 +189,18 @@ Values with `encrypted=true` are AES-GCM sealed with a key derived (HKDF-SHA256)
 Env defaults: `ALETHEIA_LLM_PROVIDER|_MODEL|_BASE_URL|_API_KEY|_API_KEY_FILE|_SEND_SAMPLES`,
 `ALETHEIA_AIRGAP`, `ALETHEIA_SECRET`.
 
+### Supported providers — exactly three
+
+| provider | what it is | base URL | key |
+|---|---|---|---|
+| `none` | heuristics only; always works, air-gap safe | — | no |
+| `gemini` | the **only** cloud option | `https://generativelanguage.googleapis.com/v1beta` | yes |
+| `local` | any local OpenAI-compatible server: Ollama, vLLM, llama.cpp, LM Studio | `http://localhost:11434/v1` (Ollama's port) | no |
+
+OpenAI, Groq and Anthropic were removed from the product. `ollama` is still accepted as a legacy
+alias for `local`, but must not appear in the UI — Ollama *is* local, so a separate entry is
+redundant; the base URL is what distinguishes one local server from another.
+
 ### Default provider for this deployment
 `provider=gemini`, `model=gemma-4-31b-it` (verified live; see `docs/llm-provider-notes.md`).
 
@@ -208,8 +224,8 @@ class Provider(Protocol):
     def test_connection(self) -> ConnTest: ...   # {ok, latency_ms, json_mode, models[], error}
 ```
 
-Implementations: `GeminiProvider` (native, default), `OpenAICompatibleProvider`
-(openai/groq/ollama/openai_compatible), `AnthropicProvider`, `NoneProvider`.
+Implementations: `GeminiProvider` (native endpoint, default) and `OpenAICompatibleProvider`
+(every local server), plus `NoneProvider`.
 
 ## 10. Non-negotiable invariants
 

@@ -139,7 +139,7 @@ codec = "text"
 
 [sinks.cef_syslog.buffer]
 type = "disk"
-max_size = 268435456
+max_size = 268435488               # Vector's floor for a disk buffer: 256 MiB + 32 B
 when_full = "drop_newest"
 
 # ---------------------------------------------------------------- self-metrics

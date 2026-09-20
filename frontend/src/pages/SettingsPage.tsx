@@ -1,33 +1,25 @@
-// LLM provider settings (spec 8.12.8). The deployment ships with a working default, so nothing
-// here needs typing; anything set here overrides the environment and takes effect immediately.
+// LLM settings (spec 8.12.8). One dropdown picks the assistant; each choice asks for the single
+// thing it actually needs. Model names and base URLs come from defaults, never from the user.
 import { useEffect, useState } from 'react';
-import { Badge, Cli, ErrorBox, Loading, Panel } from '../components/Bits';
+import {
+  Badge, Callout, Cli, ErrorState, PageHead, Panel, Spinner,
+} from '../components/Bits';
+import { IconShield, IconShieldAlert } from '../components/Icons';
 import { api, errMessage } from '../lib/api';
 import { useSettings } from '../lib/settings';
-import { CLOUD_PROVIDERS, isCloudProvider } from '../lib/types';
-import type { ConnTest, LlmSettings, LlmSettingsUpdate, Provider, SendSamples } from '../lib/types';
+import { isCloudProvider, PROVIDER_DEFAULTS, PROVIDERS } from '../lib/types';
+import type { ConnTest, LlmSettings, LlmSettingsUpdate, Provider } from '../lib/types';
 
-const PROVIDERS: Provider[] = [
-  'none', 'gemini', 'openai', 'groq', 'anthropic', 'ollama', 'openai_compatible',
-];
-
-const SEND_SAMPLES: SendSamples[] = ['masked', 'none', 'raw'];
-
-// Shown as the placeholder so an operator can see what a sane value looks like per provider.
-const MODEL_HINT: Partial<Record<Provider, string>> = {
-  gemini: 'gemma-4-31b-it',
-  openai: 'gpt-4o-mini',
-  groq: 'llama-3.3-70b-versatile',
-  anthropic: 'claude-sonnet-4-5',
-  ollama: 'qwen2.5-coder:7b',
+const PROVIDER_LABEL: Record<Provider, string> = {
+  none: 'None — heuristics only',
+  gemini: 'Gemini',
+  local: 'Local model',
 };
 
-const SOURCE_LABEL: Record<string, string> = {
-  ui: 'set here', env: 'from environment', default: 'built-in default',
-};
+const LOCAL_URL = PROVIDER_DEFAULTS.local.base_url;
 
 export function SettingsPage() {
-  const { settings, refresh, apply } = useSettings();
+  const { settings, error: loadError, refresh, apply } = useSettings();
   const [form, setForm] = useState<LlmSettings | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
@@ -37,25 +29,46 @@ export function SettingsPage() {
 
   useEffect(() => { if (settings && !form) setForm(settings); }, [settings, form]);
 
-  if (!form) return <Loading what="settings" />;
+  if (!form) {
+    // Without this the page spins forever whenever the Studio API is down.
+    return loadError
+      ? (
+        <div className="stack">
+          <PageHead title="Settings" />
+          <ErrorState
+            error={loadError}
+            what="settings"
+            fix={<button type="button" onClick={() => void refresh()}>Retry</button>}
+          />
+        </div>
+      )
+      : <Spinner label="Loading settings" />;
+  }
 
-  const cloud = isCloudProvider(form.provider);
+  const provider = form.provider;
+  const cloud = isCloudProvider(provider);
   const blockedByAirgap = form.airgap && cloud;
-  const rawBlocked = cloud && form.send_samples === 'raw';
 
-  const set = <K extends keyof LlmSettings>(k: K, v: LlmSettings[K]) => {
-    setForm({ ...form, [k]: v });
-    setSaved(false);
-    setTest(null);
+  const dirty = () => { setSaved(false); setTest(null); };
+
+  const pickProvider = (p: Provider) => {
+    // Everything but the one visible field is a default, so switching never strands stale values.
+    setForm({ ...form, provider: p, model: PROVIDER_DEFAULTS[p].model, base_url: PROVIDER_DEFAULTS[p].base_url });
+    dirty();
   };
+
+  const setLocalUrl = (url: string) => { setForm({ ...form, base_url: url }); dirty(); };
 
   const save = async () => {
     setBusy('save'); setError(null);
     const update: LlmSettingsUpdate = {
-      provider: form.provider,
-      model: form.model,
-      base_url: form.base_url,
-      send_samples: form.send_samples,
+      provider,
+      model: PROVIDER_DEFAULTS[provider].model,
+      base_url: provider === 'local'
+        ? (form.base_url.trim() || LOCAL_URL)
+        : PROVIDER_DEFAULTS[provider].base_url,
+      // Raw samples are refused for cloud, so never let a stored value block the save.
+      send_samples: cloud && form.send_samples === 'raw' ? 'masked' : form.send_samples,
       ...(apiKey !== '' ? { api_key: apiKey } : {}),
     };
     try {
@@ -71,174 +84,152 @@ export function SettingsPage() {
     catch (e) { setError(errMessage(e)); } finally { setBusy(null); }
   };
 
+  const toggleAirgap = async () => {
+    setError(null);
+    try {
+      const next = await api.setAirgap(!form.airgap);
+      apply(next); setForm(next);
+    } catch (e) { setError(errMessage(e)); }
+  };
+
+  const keyBadge = provider === 'gemini'
+    ? (form.api_key_set
+      ? <Badge kind="ok">key configured · …{form.api_key_last4}</Badge>
+      : <Badge kind="warn">no key set</Badge>)
+    : undefined;
+
   return (
     <div className="stack">
-      <div>
-        <h1>Settings</h1>
-        <p className="muted">
-          The LLM assistant is optional. Aletheia&apos;s onboarding heuristics always run first and
-          work with no provider configured — AI is only ever a second opinion, and every suggestion
-          still has to pass the reconstruction gate and human approval.
-        </p>
-      </div>
+      <PageHead title="Settings">
+        The AI assistant is optional. Onboarding heuristics always run first, and every suggestion
+        still has to rebuild the original byte for byte before a human can approve it.
+      </PageHead>
 
       {form.airgap && (
-        <div className="banner banner-info">
-          <strong>Air-gap mode is on.</strong> Cloud providers are refused. Use <code>none</code> or
-          a self-hosted endpoint on a private address.
-        </div>
+        <Callout kind="info" icon={<IconShield size={15} />}>
+          <strong>Air-gap mode is on.</strong> Gemini is refused. Use <em>None</em> or a local model.
+        </Callout>
       )}
-
       {cloud && !form.airgap && (
-        <div className="banner banner-warn">
-          <strong>Cloud AI enabled:</strong> masked samples are sent to {form.provider}.
-          One request per cluster during onboarding — never per event.
-        </div>
+        <Callout kind="warn" icon={<IconShieldAlert size={15} />}>
+          <strong>Cloud AI enabled.</strong> Masked samples go to Gemini — one request per cluster
+          during onboarding, never per event.
+        </Callout>
       )}
 
-      {error && <ErrorBox error={error} />}
+      {error && <ErrorState error={error} what="settings" />}
 
-      <Panel
-        title="Provider"
-        right={form.api_key_set
-          ? <Badge kind="ok">key configured …{form.api_key_last4}</Badge>
-          : <Badge kind="warn">no key</Badge>}
-      >
-        <div className="form-grid">
-          <label>
-            <span>Provider</span>
+      <Panel title="AI assistant" right={keyBadge}>
+        <div className="form-narrow">
+          <label className="field">
+            <span className="lbl">Assistant</span>
             <select
-              value={form.provider}
-              onChange={(e) => set('provider', e.target.value as Provider)}
+              value={provider}
+              onChange={(e) => pickProvider(e.target.value as Provider)}
             >
               {PROVIDERS.map((p) => (
-                <option key={p} value={p} disabled={form.airgap && CLOUD_PROVIDERS.includes(p)}>
-                  {p}{form.airgap && CLOUD_PROVIDERS.includes(p) ? ' — blocked in air-gap' : ''}
+                <option key={p} value={p} disabled={form.airgap && isCloudProvider(p)}>
+                  {PROVIDER_LABEL[p]}{form.airgap && isCloudProvider(p) ? ' — blocked in air-gap mode' : ''}
                 </option>
               ))}
             </select>
-            <em className="muted">{SOURCE_LABEL[form.sources.provider ?? 'default']}</em>
           </label>
 
-          <label>
-            <span>Model</span>
-            <input
-              value={form.model}
-              placeholder={MODEL_HINT[form.provider] ?? 'model name'}
-              onChange={(e) => set('model', e.target.value)}
-            />
-            <em className="muted">{SOURCE_LABEL[form.sources.model ?? 'default']}</em>
-          </label>
-
-          <label>
-            <span>Base URL</span>
-            <input
-              value={form.base_url}
-              placeholder="provider default"
-              onChange={(e) => set('base_url', e.target.value)}
-            />
-            <em className="muted">required for openai_compatible</em>
-          </label>
-
-          <label>
-            <span>API key</span>
-            <input
-              type="password"
-              value={apiKey}
-              placeholder={form.api_key_set ? `stored — ends …${form.api_key_last4}` : 'not set'}
-              onChange={(e) => { setApiKey(e.target.value); setSaved(false); }}
-              autoComplete="off"
-            />
-            <em className="muted">
-              write-only; leave blank to keep the stored key. The API never returns it.
-            </em>
-          </label>
-
-          <label>
-            <span>Sample data sent</span>
-            <select
-              value={form.send_samples}
-              onChange={(e) => set('send_samples', e.target.value as SendSamples)}
-            >
-              {SEND_SAMPLES.map((s) => (
-                <option key={s} value={s} disabled={cloud && s === 'raw'}>
-                  {s}{cloud && s === 'raw' ? ' — refused for cloud providers' : ''}
-                </option>
-              ))}
-            </select>
-            <em className="muted">
-              masked keeps the shape (an IPv4 stays an IPv4) while replacing the values
-            </em>
-          </label>
-        </div>
-
-        {rawBlocked && (
-          <ErrorBox error="raw samples are refused for cloud providers — choose masked or none" />
-        )}
-        {blockedByAirgap && (
-          <ErrorBox error="air-gap mode refuses cloud providers — choose none or a self-hosted endpoint" />
-        )}
-
-        <div className="row gap">
-          <button onClick={save} disabled={busy !== null || rawBlocked || blockedByAirgap}>
-            {busy === 'save' ? 'Saving…' : 'Save'}
-          </button>
-          <button onClick={runTest} disabled={busy !== null || form.provider === 'none'}>
-            {busy === 'test' ? 'Testing…' : 'Test connection'}
-          </button>
-          {saved && <Badge kind="ok">saved — effective immediately, no restart</Badge>}
-        </div>
-      </Panel>
-
-      {test && (
-        <Panel title="Connection test">
-          <div className="row gap">
-            <Badge kind={test.ok ? 'ok' : 'bad'}>{test.ok ? 'reachable' : 'failed'}</Badge>
-            <Badge kind="plain">{test.latency_ms} ms</Badge>
-            {test.json_mode && <Badge kind="info">json mode: {test.json_mode}</Badge>}
-            <Badge kind="plain">{test.provider}/{test.model}</Badge>
-          </div>
-          {test.error && <ErrorBox error={test.error} />}
-          {test.models.length > 0 && (
-            <>
-              <h4>Models available at this endpoint</h4>
-              <div className="chips">
-                {test.models.slice(0, 40).map((m) => (
-                  <button
-                    key={m}
-                    className={`chip${m === form.model ? ' chip-on' : ''}`}
-                    onClick={() => set('model', m)}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
-            </>
+          {provider === 'gemini' && (
+            <label className="field code">
+              <span className="lbl">API key</span>
+              <input
+                type="password"
+                value={apiKey}
+                placeholder={form.api_key_set ? `stored — ends …${form.api_key_last4}` : 'paste your Gemini API key'}
+                onChange={(e) => { setApiKey(e.target.value); dirty(); }}
+                autoComplete="off"
+              />
+              <span className="help">Write-only. Leave blank to keep the stored key.</span>
+            </label>
           )}
-        </Panel>
-      )}
 
-      <Panel title="Usage">
-        <div className="row gap">
-          <Badge kind="plain">{form.usage.requests} requests ({form.usage.window})</Badge>
-          {form.usage.tokens !== null && <Badge kind="plain">{form.usage.tokens} tokens</Badge>}
-          <Badge kind="plain">cap {form.usage.cap_per_hour}/hour</Badge>
+          {provider === 'local' && (
+            <label className="field code">
+              <span className="lbl">Server URL</span>
+              <input
+                value={form.base_url}
+                placeholder={LOCAL_URL}
+                onChange={(e) => setLocalUrl(e.target.value)}
+                autoComplete="off"
+              />
+              <span className="help">
+                Any OpenAI-compatible server you run — Ollama, vLLM, llama.cpp, LM Studio.
+              </span>
+            </label>
+          )}
+
+          {provider === 'none' && (
+            <p className="hint">
+              No provider is configured. Onboarding heuristics run on their own, and nothing leaves
+              this machine.
+            </p>
+          )}
+
+          {blockedByAirgap && (
+            <ErrorState error="Air-gap mode refuses cloud providers." what="" fix="Choose None or a local model." />
+          )}
+
+          <div className="btn-row">
+            <button className="primary" onClick={save} disabled={busy !== null || blockedByAirgap}>
+              {busy === 'save' ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={runTest} disabled={busy !== null || provider === 'none'}>
+              {busy === 'test' ? 'Testing…' : 'Test connection'}
+            </button>
+            {saved && <Badge kind="ok">saved · no restart needed</Badge>}
+          </div>
+
+          {test && (
+            <Callout kind={test.ok ? 'ok' : 'bad'}>
+              {test.ok
+                ? <><strong>Reachable.</strong> {test.provider}/{test.model} answered in {test.latency_ms} ms.</>
+                : <><strong>Could not reach {test.provider}.</strong> {test.error ?? 'No response.'}</>}
+            </Callout>
+          )}
         </div>
-        <p className="muted">
-          One request per cluster during onboarding, plus at most one retry. No LLM call ever
-          touches a live event.
-        </p>
       </Panel>
 
-      <Panel title="Equivalent configuration without the UI">
-        <Cli cmd={`ALETHEIA_LLM_PROVIDER=${form.provider}
-ALETHEIA_LLM_MODEL=${form.model}
-ALETHEIA_LLM_SEND_SAMPLES=${form.send_samples}
-ALETHEIA_LLM_API_KEY_FILE=/run/secrets/llm_key`} />
-        <p className="muted">
-          Values set here are stored encrypted and take precedence over these environment defaults.
-        </p>
+      <Panel
+        title="Air-gap mode"
+        right={<Badge kind={form.airgap ? 'ok' : 'plain'}>{form.airgap ? 'on' : 'off'}</Badge>}
+      >
+        <div className="row between">
+          <p className="hint grow">
+            Refuses every cloud provider, so the assistant is either off or a model inside your own
+            network. The real air-gap is the network; this is the safety net.
+          </p>
+          <button onClick={toggleAirgap}>{form.airgap ? 'Disable' : 'Enable'}</button>
+        </div>
       </Panel>
+
+      <details className="panel-details">
+        <summary>Usage and environment variables</summary>
+        <div className="details-body">
+          <dl className="kv">
+            <dt>Requests ({form.usage.window})</dt>
+            <dd>{form.usage.requests} of {form.usage.cap_per_hour}</dd>
+            <dt>Tokens</dt>
+            <dd>{form.usage.tokens ?? '—'}</dd>
+            <dt>Provenance</dt>
+            <dd className="mono">{provider === 'none' ? 'heuristic' : `ai:${provider}/${form.model}`}</dd>
+          </dl>
+          <p className="hint">
+            One request per cluster during onboarding, plus at most one retry. No model call ever
+            touches a live event.
+          </p>
+          <Cli
+            cmd={`ALETHEIA_LLM_PROVIDER=${provider}
+ALETHEIA_LLM_BASE_URL=${form.base_url}
+ALETHEIA_LLM_API_KEY_FILE=/run/secrets/llm_key`}
+          />
+        </div>
+      </details>
     </div>
   );
 }

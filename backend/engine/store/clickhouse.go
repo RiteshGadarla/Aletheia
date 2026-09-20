@@ -30,11 +30,13 @@ type Event struct {
 const eventCols = `event_uid, recv_time, event_time, source_id, envelope_id, template_id,
 	pack_version, storage_mode, parse_status, vars, raw_verbatim, raw_sha256, merkle_batch`
 
-// QueryRange reads a source's events in [from, to) in storage order.
+// QueryRange reads a source's events in [from, to) in storage order. FINAL
+// collapses the ReplacingMergeTree duplicates a bus replay leaves behind, so a
+// redelivered event is counted once rather than once per delivery.
 func QueryRange(ctx context.Context, conn driver.Conn, db, source string,
 	from, to time.Time, limit int) ([]Event, error) {
 
-	q := fmt.Sprintf(`SELECT %s FROM %s.events
+	q := fmt.Sprintf(`SELECT %s FROM %s.events FINAL
 		WHERE source_id = ? AND recv_time >= ? AND recv_time < ?
 		ORDER BY recv_time, event_uid`, eventCols, db)
 	if limit > 0 {
@@ -52,7 +54,7 @@ func QueryLast(ctx context.Context, conn driver.Conn, db, source string, n int) 
 	if n <= 0 {
 		n = 1000
 	}
-	q := fmt.Sprintf(`SELECT %s FROM %s.events
+	q := fmt.Sprintf(`SELECT %s FROM %s.events FINAL
 		WHERE source_id = ? ORDER BY recv_time DESC, event_uid DESC LIMIT %d`, eventCols, db, n)
 	rows, err := conn.Query(ctx, q, source)
 	if err != nil {

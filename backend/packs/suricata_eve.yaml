@@ -14,8 +14,10 @@ templates:
   - id: suricata_eve_alert
     discriminator: '"event_type":"alert"'
     storage_mode: verbatim
+    # Anchored on JSON object braces AND the event_type discriminator: a bare `text` slot here
+    # matched any line at all, including plain syslog, and then died in json.loads.
     body:
-      - {slot: json, type: text}
+      - {slot: json, type: custom, pattern: '\{".*"event_type":"alert".*\}'}
     ocsf:
       class_uid: 2004
       activity_id: 1                       # Create

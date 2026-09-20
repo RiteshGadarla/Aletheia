@@ -10,7 +10,9 @@ For every pack, every template and every golden sample this script:
   4. RECONSTRUCTS by concatenating literals and vars, and asserts byte-equality with the
      original sample  <- the whole point of the project;
   5. normalizes to OCSF using the pack's constants/map/conditional/json_map, validates every
-     target path against backend/ocsf/schema_subset.yaml, and diffs against the golden .json.
+     target path against backend/ocsf/schema_subset.yaml, and diffs against the golden .json;
+  6. cross-checks that no template matches ANOTHER template's golden sample -- an over-matching
+     template is a correctness bug even when its reconstruction happens to succeed.
 
 Golden .json convention: only what is derivable from the raw bytes alone. Fields that depend on
 runtime (see RUNTIME_ONLY) are omitted from goldens and ignored in the diff.
@@ -273,6 +275,36 @@ def strip_runtime(doc: dict, prefix: str = "") -> dict:
     return out
 
 
+# ----------------------------------------------------------------- over-matching
+def cross_match_failures(packs: list, envelopes: dict) -> list:
+    """A template must not match a sample that belongs to a different template.
+
+    A template whose regex accepts foreign text is a correctness bug: whichever template the
+    matcher tries first wins, so a permissive one silently steals another's traffic.
+    """
+    compiled, samples, out = [], [], []
+    for pf in packs:
+        pack = yaml.safe_load(open(pf, encoding="utf-8"))
+        for tpl in pack["templates"]:
+            for env_name in tpl.get("envelopes", pack["envelopes"]):
+                if env_name not in envelopes:
+                    continue
+                try:
+                    rx, _ = compile_tokens(splice(envelopes[env_name], tpl["body"], "x"), "x")
+                except PackError:
+                    continue                    # already reported by the main pass
+                compiled.append((pack["pack"], tpl["id"], env_name, rx))
+            for sf in sorted(glob.glob(os.path.join(HERE, tpl["tests"]["samples"]))):
+                with open(sf, "rb") as fh:
+                    samples.append((tpl["id"], os.path.basename(sf),
+                                    fh.read().decode("utf-8").rstrip("\n")))
+    for pname, tid, env_name, rx in compiled:
+        for stid, sname, raw in samples:
+            if stid != tid and rx.match(raw):
+                out.append(f"{pname}: {tid}@{env_name}: OVER-MATCHES {stid}/{sname}")
+    return out
+
+
 # ----------------------------------------------------------------- driver
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -398,6 +430,13 @@ def main() -> int:
                 stats["norm_ok"] += 1
                 totals["normalized"] += 1
         per_pack.append(stats)
+
+    for msg in cross_match_failures(packs, envelopes):
+        totals["failures"].append(msg)
+        pname = msg.split(":", 1)[0]
+        for s in per_pack:
+            if s["pack"] == pname:
+                s["failures"].append(msg)
 
     print("=" * 78)
     print(f"{'pack':22s} {'tmpl':>5s} {'samples':>8s} {'recon':>7s} {'norm':>6s} {'fail':>6s}")

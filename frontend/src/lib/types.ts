@@ -232,9 +232,10 @@ export interface AskAiResult {
 
 /* ---------- Settings (CONTRACTS section 9 / spec 8.12.8) ---------- */
 
-export const PROVIDERS = [
-  'none', 'gemini', 'openai', 'groq', 'anthropic', 'ollama', 'openai_compatible',
-] as const;
+/** Exactly three, matching backend studio.core.settings.PROVIDERS.
+ *  `local` covers Ollama, vLLM, llama.cpp and LM Studio: same OpenAI-compatible API,
+ *  distinguished by base URL, not by provider name. */
+export const PROVIDERS = ['none', 'gemini', 'local'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export type SendSamples = 'masked' | 'none' | 'raw';
@@ -276,8 +277,25 @@ export interface ConnTest {
   model: string;
 }
 
-export const CLOUD_PROVIDERS: Provider[] = ['gemini', 'openai', 'groq', 'anthropic'];
+/** Gemini is the only provider that leaves the machine. */
+export const CLOUD_PROVIDERS: Provider[] = ['gemini'];
 export const isCloudProvider = (p: Provider): boolean => CLOUD_PROVIDERS.includes(p);
+
+export const PROVIDER_DEFAULTS: Record<Provider, { model: string; base_url: string }> = {
+  none: { model: '', base_url: '' },
+  gemini: { model: 'gemma-4-31b-it', base_url: 'https://generativelanguage.googleapis.com/v1beta' },
+  local: { model: '', base_url: 'http://localhost:11434/v1' },
+};
+
+/* ---------- Pack verification (GET /packs/verify) ---------- */
+
+export interface PackVerify {
+  ok: boolean;
+  samples: number;
+  reconstructed: number;
+  normalized: number;
+  failures: number;
+}
 
 /* ---------- Demo console (spec 21) ---------- */
 
