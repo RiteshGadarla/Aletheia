@@ -203,7 +203,7 @@ export function EventsPage() {
                         // unique within a page and React drops the duplicates.
                         key={`${ev.aletheia.event_uid}:${i}`}
                         className="clickable"
-                        onClick={() => navigate(`/lineage/${ev.aletheia.event_uid}`)}
+                        onClick={() => navigate(`/dashboard/lineage/${ev.aletheia.event_uid}`)}
                         title="Open byte lineage for this event"
                       >
                         <td className="mono nowrap">{fmtTime(ev.time)}</td>

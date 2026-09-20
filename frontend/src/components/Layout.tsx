@@ -12,11 +12,11 @@ import {
 } from './Icons';
 
 const NAV = [
-  { to: '/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents },
-  { to: '/lineage', label: 'Lineage', desc: 'Byte provenance', Icon: IconLineage },
-  { to: '/studio', label: 'Studio', desc: 'Onboard new formats', Icon: IconStudio },
-  { to: '/demo', label: 'Demo', desc: 'Run the scenarios', Icon: IconDemo },
-  { to: '/settings', label: 'Settings', desc: 'LLM & air-gap', Icon: IconSettings },
+  { to: '/dashboard', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: true },
+  { to: '/dashboard/lineage', label: 'Lineage', desc: 'Byte provenance', Icon: IconLineage, end: false },
+  { to: '/dashboard/studio', label: 'Studio', desc: 'Onboard new formats', Icon: IconStudio, end: false },
+  { to: '/dashboard/demo', label: 'Demo', desc: 'Run the scenarios', Icon: IconDemo, end: false },
+  { to: '/dashboard/settings', label: 'Settings', desc: 'LLM & air-gap', Icon: IconSettings, end: false },
 ];
 
 /** Pack self-check plus event count: enough to tell at a glance that the stack is alive. */
@@ -87,16 +87,18 @@ export function Layout() {
     <div className="shell">
       <aside className={`sidebar${open ? ' open' : ''}`}>
         <div className="sidebar-brand">
-          <span className="mark" aria-hidden="true">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-              <path d="M12 8.2l3.4 7.6H8.6z" />
-            </svg>
-          </span>
-          <span className="grow">
-            <span className="name">Aletheia</span>
-            <span className="tag">Lossless log pipeline</span>
-          </span>
+          <Link to="/" className="sidebar-brand-link">
+            <span className="mark" aria-hidden="true">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                <path d="M12 8.2l3.4 7.6H8.6z" />
+              </svg>
+            </span>
+            <span className="grow">
+              <span className="name">Aletheia</span>
+              <span className="tag">Lossless log pipeline</span>
+            </span>
+          </Link>
           <button type="button" className="ghost icon sidebar-close" onClick={() => setOpen(false)} aria-label="Close navigation">
             <IconClose size={16} />
           </button>
@@ -104,10 +106,11 @@ export function Layout() {
 
         <nav className="sidebar-nav" aria-label="Main">
           <div className="nav-section">Console</div>
-          {NAV.map(({ to, label, desc, Icon }) => (
+          {NAV.map(({ to, label, desc, Icon, end }) => (
             <NavLink
               key={to}
               to={to}
+              end={end}
               className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
             >
               <Icon size={16} />
@@ -146,7 +149,7 @@ export function Layout() {
                 {settings!.provider}{settings!.model ? ` (${settings!.model})` : ''} — one request per cluster during
                 onboarding, never on the hot path.
               </span>
-              <Link to="/settings">Change</Link>
+              <Link to="/dashboard/settings">Change</Link>
             </div>
           )}
           {settings?.airgap && (

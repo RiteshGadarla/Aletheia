@@ -60,26 +60,31 @@ export function LineagePage() {
           {picker.error && <div className="panel-pad"><ErrorState error={picker.error} what="events" /></div>}
           {picker.data?.events.length === 0 && (
             <EmptyState title="No events yet" icon={<IconInbox size={22} />}
-              action={<Link className="btn-link" to="/demo">Open the Demo Console</Link>}>
+              action={<Link className="btn-link" to="/dashboard/demo">Open the Demo Console</Link>}>
               Run <strong>Start traffic</strong> in the Demo Console, or seed the store with{' '}
               <code>bench/seed_clickhouse.py</code>.
             </EmptyState>
           )}
           {picker.data && picker.data.events.length > 0 && (
             <div className="pick-list">
-              {picker.data.events.map((ev, i) => (
-                <button
-                  key={`${ev.aletheia.event_uid}:${i}`}
-                  className="pick-item"
-                  type="button"
-                  onClick={() => navigate(`/lineage/${ev.aletheia.event_uid}`)}
-                >
-                  <span className="t mono truncate">{ev.aletheia.event_uid}</span>
-                  <span className="m">
-                    {ev.aletheia.source_id} · template {ev.aletheia.template_id || 'none'}
-                  </span>
-                </button>
-              ))}
+              {picker.data.events.map((ev, i) => {
+                const uid = ev.aletheia?.event_uid || ev.metadata?.uid || `event-${i}`;
+                const src = ev.aletheia?.source_id || ev.metadata?.log_name || 'unknown';
+                const tpl = ev.aletheia?.template_id;
+                return (
+                  <button
+                    key={`${uid}:${i}`}
+                    className="pick-item"
+                    type="button"
+                    onClick={() => navigate(`/dashboard/lineage/${uid}`)}
+                  >
+                    <span className="t mono truncate">{uid}</span>
+                    <span className="m truncate">
+                      {src} · template {tpl || 'none'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </Panel>
@@ -94,7 +99,7 @@ export function LineagePage() {
     <div className="stack">
       <PageHead
         title="Lineage viewer"
-        right={<Link className="btn-link" to="/lineage">Choose another event</Link>}
+        right={<Link className="btn-link" to="/dashboard/lineage">Choose another event</Link>}
       >
         Click any OCSF field to highlight the exact bytes it came from — or click a highlighted byte
         range to find the field it fed.

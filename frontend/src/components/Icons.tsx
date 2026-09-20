@@ -125,3 +125,8 @@ export const IconExternal = (p: P) => (
 export const IconSearch = (p: P) => (
   <Svg {...p}><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></Svg>
 );
+
+export const IconHome = (p: P) => (
+  <Svg {...p}><path d="M3 10.2L12 3l9 7.2V20a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 20z" /><path d="M9 21.5V12h6v9.5" /></Svg>
+);
+

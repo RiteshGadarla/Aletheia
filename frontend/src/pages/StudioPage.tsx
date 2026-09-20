@@ -224,7 +224,7 @@ export function StudioPage() {
                   <p className="hint">
                     The heuristic proposal above is unaffected — it is still the one that gets gated.
                   </p>
-                  <Link to="/settings">Configure a provider in Settings</Link>
+                  <Link to="/dashboard/settings">Configure a provider in Settings</Link>
                 </div>
               )}
 
