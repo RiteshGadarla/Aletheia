@@ -90,11 +90,11 @@ class Counters:
 
 # --------------------------------------------------------------------------- Cisco ASA
 def gen_asa(rng: random.Random, pools: IPPools, clock: Clock, ctr: Counters,
-            drift: bool = False, host: str = "fw01") -> str:
+            drift: bool = False, host: str = "fw01", weights=None) -> str:
     ts = syslog_ts(clock.tick())
     kind = rng.choices(
         ["built", "teardown", "deny", "vpn_up", "vpn_down", "nat"],
-        weights=[3, 3, 4, 1, 1, 1])[0]
+        weights=weights or [3, 3, 4, 1, 1, 1])[0]
     pri = 166 if kind in ("built", "vpn_up", "nat") else 164   # informational vs warning
 
     if kind == "built":
@@ -171,10 +171,10 @@ def gen_asa(rng: random.Random, pools: IPPools, clock: Clock, ctr: Counters,
 
 # --------------------------------------------------------------------------- FortiGate
 def gen_fortigate(rng: random.Random, pools: IPPools, clock: Clock, ctr: Counters,
-                   devname: str = "FGT-EDGE") -> str:
+                   devname: str = "FGT-EDGE", weights=None) -> str:
     dt = clock.tick()
     date, time_s = dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M:%S")
-    kind = rng.choices(["traffic", "webfilter", "ips"], weights=[4, 2, 2])[0]
+    kind = rng.choices(["traffic", "webfilter", "ips"], weights=weights or [4, 2, 2])[0]
 
     if kind == "traffic":
         action = rng.choice(["accept", "accept", "deny"])
@@ -234,9 +234,9 @@ def gen_fortigate(rng: random.Random, pools: IPPools, clock: Clock, ctr: Counter
 
 
 # --------------------------------------------------------------------------- generic CEF
-def gen_cef(rng: random.Random, pools: IPPools, clock: Clock, host: str = "waf01") -> str:
+def gen_cef(rng: random.Random, pools: IPPools, clock: Clock, host: str = "waf01", weights=None) -> str:
     ts = syslog_ts(clock.tick())
-    kind = rng.choices(["conn", "deny", "waf"], weights=[3, 3, 3])[0]
+    kind = rng.choices(["conn", "deny", "waf"], weights=weights or [3, 3, 3])[0]
 
     if kind == "conn":
         src, dst = pools.internal_ip(rng), pools.external_ip(rng, attacker_bias=0.0)
@@ -265,9 +265,9 @@ def gen_cef(rng: random.Random, pools: IPPools, clock: Clock, host: str = "waf01
 
 
 # --------------------------------------------------------------------------- generic LEEF
-def gen_leef(rng: random.Random, pools: IPPools, clock: Clock, host: str = "waf01") -> str:
+def gen_leef(rng: random.Random, pools: IPPools, clock: Clock, host: str = "waf01", weights=None) -> str:
     ts = syslog_ts(clock.tick())
-    kind = rng.choices(["waf_caret", "waf_tab", "fw_tab"], weights=[2, 2, 3])[0]
+    kind = rng.choices(["waf_caret", "waf_tab", "fw_tab"], weights=weights or [2, 2, 3])[0]
 
     if kind == "waf_caret":
         src, dst = pools.external_ip(rng), pools.internal_ip(rng)   # attacker-biased

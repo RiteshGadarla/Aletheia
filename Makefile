@@ -27,7 +27,7 @@ export PATH := $(GOROOT_LOCAL)/bin:$(PATH)
 .DEFAULT_GOAL := help
 .PHONY: help doctor setup venv node-deps secrets check test verify-packs engine engine-test \
         studio-test frontend-check dev studio frontend lite cli bench-storage demo up down \
-        logs install-go clean distclean services services-down services-logs run topics \
+        logs install-go clean distclean services services-down gens gens-down services-logs run topics \
         worker-smoke seal bench-storage-full
 
 ## ---------------------------------------------------------------- help / doctor
@@ -227,6 +227,14 @@ topics:
 	  docker exec aletheia-services-redpanda-1 rpk topic create $$t -p 4 -r 1 2>/dev/null | tail -1; \
 	done
 	@docker exec aletheia-services-redpanda-1 rpk topic list
+
+GENS := $(ROOT)/deploy/docker-compose.generators.yml
+
+gens:            ## six live log servers on :9101-9106 (control :9201, :9102-9106)
+	docker compose -f $(GENS) up -d --build
+
+gens-down:
+	docker compose -f $(GENS) down
 
 services-down:
 	docker compose -f $(SERVICES) down

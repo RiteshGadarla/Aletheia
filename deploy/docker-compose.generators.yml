@@ -1,0 +1,42 @@
+# Six live log-generator servers. ~10 MB RAM and <1% CPU each. Start: make gens
+name: aletheia-generators
+
+x-gen: &gen
+  build: {context: .., dockerfile: docker/generators/Dockerfile}
+  restart: unless-stopped
+  mem_limit: 32m
+  cpus: 0.10
+  read_only: true
+  extra_hosts: ["host.docker.internal:host-gateway"]
+
+services:
+  gen-asa:
+    <<: *gen
+    command: ["--type", "asa"]
+    ports: ["9101:9101", "9201:9201"]
+
+  gen-fortigate:
+    <<: *gen
+    command: ["--type", "fortigate"]
+    ports: ["9102:9102"]
+
+  gen-web:
+    <<: *gen
+    command: ["--type", "web"]
+    ports: ["9103:9103"]
+
+  gen-vpn:
+    <<: *gen
+    command: ["--type", "vpn"]
+    ports: ["9104:9104"]
+
+  gen-cef:
+    <<: *gen
+    command: ["--type", "cef"]
+    ports: ["9105:9105"]
+    environment: {PUSH_TARGET: "host.docker.internal:5514"}
+
+  gen-app:
+    <<: *gen
+    command: ["--type", "app"]
+    ports: ["9106:9106"]
