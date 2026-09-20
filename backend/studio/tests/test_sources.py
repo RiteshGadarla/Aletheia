@@ -168,3 +168,19 @@ def test_sample_catalogue_and_errors(client: Any) -> None:
     assert all(x["preset"]["type"] and x["preset"]["id"] for x in listing["samples"])
     assert client.post("/api/v1/demo/samples/nope/start").status_code == 404
     assert client.post("/api/v1/demo/samples/nope/control", json={"rate": 5}).status_code == 404
+
+
+def test_snapshot_keeps_builtin_packs_and_bumps_version() -> None:
+    from studio.core.db import MemoryRepo
+    from studio.ingest.onboarding import snapshot
+    repo = MemoryRepo()
+    new = [{"pack": "src_a_1", "yaml": "pack: src_a_1\n", "checksum": "c", "status": "approved", "author": "me", "origin": "heuristic"}]
+    v1, rows1 = snapshot(repo, new)
+    names = {r["pack"] for r in rows1}
+    assert v1 == 1 and "src_a_1" in names and "cisco_asa" in names          # built-ins ride along
+    assert all(r["version"] == 1 for r in rows1)
+    for r in rows1:
+        repo.pack_upsert(r)
+    v2, rows2 = snapshot(repo, [{**new[0], "pack": "src_b_1"}])
+    n2 = {r["pack"] for r in rows2}
+    assert v2 == 2 and {"src_a_1", "src_b_1", "cisco_asa"} <= n2            # earlier approval is kept

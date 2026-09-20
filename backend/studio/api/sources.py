@@ -20,6 +20,18 @@ router = APIRouter()
 MIN_LINES_FOR_REVIEW = 100
 
 
+def _worker_up() -> bool:
+    """The engine worker exposes metrics on :9108; if nothing answers, approved logs go nowhere."""
+    import os
+    import socket
+    host, _, port = os.environ.get("ALETHEIA_WORKER_METRICS", "127.0.0.1:9108").rpartition(":")
+    try:
+        with socket.create_connection((host or "127.0.0.1", int(port)), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
 def _view(s: Source) -> dict[str, Any]:
     st = get_state()
     ps = st.pipeline.stats.get(s.id)
@@ -54,7 +66,7 @@ class SourcePatch(BaseModel):
 @router.get("/sources")
 def list_sources() -> dict[str, Any]:
     st = get_state()
-    return {"store": st.raw.kind, "bus": st.forwarder.enabled, "types": list(TYPES),
+    return {"store": st.raw.kind, "bus": st.forwarder.enabled, "worker": _worker_up(), "types": list(TYPES),
             "sources": [_view(s) for s in st.registry.list()]}
 
 
@@ -227,13 +239,17 @@ async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
     if bad:
         raise HTTPException(409, f"reconstruction gate failed for {', '.join(bad)}; retry or reject")
     rows = onboarding.build_packs(sid, [c["cluster_id"] for c in chosen], actor)
-    for r in rows:
+    version, everything = onboarding.snapshot(st.repo, rows)
+    for r in everything:
         st.repo.pack_upsert(r)
-        st.bus.publish_pack_approved(r["pack"], r["version"], r["checksum"], sid)
-    st.registry.update(sid, state="approved")
-    st.registry.event(sid, "approved", actor, {"packs": [r["pack"] for r in rows]})
-    st.repo.audit(actor, "source.approve", sid, {"packs": [r["pack"] for r in rows]})
-    fwd = await asyncio.to_thread(backfill, st.raw, st.forwarder, sid)
+    st.bus.publish_pack_approved(rows[-1]["pack"], version, rows[-1]["checksum"], sid)
+    if st.forwarder.enabled:
+        await asyncio.sleep(2.0)                     # let the worker swap in the new parser first
+    approved_ns = time.time_ns()
+    st.registry.update(sid, state="approved", approved_ns=approved_ns)
+    st.registry.event(sid, "approved", actor, {"packs": [r["pack"] for r in rows], "version": version})
+    st.repo.audit(actor, "source.approve", sid, {"packs": [r["pack"] for r in rows], "version": version})
+    fwd = await asyncio.to_thread(backfill, st.raw, st.forwarder, sid, 200_000, approved_ns)
     return {"source": _view(_get(sid)), "packs": [r["pack"] for r in rows], "backfilled": fwd,
             "bus": st.forwarder.enabled}
 

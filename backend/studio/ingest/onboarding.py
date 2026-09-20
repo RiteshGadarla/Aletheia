@@ -92,3 +92,32 @@ def build_packs(sid: str, cluster_ids: list[str] | None, approver: str) -> list[
                      "checksum": hashlib.sha256(y.encode()).hexdigest(),
                      "author": approver, "origin": c["mapping"]["origin"]})
     return rows
+
+
+def snapshot(repo, new_rows: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
+    """Full pack set for the next version. The worker reloads `packs WHERE version = N`, so N must
+    hold the built-in packs and earlier approvals too, or it would forget every other parser."""
+    import yaml
+    from ..core.packs import packs_dir
+    existing = repo.packs_list()
+    version = max((int(r["version"]) for r in existing), default=0) + 1
+    slim = lambda r: {k: r.get(k) for k in ("pack", "status", "yaml", "checksum", "author", "origin")}  # noqa: E731
+    rows: list[dict[str, Any]] = []
+    for f in sorted(packs_dir().glob("*.yaml")):
+        if f.name.startswith("_"):
+            continue
+        text = f.read_text()
+        try:
+            name = yaml.safe_load(text)["pack"]
+        except Exception:                                                        # noqa: BLE001
+            continue
+        rows.append({"pack": name, "status": "approved", "yaml": text, "author": "builtin",
+                     "checksum": hashlib.sha256(text.encode()).hexdigest(), "origin": "heuristic"})
+    fresh = {r["pack"] for r in new_rows}
+    latest: dict[str, dict[str, Any]] = {}
+    for r in existing:
+        if str(r["pack"]).startswith("src_") and r.get("status") == "approved" and r["pack"] not in fresh:
+            if r["pack"] not in latest or int(r["version"]) > int(latest[r["pack"]]["version"]):
+                latest[r["pack"]] = r
+    rows += [slim(r) for r in latest.values()] + [slim(r) for r in new_rows]
+    return version, [{**r, "version": version} for r in rows]

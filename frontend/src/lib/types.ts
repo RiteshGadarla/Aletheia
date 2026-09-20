@@ -336,7 +336,7 @@ export interface SourceInfo {
   history: { at: number; action: string; actor: string; reason?: string; feedback?: string }[];
 }
 
-export interface SourceList { store: string; bus: boolean; types: string[]; sources: SourceInfo[] }
+export interface SourceList { store: string; bus: boolean; worker: boolean; types: string[]; sources: SourceInfo[] }
 
 export interface MappingRow {
   slot: string; type: string; sample: string; path: string | null; confidence: number;

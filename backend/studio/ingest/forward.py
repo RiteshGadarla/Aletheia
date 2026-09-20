@@ -33,13 +33,14 @@ class RawForwarder:
         return len(entries)
 
 
-def backfill(store: RawStore, fwd: RawForwarder, source_id: str, max_lines: int = 200_000) -> int:
-    """Replay stored raw lines oldest-first through the bus so a newly approved pack applies."""
+def backfill(store: RawStore, fwd: RawForwarder, source_id: str, max_lines: int = 200_000,
+             end_ns: int | None = None) -> int:
+    """Replay stored raw lines oldest-first (up to end_ns) so a newly approved pack applies to them."""
     if not fwd.enabled:
         return 0
     done, cursor = 0, None
     while done < max_lines:
-        rows = store.query(source_id, limit=2000, start_ns=cursor, forward=True)
+        rows = store.query(source_id, limit=2000, start_ns=cursor, end_ns=end_ns, forward=True)
         if not rows:
             break
         fwd.send(source_id, [(r["ts_ns"], r["line"], r["severity"]) for r in rows], "backfill")

@@ -130,7 +130,7 @@ export const api = {
     http(`/sources/${encodeURIComponent(id)}/review`),
   sourcePropose: (id: string): Promise<SourceProposal> =>
     http(`/sources/${encodeURIComponent(id)}/propose`, { method: 'POST', body: '{}' }),
-  sourceDecide: (id: string, b: { action: 'approve' | 'reject' | 'retry'; approver: string; reason?: string; feedback?: string; class_hint?: number }): Promise<{ source: SourceInfo; proposal?: SourceProposal; backfilled?: number; packs?: string[] }> =>
+  sourceDecide: (id: string, b: { action: 'approve' | 'reject' | 'retry'; approver: string; reason?: string; feedback?: string; class_hint?: number }): Promise<{ source: SourceInfo; proposal?: SourceProposal; backfilled?: number; packs?: string[]; bus?: boolean }> =>
     http(`/sources/${encodeURIComponent(id)}/decision`, { method: 'POST', body: JSON.stringify(b) }),
 
   /* settings, CONTRACTS section 9 and spec 8.12.8 */

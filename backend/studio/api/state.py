@@ -47,7 +47,7 @@ class AppState:
         def forward(sid, entries):
             s = self.registry.get(sid)
             if s and s.state == "approved":
-                self.forwarder.send(sid, entries)
+                self.forwarder.send(sid, [e for e in entries if e[0] >= s.approved_ns])
 
         self.pipeline = IngestPipeline(self.raw, forward=forward)
         self.connectors = ConnectorManager(self.registry, self.pipeline)

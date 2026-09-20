@@ -25,6 +25,7 @@ class Source:
     enabled: bool = True
     state: str = "collecting"
     attempts: int = 0
+    approved_ns: int = 0          # lines at or after this go live; earlier ones are backfilled
     created_at: float = field(default_factory=time.time)
     history: list[dict[str, Any]] = field(default_factory=list)
 

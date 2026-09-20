@@ -27,7 +27,7 @@ export PATH := $(GOROOT_LOCAL)/bin:$(PATH)
 .DEFAULT_GOAL := help
 .PHONY: help doctor setup venv node-deps secrets check test verify-packs engine engine-test \
         studio-test frontend-check dev studio frontend lite cli bench-storage demo up down \
-        logs install-go clean distclean services services-down gens gens-down bench-engine services-logs run topics \
+        logs install-go clean distclean services services-down gens gens-down bench-engine worker services-logs run topics \
         worker-smoke seal bench-storage-full
 
 ## ---------------------------------------------------------------- help / doctor
@@ -159,8 +159,22 @@ frontend-check:
 studio:
 	@[ -d $(VENV) ] || { echo "run make setup first"; exit 1; }
 	@set -a; [ -f $(SECRETS) ] && . $(SECRETS); set +a; \
-	 cd $(ROOT)/backend && ALETHEIA_MODE=lite $(VENV)/bin/uvicorn studio.main:app \
-	   --reload --host 0.0.0.0 --port 8081
+	 cd $(ROOT)/backend && ALETHEIA_MODE=lite \
+	   ALETHEIA_PG_DSN=$${ALETHEIA_PG_DSN:-postgres://aletheia:aletheia@127.0.0.1:5432/aletheia} \
+	   ALETHEIA_BUS_BROKERS=$${ALETHEIA_BUS_BROKERS:-127.0.0.1:9092} \
+	   $(VENV)/bin/uvicorn studio.main:app --reload --host 0.0.0.0 --port 8081
+
+# Engine worker: raw topic -> parse, verify, OCSF -> ClickHouse. Approved sources reach Events and
+# Lineage only while this runs (and `make services` is up).
+worker: engine
+	@set -a; [ -f $(SECRETS) ] && . $(SECRETS); set +a; \
+	 ALETHEIA_PACKS_DIR=$(ROOT)/backend/packs ALETHEIA_OCSF_DIR=$(ROOT)/backend/ocsf \
+	 ALETHEIA_CLICKHOUSE_ADDR=$${ALETHEIA_CLICKHOUSE_ADDR:-127.0.0.1:9000} \
+	 ALETHEIA_CLICKHOUSE_USER=$${ALETHEIA_CLICKHOUSE_USER:-aletheia} \
+	 ALETHEIA_CLICKHOUSE_PASSWORD=$${ALETHEIA_CLICKHOUSE_PASSWORD:-aletheia} \
+	 ALETHEIA_PG_DSN=$${ALETHEIA_PG_DSN:-postgres://aletheia:aletheia@127.0.0.1:5432/aletheia} \
+	 ALETHEIA_BUS_BROKERS=$${ALETHEIA_BUS_BROKERS:-127.0.0.1:9092} \
+	 $(BIN)/aletheia-worker
 
 frontend:
 	cd $(FRONTEND) && npm run dev -- --host 0.0.0.0 --port 5173
@@ -247,8 +261,9 @@ services-logs:
 	docker compose -f $(SERVICES) logs -f --tail=100
 
 # run: backing services in Docker + engine/studio/frontend natively
-run: services
-	@$(MAKE) dev
+run: services engine
+	@echo "Studio -> http://localhost:8081  Frontend -> http://localhost:5173  (engine worker running)"
+	@$(MAKE) -j3 studio frontend worker
 
 ## ---------------------------------------------------------------- full stack in Docker (optional)
 
