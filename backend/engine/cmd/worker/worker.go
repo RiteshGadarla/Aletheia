@@ -33,6 +33,7 @@ type Worker struct {
 
 	commitMu sync.Mutex
 	idle     time.Duration // >0: exit after this long with no records (drain mode)
+	nDone    atomic.Uint64 // records handled, so drain can report what it actually did
 }
 
 // NewWorker wires the consumer, the ClickHouse batcher and the publisher.
@@ -123,7 +124,10 @@ func (w *Worker) Run(ctx context.Context) error {
 				return nil
 			}
 			if w.idle > 0 {
-				logf("drain: no records for %s, stopping", w.idle)
+				// Say what was processed: "no records" alone reads as "did
+				// nothing", which is wrong after a full batch has gone through.
+				logf("drain: %d records processed, none new for %s, stopping",
+					w.nDone.Load(), w.idle)
 				return nil
 			}
 			continue
@@ -148,6 +152,7 @@ func (w *Worker) consume(fs kgo.Fetches) {
 			for _, r := range p.Records {
 				w.handle(r)
 			}
+			w.nDone.Add(uint64(len(p.Records)))
 			last := p.Records[len(p.Records)-1]
 			w.met.Lag(p.Partition, p.HighWatermark-last.Offset-1)
 		}(p)

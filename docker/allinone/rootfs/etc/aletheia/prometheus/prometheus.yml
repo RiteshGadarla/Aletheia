@@ -1,0 +1,63 @@
+# All-in-one override of deploy/prometheus/prometheus.yml.
+#
+# The deploy/ copy targets Compose service names (`vector:9598`, `redpanda:9644`, ...). Inside
+# this image there is no Compose DNS and no second container, so every one of those would fail
+# to resolve and every panel would be empty. Here each component is a process on loopback.
+#
+# Worker scraping also changes shape: the deploy file uses dns_sd_configs to find N replicas,
+# but the all-in-one runs a fixed small number of workers on consecutive ports (9108 + i, see
+# s6-rc.d/aletheia-worker/run), so they are listed statically instead.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 15s
+  external_labels:
+    deployment: aletheia-allinone
+
+rule_files:
+  - /etc/aletheia/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]
+
+  - job_name: aletheia-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["127.0.0.1:9108", "127.0.0.1:9109", "127.0.0.1:9110", "127.0.0.1:9111"]
+
+  - job_name: aletheia-sealer
+    static_configs:
+      - targets: ["127.0.0.1:9109"]
+
+  - job_name: aletheia-studio
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["127.0.0.1:8081"]
+
+  - job_name: vector
+    static_configs:
+      - targets: ["127.0.0.1:9598"]
+
+  - job_name: redpanda
+    metrics_path: /public_metrics
+    static_configs:
+      - targets: ["127.0.0.1:9644"]
+
+  - job_name: clickhouse
+    static_configs:
+      - targets: ["127.0.0.1:9363"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["127.0.0.1:3100"]
+
+  - job_name: minio
+    metrics_path: /minio/v2/metrics/cluster
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["127.0.0.1:3000"]

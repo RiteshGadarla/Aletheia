@@ -20,6 +20,10 @@ export function LineagePage() {
   const [active, setActive] = useState<string | null>(null);
   const [recheck, setRecheck] = useState<Recheck | undefined>(undefined);
 
+  // A different event has different slots, so a highlight carried over from the last one is
+  // pointing at bytes that are no longer there.
+  useEffect(() => { setActive(null); }, [eventUid]);
+
   // Only fetch the picker list when no event is selected yet.
   const picker = useAsync(
     () => (eventUid ? Promise.resolve(null) : api.listEvents({ limit: 100 })),
@@ -63,9 +67,9 @@ export function LineagePage() {
           )}
           {picker.data && picker.data.events.length > 0 && (
             <div className="pick-list">
-              {picker.data.events.map((ev) => (
+              {picker.data.events.map((ev, i) => (
                 <button
-                  key={ev.aletheia.event_uid}
+                  key={`${ev.aletheia.event_uid}:${i}`}
                   className="pick-item"
                   type="button"
                   onClick={() => navigate(`/lineage/${ev.aletheia.event_uid}`)}

@@ -1,0 +1,67 @@
+# Redpanda for the all-in-one image: a single node, bound to loopback, sized for one laptop.
+#
+# Everything advertises 127.0.0.1 because every producer and consumer lives in this container.
+# The worker, the sealer and Vector all connect to 127.0.0.1:9092; nothing crosses the image
+# boundary, so no external listener is configured at all.
+#
+# `developer_mode: true` is what lets Redpanda run without the tuned kernel settings and
+# dedicated disks it normally insists on. That is correct for an evaluation image and is not a
+# production configuration -- the multi-container deploy/docker-compose.yml is.
+
+redpanda:
+  data_directory: /data/redpanda
+
+  # Single node, so it is its own seed and its own controller.
+  node_id: 0
+  seed_servers: []
+
+  rpc_server:
+    address: 127.0.0.1
+    port: 33145
+  advertised_rpc_api:
+    address: 127.0.0.1
+    port: 33145
+
+  kafka_api:
+    - address: 127.0.0.1
+      port: 9092
+  advertised_kafka_api:
+    - address: 127.0.0.1
+      port: 9092
+
+  admin:
+    - address: 127.0.0.1
+      port: 9644
+
+  developer_mode: true
+
+  # One node cannot replicate, so every internal topic has to accept a single replica or
+  # Redpanda refuses to create them and topic creation fails at boot.
+  default_topic_replications: 1
+  transaction_coordinator_replication: 1
+  id_allocator_replication: 1
+
+  # `raw` is the system of record until an event is sealed, so it is kept rather than aged out
+  # on a demo-sized disk. Sized for an evaluation image, not for retention policy.
+  log_segment_size: 16777216          # 16 MiB
+  retention_bytes: 2147483648         # 2 GiB per partition
+  compacted_log_segment_size: 8388608
+
+  auto_create_topics_enabled: false   # topics are created explicitly by init-topics
+
+rpk:
+  # The tuners need privileges and a dedicated block device; neither exists here.
+  tune_network: false
+  tune_disk_scheduler: false
+  tune_disk_nomerges: false
+  tune_disk_irq: false
+  tune_cpu: false
+  tune_aio_events: false
+  tune_clocksource: false
+  tune_swappiness: false
+  coredump_dir: /data/redpanda/coredump
+  overprovisioned: true
+
+pandaproxy: {}
+
+schema_registry: {}

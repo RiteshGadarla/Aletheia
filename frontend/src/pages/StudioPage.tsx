@@ -14,6 +14,9 @@ import type {
   ApprovalState, AskAiResult, GateResult, MappingProposal, PackProposal, ReplayDiff,
 } from '../lib/types';
 
+/** Enough failing samples to see the pattern, not enough to bury the page. */
+const MAX_FAILURES = 3;
+
 interface ActionState<T> { loading: boolean; data: T | null; error: string | null }
 
 /** Runs an async action on demand (button click), tracking loading/data/error locally. */
@@ -269,13 +272,22 @@ export function StudioPage() {
                       <Badge kind={gate.data.golden_tests_ok ? 'ok' : 'bad'}>golden tests</Badge>
                       <Badge kind={gate.data.no_adjacent_slots_ok ? 'ok' : 'bad'}>no adjacent slots</Badge>
                     </div>
-                    {gate.data.failures.map((f, i) => (
+                    {/* A rejected template usually fails on every sample, and ten identical
+                        headings bury the one thing worth reading. */}
+                    {gate.data.failures.slice(0, MAX_FAILURES).map((f, i) => (
                       <div key={i} className="blocking">
                         <h4>Failure: {f.reason}</h4>
                         <p className="hint">byte offset {f.offset}</p>
                         <FailureLine sample={f.sample} offset={f.offset} />
                       </div>
                     ))}
+                    {gate.data.failures.length > MAX_FAILURES && (
+                      <p className="hint">
+                        and {gate.data.failures.length - MAX_FAILURES} more failing sample
+                        {gate.data.failures.length - MAX_FAILURES === 1 ? '' : 's'} — the gate
+                        rejects the template on the first one regardless.
+                      </p>
+                    )}
                     <CliDisclosure cmd={gate.data.cli} />
                   </div>
                 )}
@@ -308,23 +320,32 @@ export function StudioPage() {
                         regressions {replay.data.regressions.length}
                       </Badge>
                     </div>
-                    <div className="table-scroll">
-                      <table className="data">
-                        <thead>
-                          <tr><th>Field</th><th className="num">Changed</th><th>Before</th><th>After</th></tr>
-                        </thead>
-                        <tbody>
-                          {replay.data.fields.map((f) => (
-                            <tr key={f.path}>
-                              <td className="mono nowrap">{f.path}</td>
-                              <td className="num">{f.changed}</td>
-                              <td className="wrap">{f.before_example ?? <span className="dim">—</span>}</td>
-                              <td className="wrap">{f.after_example ?? <span className="dim">—</span>}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {/* A headers-only table reads as broken; say why it is empty instead. */}
+                    {replay.data.fields.length === 0 ? (
+                      <p className="hint">
+                        {replay.data.events_examined === 0
+                          ? 'No stored events matched this source yet, so there was nothing to replay against.'
+                          : 'No OCSF field changed value between the two versions.'}
+                      </p>
+                    ) : (
+                      <div className="table-scroll">
+                        <table className="data">
+                          <thead>
+                            <tr><th>Field</th><th className="num">Changed</th><th>Before</th><th>After</th></tr>
+                          </thead>
+                          <tbody>
+                            {replay.data.fields.map((f) => (
+                              <tr key={f.path}>
+                                <td className="mono nowrap">{f.path}</td>
+                                <td className="num">{f.changed}</td>
+                                <td className="wrap">{f.before_example ?? <span className="dim">—</span>}</td>
+                                <td className="wrap">{f.after_example ?? <span className="dim">—</span>}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                     {replay.data.regressions.length > 0 && (
                       <div className="blocking">
                         <h4>Regressions &mdash; blocking, an event would get worse</h4>

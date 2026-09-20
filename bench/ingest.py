@@ -153,12 +153,18 @@ def row_for(raw: str, hit, i: int, now: datetime) -> tuple[dict, dict, tuple | N
 
     pack, tpl, env_id, tokens, groups, doc = hit
     src = (pack.get("applies_to", {}).get("product") or pack["pack"]).lower().replace(" ", "_")
+    # Honour the pack's declared storage_mode. Suricata EVE declares `verbatim` because byte-exact
+    # templating of arbitrary JSON is fragile (spec §9.7), and verify_packs.py already reports it
+    # that way -- hardcoding "template" here meant the stored rows disagreed with both the pack and
+    # the reference verifier, and left the verbatim read path in `aletheia verify` never exercised.
+    mode = tpl.get("storage_mode", pack.get("storage_mode", "template"))
     row = {
         "event_uid": uid, "recv_time": tstr, "event_time": tstr, "source_id": src,
         "envelope_id": env_id, "template_id": tpl["id"],
         "pack_version": int(pack.get("version", 1)),
-        "storage_mode": "template", "parse_status": "full",
-        "vars": groups, "raw_verbatim": None, "raw_sha256": sha,
+        "storage_mode": mode, "parse_status": "full",
+        # A verbatim event keeps the whole line; its vars are not the system of record.
+        "vars": groups, "raw_verbatim": raw if mode == "verbatim" else None, "raw_sha256": sha,
         "class_uid": int(dig(doc, "class_uid") or 0),
         "activity_id": int(dig(doc, "activity_id") or 0),
         "severity_id": int(dig(doc, "severity_id") or 1),

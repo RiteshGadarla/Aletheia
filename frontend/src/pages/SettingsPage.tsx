@@ -24,6 +24,7 @@ export function SettingsPage() {
   const [apiKey, setApiKey] = useState('');
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
   const [test, setTest] = useState<ConnTest | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
@@ -78,10 +79,15 @@ export function SettingsPage() {
     } catch (e) { setError(errMessage(e)); } finally { setBusy(null); }
   };
 
+  // A real generateContent call against Gemma takes 8-34s, and a disabled button for that
+  // long reads as a hang. Count the seconds up so the wait is visibly progress, not a freeze.
   const runTest = async () => {
-    setBusy('test'); setError(null); setTest(null);
+    setBusy('test'); setError(null); setTest(null); setElapsed(0);
+    const started = Date.now();
+    const tick = window.setInterval(() => setElapsed(Math.round((Date.now() - started) / 1000)), 1000);
     try { setTest(await api.testConnection()); }
-    catch (e) { setError(errMessage(e)); } finally { setBusy(null); }
+    catch (e) { setError(errMessage(e)); }
+    finally { window.clearInterval(tick); setBusy(null); }
   };
 
   const toggleAirgap = async () => {
@@ -180,8 +186,13 @@ export function SettingsPage() {
               {busy === 'save' ? 'Saving…' : 'Save'}
             </button>
             <button onClick={runTest} disabled={busy !== null || provider === 'none'}>
-              {busy === 'test' ? 'Testing…' : 'Test connection'}
+              {busy === 'test' ? `Testing… ${elapsed}s` : 'Test connection'}
             </button>
+            {busy === 'test' && (
+              <span className="hint">
+                The model is asked one real question, so this can take up to a minute.
+              </span>
+            )}
             {saved && <Badge kind="ok">saved · no restart needed</Badge>}
           </div>
 

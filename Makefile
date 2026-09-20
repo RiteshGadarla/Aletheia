@@ -27,7 +27,8 @@ export PATH := $(GOROOT_LOCAL)/bin:$(PATH)
 .DEFAULT_GOAL := help
 .PHONY: help doctor setup venv node-deps secrets check test verify-packs engine engine-test \
         studio-test frontend-check dev studio frontend lite cli bench-storage demo up down \
-        logs install-go clean distclean services services-down services-logs run topics
+        logs install-go clean distclean services services-down services-logs run topics \
+        worker-smoke seal bench-storage-full
 
 ## ---------------------------------------------------------------- help / doctor
 
@@ -43,6 +44,9 @@ help:
 	@echo "  engine          build the Go engine and CLI into ./bin"
 	@echo "  engine-test     go test ./..."
 	@echo "  studio-test     pytest"
+	@echo "  worker-smoke    bus -> worker -> clickhouse -> verify (needs make services)"
+	@echo "  seal            seal merkle batches over events already stored"
+	@echo "  bench-storage-full  reproducible storage measurement (own corpus, own db)"
 	@echo "  frontend-check  tsc --noEmit && vite build"
 	@echo
 	@echo "  dev             Studio API (:8081) + frontend (:5173), no Docker"
@@ -178,8 +182,23 @@ lite: verify-packs
 cli: engine
 	@$(BIN)/aletheia $(ARGS)
 
+# Reads whatever is already in ClickHouse. For the reproducible measurement in
+# docs/benchmarks.md use bench-storage-full, which builds its own matched corpus.
 bench-storage:
 	@python3 $(ROOT)/bench/storage_report.py
+
+bench-storage-full:
+	@$(ROOT)/bench/storage_bench.sh $(or $(COUNT),120000)
+
+# The only check that exercises the streaming hot path. Needs the datastores up,
+# so it is deliberately outside `make check`, which must run with nothing running.
+worker-smoke: engine
+	@$(ROOT)/scripts/worker-smoke.sh $(ARGS)
+
+# Seal the Merkle batches of events already in ClickHouse. The worker seals on the
+# hot path; this covers a corpus loaded without the bus (the seeder, or `make demo`).
+seal: engine
+	@$(BIN)/aletheia seal --last $(or $(LAST),24h)
 
 demo:
 	@python3 $(ROOT)/demo/scenarios.py $(ARGS)

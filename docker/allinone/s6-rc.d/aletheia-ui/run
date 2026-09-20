@@ -2,5 +2,7 @@
 # nginx serves the bundled UI on 8080 and proxies /api and /healthz.
 set -eu
 exec 2>&1
+# Wait for the readiness aggregator (8088), not the Studio directly: nginx proxies /healthz
+# there, and the aggregator already probes the Studio on 8081 along with everything else.
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:8088 60
 exec nginx -c /etc/nginx/nginx.conf -g 'daemon off;'

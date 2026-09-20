@@ -95,6 +95,42 @@ def _refine(base: str, spans: list[Span]) -> list[Span]:
     return refined
 
 
+def _trim_partial_values(base: str, spans: list[Span]) -> list[Span]:
+    """Drop the part of a literal that is only a *fragment* of a value.
+
+    Byte identity alone cannot tell structure from a value that happens to start the same way.
+    Cluster samples a minute apart share the prefix of their syslog timestamp, so `Sep 20 22:`
+    became a literal and the derived template silently stopped matching at 23:00 and again the
+    next day. The same thing turned a shared `10.0.0.` subnet prefix into structure.
+
+    The test is containment, not presence: a value lying wholly inside the common span really is
+    constant across the cluster and is genuine structure -- the `6` in `%ASA-6-` must stay a
+    literal. Only a value that starts or ends outside the span is a fragment, and the overlap is
+    removed so it becomes part of the neighbouring slot.
+    """
+    values = [(m.start(), m.end()) for m in _VAR_RE.finditer(base)]
+    out: list[Span] = []
+    for s, e in spans:
+        pieces = [(s, e)]
+        for vs, ve in values:
+            if vs >= s and ve <= e:
+                continue                                  # wholly inside: constant, keep it
+            if ve <= s or vs >= e:
+                continue                                  # no overlap
+            nxt: list[Span] = []
+            for ps, pe in pieces:
+                if ve <= ps or vs >= pe:
+                    nxt.append((ps, pe))
+                    continue
+                if ps < vs:
+                    nxt.append((ps, min(vs, pe)))
+                if pe > ve:
+                    nxt.append((max(ve, ps), pe))
+            pieces = nxt
+        out.extend((ps, pe) for ps, pe in pieces if pe > ps)
+    return out
+
+
 def _filter_weak(base: str, spans: list[Span]) -> list[Span]:
     return [(s, e) for s, e in spans
             if len(base[s:e]) >= _MIN_ALNUM_LITERAL or not base[s:e].isalnum()]
@@ -171,6 +207,14 @@ def _single_sample_segments(sample: str) -> _Segments:
 def _to_items(seg: _Segments) -> list[Item]:
     items: list[Item] = []
     slot_i = 0
+    if not seg.literals:
+        # With no literals there is exactly one region, so lead and tail describe the SAME slot.
+        # Emitting both produced two adjacent slots -- which this module promises never to do --
+        # while _extract still returned a single value, and derive_exact then crashed with an
+        # IndexError reading a column that did not exist. Relaxation reaches this state whenever
+        # the last literal has to be dropped, e.g. a kv cluster where one value contains another
+        # ("zone=trust" / "zone=untrust").
+        return [("slot", 0)] if (seg.lead_slot or seg.tail_slot) else []
     if seg.lead_slot:
         items.append(("slot", slot_i))
         slot_i += 1
@@ -293,7 +337,8 @@ def derive_exact(samples: list[str], max_relax: int = 8) -> TemplateProposal:
         seg = _single_sample_segments(base)
         warnings.append("single sample: literals could not be confirmed across the cluster")
     else:
-        spans = _filter_weak(base, _refine(base, _common_spans(base, uniq[1:])))
+        spans = _common_spans(base, uniq[1:])
+        spans = _filter_weak(base, _refine(base, _trim_partial_values(base, spans)))
         seg = _segments(base, spans)
 
     rows: list[list[str]] | None = None

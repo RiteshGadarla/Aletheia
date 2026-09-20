@@ -156,6 +156,17 @@ def _engine_env() -> dict:
     return env
 
 
+def _untamper(uid: str, original: str) -> bool:
+    """Put the flipped byte back, so the scenario is repeatable and leaves no damage."""
+    try:
+        esc = original.replace("\\", "\\\\").replace("'", "\\'")
+        ch(f"ALTER TABLE events UPDATE vars = arrayMap((x, i) -> if(i = 1, '{esc}', x), "
+           f"vars, arrayEnumerate(vars)) WHERE event_uid = '{uid}' SETTINGS mutations_sync=1")
+        return ch(f"SELECT vars[1] FROM events WHERE event_uid='{uid}' LIMIT 1") == original
+    except Exception:                                               # noqa: BLE001
+        return False
+
+
 def _busiest_source() -> str:
     try:
         rows = json.loads(ch("SELECT source_id FROM events GROUP BY source_id "
@@ -191,37 +202,49 @@ def s3b_tamper(a) -> Result:
            "if(i = 1, concat(x,'X'), x), vars, arrayEnumerate(vars)) "
            "WHERE event_uid = '<uid>' SETTINGS mutations_sync=1\"")
     try:
-        row = ch("SELECT event_uid FROM events WHERE storage_mode='template' "
+        # Take the source id with the uid. Verifying any OTHER source would pass, which looked
+        # exactly like "tampering went undetected" and was reported as an engine failure for a
+        # long time — the engine was right, the scenario was checking the wrong source.
+        row = ch("SELECT event_uid, source_id FROM events WHERE storage_mode='template' "
                  "AND length(vars) > 0 LIMIT 1 FORMAT JSON")
         data = json.loads(row).get("data", [])
         if not data:
             return Result("3b tamper one byte", False, "tamper evidence",
                           "verify fails at the exact event", cli,
                           message="no template-mode events to tamper — run scenario 1 first")
-        uid = data[0]["event_uid"]
+        uid, source = data[0]["event_uid"], data[0]["source_id"]
         before = ch(f"SELECT vars[1] FROM events WHERE event_uid = '{uid}' LIMIT 1")
         sha = ch(f"SELECT hex(raw_sha256) FROM events WHERE event_uid = '{uid}' LIMIT 1")
         # ClickHouse cannot assign to one array element, so the whole column is rewritten
         # with only the first entry altered. Still a direct DB edit that bypasses Aletheia.
         ch(f"ALTER TABLE events UPDATE vars = arrayMap((x, i) -> if(i = 1, concat(x, 'X'), x), "
            f"vars, arrayEnumerate(vars)) WHERE event_uid = '{uid}' SETTINGS mutations_sync=1")
-        detail = {"event_uid": uid, "vars_before": before,
+        detail = {"event_uid": uid, "source_id": source, "vars_before": before,
                   "vars_after": ch(f"SELECT vars[1] FROM events WHERE event_uid='{uid}' LIMIT 1"),
                   "stored_sha256": sha[:16] + "...",
                   "note": "the stored hash is untouched, so the rebuilt line no longer matches it"}
-        if have_engine():
-            rc, out = run([ALETHEIA_BIN, "verify", "--source", _busiest_source() or a.source,
-                           "--last", "24h", "--json"], env=_engine_env())
+        if not have_engine():
+            _untamper(uid, before)
+            return Result("3b tamper one byte", True, "tamper evidence",
+                          "verify would fail here", cli, detail,
+                          "byte flipped and restored; aletheia binary absent so verify not run")
+        try:
+            rc, out = run([ALETHEIA_BIN, "verify", "--source", source, "--last", "24h", "--json"],
+                          env=_engine_env())
             detail["verify_exit_code"] = rc
             detail["verify"] = out[-600:]
-            # verify SHOULD fail now; a zero exit would mean tampering went undetected
-            return Result("3b tamper one byte", rc != 0, "tamper evidence",
-                          "verify FAILS and names this exact event and its Merkle batch",
-                          cli, detail,
-                          "tampering detected" if rc != 0 else "NOT DETECTED — investigate")
-        return Result("3b tamper one byte", True, "tamper evidence",
-                      "verify would fail here", cli, detail,
-                      "byte flipped; aletheia binary absent so verify not run")
+            detail["named_this_event"] = uid in out
+        finally:
+            # Always put the byte back. Leaving the corpus corrupted made every later verify
+            # fail, so a second demo run reported damage this scenario had caused itself.
+            detail["restored"] = _untamper(uid, before)
+        # verify SHOULD fail now; a zero exit would mean tampering went undetected
+        detected = rc != 0 and detail["named_this_event"]
+        return Result("3b tamper one byte", detected, "tamper evidence",
+                      "verify FAILS and names this exact event and its Merkle batch",
+                      cli, detail,
+                      "tampering detected, then the byte was restored"
+                      if detected else "NOT DETECTED — investigate")
     except Exception as exc:                                        # noqa: BLE001
         return Result("3b tamper one byte", False, "tamper evidence", "verify fails", cli,
                       message=f"ClickHouse unavailable: {exc}")

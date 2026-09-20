@@ -93,6 +93,51 @@ def _canonical_enum_mapping(slot: SlotInfo, path_options: list[tuple[str, str]]
     return None
 
 
+# The three timestamp slot types of CONTRACTS §2. A slot typed as one of these has exactly one
+# sensible OCSF home, whatever literal happens to precede it.
+_TS_TYPES = {"syslog3164_ts", "iso8601_ts", "epoch_ts"}
+
+
+def _timestamp_mapping(slot: SlotInfo) -> FieldMapping | None:
+    """A timestamp slot -> metadata.original_time.
+
+    A derived template contains the syslog header inline (there is no envelope to hand it to
+    yet), so its timestamp slot was left unmapped and the event lost its original time -- the one
+    field an analyst sorts by. The engine already makes exactly this mapping for the envelope
+    `ts` slot, so proposing it here keeps a derived pack consistent with a hand-written one.
+    """
+    if slot.type not in _TS_TYPES:
+        return None
+    return FieldMapping(
+        slot=slot.name, path="metadata.original_time", confidence=0.9,
+        evidence=[f"slot type {slot.type!r} is a timestamp; the engine maps the envelope "
+                  f"timestamp to metadata.original_time the same way (CONTRACTS §5)"],
+    )
+
+
+def _protocol_mapping(slot: SlotInfo) -> FieldMapping | None:
+    """An enum whose values are all IP protocol names -> connection_info.protocol_name.
+
+    `enum_2 = [TCP, UDP]` sat next to a bare space literal, so it matched no KV key, no canonical
+    action/direction table and no context role, and fell through unmapped -- on a firewall
+    template, where the protocol is one of the few fields anyone actually filters on. The
+    vocabulary is derived from the `protocol_num` table rather than hardcoded, so the two stay in
+    step. `lowercase` matches what every shipped pack does with `proto` (cef_generic, fortigate).
+    """
+    values = [v.lower() for v in (slot.enum_values or [])]
+    if not values:
+        return None
+    names = {str(v).lower() for v in (_enums().get("protocol_num") or {}).values()}
+    if not names or not all(v in names for v in values):
+        return None
+    return FieldMapping(
+        slot=slot.name, path="connection_info.protocol_name", transform="lowercase",
+        confidence=0.8,
+        evidence=[f"every enum value {sorted(set(values))} is an IP protocol name from the "
+                  f"canonical protocol_num table -> connection_info.protocol_name"],
+    )
+
+
 def _propose_context_slot(slot: SlotInfo) -> FieldMapping | None:
     """Literal context (from/to/for/src/dst/user...) informs role; role+type resolves a path."""
     role = context_role(slot.prev_lit)
@@ -112,6 +157,9 @@ def _propose_context_slot(slot: SlotInfo) -> FieldMapping | None:
 
 def _propose_slot(slot: SlotInfo) -> FieldMapping | None:
     """One slot -> at most one FieldMapping, evidence-ordered per spec §8.8."""
+    ts = _timestamp_mapping(slot)
+    if ts:
+        return ts
     key = _extract_kv_key(slot.prev_lit) or slot.name
     hit = lookup(key)
     if hit:
@@ -132,6 +180,9 @@ def _propose_slot(slot: SlotInfo) -> FieldMapping | None:
             slot, [("action", "action_id"), ("direction", "connection_info.direction_id")])
         if canon:
             return canon
+        proto = _protocol_mapping(slot)
+        if proto:
+            return proto
     return _propose_context_slot(slot)
 
 

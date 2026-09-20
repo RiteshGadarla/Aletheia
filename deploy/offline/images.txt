@@ -9,8 +9,8 @@ timberio/vector:${VECTOR_VERSION}-debian
 redpandadata/redpanda:${REDPANDA_VERSION}
 clickhouse/clickhouse-server:${CLICKHOUSE_VERSION}
 postgres:${POSTGRES_VERSION}-bookworm
-minio/minio:${MINIO_VERSION}
-minio/mc:${MINIO_MC_VERSION}
+quay.io/minio/minio:${MINIO_VERSION}
+quay.io/minio/mc:${MINIO_MC_VERSION}
 grafana/loki:${LOKI_VERSION}
 grafana/grafana:${GRAFANA_VERSION}
 prom/prometheus:${PROMETHEUS_VERSION}

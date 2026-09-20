@@ -29,6 +29,7 @@ from .propose.heuristics import propose_mapping
 from .llm.assistant import ask_ai as llm_ask_ai
 from .replay.diff import run_replay
 from .llm.airgap import AirgapViolation
+from .llm.base import LLMUnavailable
 from .llm.factory import build_provider
 
 log = logging.getLogger("studio.main")
@@ -147,7 +148,9 @@ def test_connection() -> dict[str, Any]:
     cfg = st.settings.llm_config()
     try:
         provider = build_provider(cfg)
-    except AirgapViolation as exc:
+    except (AirgapViolation, LLMUnavailable) as exc:
+        # The shipped image has provider=gemini and no key (CONTRACTS §9), so an unconfigured
+        # provider is the normal first state, not a server fault: answer 400, never a 500.
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     result = provider.test_connection()
     return result.model_dump() if hasattr(result, "model_dump") else dict(result)
@@ -503,9 +506,15 @@ def list_events(source_id: str = "", class_uid: int = 0, parse_status: str = "",
         toString(src_ip) AS src_ip, src_port, toString(dst_ip) AS dst_ip, dst_port, protocol,
         action_id, user_name, unmapped, ocsf_extra, merkle_batch, vars, raw_verbatim,
         hex(raw_sha256) AS raw_sha256_hex
-        FROM events WHERE {cond}
-        ORDER BY recv_time DESC LIMIT {limit} OFFSET {max(0, int(offset))} FORMAT JSON""")
-    total = int((_ch(f"SELECT count() AS n FROM events WHERE {cond} FORMAT JSON") or [{}])[0].get("n", 0))
+        FROM events FINAL WHERE {cond}
+        ORDER BY recv_time DESC, event_uid DESC LIMIT {limit} OFFSET {max(0, int(offset))}
+        FORMAT JSON""")
+    # FINAL and the event_uid tiebreaker are both load-bearing for pagination. Without FINAL the
+    # ReplacingMergeTree still holds every redelivery of an event, and recv_time alone does not
+    # order them uniquely, so deep offsets returned rows already shown on an earlier page — one
+    # page of 100 came back with 34 distinct events. The engine's store.QueryRange does the same.
+    total = int((_ch(f"SELECT count() AS n FROM events FINAL WHERE {cond} FORMAT JSON")
+                 or [{}])[0].get("n", 0))
     sources = [r["source_id"] for r in _ch("SELECT DISTINCT source_id FROM events FORMAT JSON")]
     classes = [{"class_uid": int(r["class_uid"]),
                 "name": CLASS_NAMES.get(int(r["class_uid"]), str(r["class_uid"]))}
@@ -579,8 +588,8 @@ def _rebuild_clusters() -> list[dict[str, Any]]:
     if not _ch_up():
         return []
     rows = _ch("""SELECT source_id, raw_verbatim, toString(recv_time) AS at
-        FROM events WHERE parse_status = 'raw_only' AND raw_verbatim IS NOT NULL
-        ORDER BY recv_time DESC LIMIT 2000 FORMAT JSON""")
+        FROM events FINAL WHERE parse_status = 'raw_only' AND raw_verbatim IS NOT NULL
+        ORDER BY recv_time DESC, event_uid DESC LIMIT 2000 FORMAT JSON""")
     engine = ClusterEngine()
     seen: dict[str, dict[str, Any]] = {}
     for r in rows:
@@ -821,7 +830,9 @@ class AirgapUpdate(BaseModel):
 
 @api.post("/settings/airgap")
 def set_airgap(update: AirgapUpdate) -> dict[str, Any]:
-    get_state().settings.set("llm.airgap", "true" if update.airgap else "false")
+    # The setting is keyed "airgap", not "llm.airgap": SettingsStore.set rejects unknown keys,
+    # so the wrong name turned the whole air-gap toggle into a 500.
+    get_state().settings.set("airgap", "true" if update.airgap else "false")
     return _settings_payload()
 
 

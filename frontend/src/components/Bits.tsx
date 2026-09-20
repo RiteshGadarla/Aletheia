@@ -16,7 +16,10 @@ export function Panel(props: {
   flush?: boolean;
   className?: string;
 }) {
-  const hasHeader = props.title !== undefined || props.right !== undefined;
+  // An empty array is truthy, so a page that maps an empty list into `right` would otherwise
+  // open a header slot with nothing in it.
+  const right = Array.isArray(props.right) && props.right.length === 0 ? undefined : props.right;
+  const hasHeader = props.title !== undefined || right !== undefined;
   return (
     <section className={`panel ${props.className ?? ''}`}>
       {hasHeader && (
@@ -25,7 +28,7 @@ export function Panel(props: {
             {props.title}
             {props.subtitle && <span className="panel-sub">{props.subtitle}</span>}
           </div>
-          {props.right && <div className="panel-right">{props.right}</div>}
+          {right && <div className="panel-right">{right}</div>}
         </header>
       )}
       <div className={`panel-body${props.flush ? ' flush' : ''}`}>{props.children}</div>

@@ -21,7 +21,9 @@ const fmtEndpoint = (e?: Endpoint): string => {
   if (!e) return '—';
   const host = e.ip ?? e.hostname ?? e.interface_name;
   if (!host) return '—';
-  return e.port !== undefined ? `${host}:${e.port}` : host;
+  // The API sends `port: null` for protocols that have none, and `!== undefined` let that
+  // through as the literal text ":null".
+  return e.port != null ? `${host}:${e.port}` : host;
 };
 
 /** One human-readable summary column, whichever field this OCSF class populated. */
@@ -86,6 +88,10 @@ export function EventsPage() {
 
   const filtered = !!(sourceId || classUid || parseStatus || debouncedQ);
   const total = data?.total ?? 0;
+
+  useEffect(() => {
+    if (data && data.events.length === 0 && data.total > 0 && offset > 0) setOffset(0);
+  }, [data, offset]);
 
   const goPage = (next: number) => {
     setOffset(next);
@@ -157,7 +163,7 @@ export function EventsPage() {
 
         {error && <div className="panel-pad"><ErrorState error={error} what="events" /></div>}
 
-        {!error && loading && !data && <TableSkeleton rows={9} cols={7} />}
+        {!error && loading && !data && <TableSkeleton rows={9} cols={9} />}
 
         {!error && data && data.events.length === 0 && (
           <EmptyState
@@ -189,11 +195,13 @@ export function EventsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.events.map((ev) => {
+                  {data.events.map((ev, i) => {
                     const sev = SEVERITY[ev.severity_id];
                     return (
                       <tr
-                        key={ev.aletheia.event_uid}
+                        // The API can repeat a row at deep offsets, so the uid alone is not
+                        // unique within a page and React drops the duplicates.
+                        key={`${ev.aletheia.event_uid}:${i}`}
                         className="clickable"
                         onClick={() => navigate(`/lineage/${ev.aletheia.event_uid}`)}
                         title="Open byte lineage for this event"
@@ -207,10 +215,16 @@ export function EventsPage() {
                             ? <Badge kind={sev.tone === 'plain' ? 'plain' : sev.tone}>{sev.label}</Badge>
                             : <span className="dim">—</span>}
                         </td>
-                        <td className="mono nowrap">{fmtEndpoint(ev.src_endpoint)}</td>
-                        <td className="mono nowrap">{fmtEndpoint(ev.dst_endpoint)}</td>
-                        <td className="wrap">{summaryOf(ev) || <span className="dim">—</span>}</td>
-                        <td className="mono nowrap">
+                        <td className="mono nowrap clip" title={fmtEndpoint(ev.src_endpoint)}>
+                          {fmtEndpoint(ev.src_endpoint)}
+                        </td>
+                        <td className="mono nowrap clip" title={fmtEndpoint(ev.dst_endpoint)}>
+                          {fmtEndpoint(ev.dst_endpoint)}
+                        </td>
+                        <td className="wrap" title={summaryOf(ev) || undefined}>
+                          <span className="clamp2">{summaryOf(ev) || <span className="dim">—</span>}</span>
+                        </td>
+                        <td className="mono nowrap clip" title={ev.aletheia.template_id || undefined}>
                           {ev.aletheia.template_id || <span className="dim">none</span>}
                         </td>
                       </tr>

@@ -1,6 +1,6 @@
 // Demo Console (spec 21). Each card leads with an action button and plain language about what it
 // does and proves. The CLI equivalent stays available but tucked behind a disclosure.
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Badge, CliDisclosure, EmptyState, ErrorState, PageHead, Panel, Spinner,
@@ -36,9 +36,11 @@ function ScenarioCard({ s, result, busy, onRun }: {
     <Panel
       className={`scenario${state}`}
       title={<><span className="num">{s.number}</span>{s.title}</>}
-      right={s.requirements.map((r) => (
-        <Badge key={r} kind="info" title={REQ_TITLE[r] ?? 'requirement'}>{r}</Badge>
-      ))}
+      right={s.requirements?.length
+        ? s.requirements.map((r) => (
+          <Badge key={r} kind="info" title={REQ_TITLE[r] ?? 'requirement'}>{r}</Badge>
+        ))
+        : undefined}
     >
       <div className="explain">
         <div className="blk">
@@ -59,9 +61,9 @@ function ScenarioCard({ s, result, busy, onRun }: {
         ) : (
           <Badge kind="plain">performed outside the UI</Badge>
         )}
-        {s.link && (s.link.external
-          ? <a className="btn-link" href={s.link.href} target="_blank" rel="noreferrer">{s.link.label}</a>
-          : <Link className="btn-link" to={s.link.href}>{s.link.label}</Link>)}
+        {s.link && s.link.href.startsWith('/') && !s.link.external && (
+          <Link className="btn-link" to={s.link.href}>{s.link.label}</Link>
+        )}
       </div>
 
       {result && (
@@ -81,6 +83,11 @@ function ScenarioCard({ s, result, busy, onRun }: {
 
 export function DemoPage() {
   const { data: scenarios, loading, error } = useAsync(() => api.listScenarios(), []);
+  // "Run these in order" is the instruction on the page, but the catalogue arrives unordered.
+  const ordered = useMemo(
+    () => [...(scenarios ?? [])].sort((a, b) => a.number - b.number),
+    [scenarios],
+  );
   const [results, setResults] = useState<Record<string, DemoRunResult>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -126,9 +133,9 @@ export function DemoPage() {
         </Panel>
       )}
 
-      {!!scenarios?.length && (
+      {!!ordered.length && (
         <div className="demo-grid">
-          {scenarios.map((s) => (
+          {ordered.map((s) => (
             <ScenarioCard
               key={s.id}
               s={s}

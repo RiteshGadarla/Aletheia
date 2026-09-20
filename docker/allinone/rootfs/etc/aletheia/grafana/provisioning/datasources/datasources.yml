@@ -1,0 +1,51 @@
+# All-in-one override of deploy/grafana/provisioning/datasources/datasources.yml.
+#
+# Identical except that every datasource points at loopback: the deploy/ copy uses Compose
+# service names (`clickhouse`, `loki`, `prometheus`) which do not resolve inside a single
+# container, so all three datasources would fail to connect and every dashboard would be blank.
+
+apiVersion: 1
+
+datasources:
+  - name: ClickHouse
+    uid: aletheia-clickhouse
+    type: grafana-clickhouse-datasource
+    access: proxy
+    isDefault: true
+    jsonData:
+      host: 127.0.0.1
+      port: 9000
+      protocol: native
+      secure: false
+      username: aletheia
+      defaultDatabase: aletheia
+      defaultTable: events
+    secureJsonData:
+      password: ${ALETHEIA_CH_PASSWORD}
+    editable: false
+
+  - name: Loki
+    uid: aletheia-loki
+    type: loki
+    access: proxy
+    url: http://127.0.0.1:3100
+    jsonData:
+      maxLines: 1000
+      # Link a Loki line back to the full record via structured metadata (spec §11.3).
+      derivedFields:
+        - name: event_uid
+          matcherType: label
+          matcherRegex: event_uid
+          url: /d/aletheia-events/aletheia-events?var-event_uid=${__value.raw}
+          datasourceUid: aletheia-clickhouse
+    editable: false
+
+  - name: Prometheus
+    uid: aletheia-prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9090
+    jsonData:
+      httpMethod: POST
+      timeInterval: 10s
+    editable: false

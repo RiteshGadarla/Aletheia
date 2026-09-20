@@ -57,7 +57,9 @@ RUN python -m venv /venv && /venv/bin/pip install --no-cache-dir -r /tmp/require
 FROM debian:${DEBIAN_SUITE}-slim AS s6
 ARG S6_OVERLAY_VERSION
 ARG TARGETARCH
-RUN apt-get update && apt-get install -y --no-install-recommends curl xz-utils \
+# ca-certificates is not optional here: debian-slim ships no CA bundle, so curl fails the s6
+# download with "error setting certificate file" (exit 77) before it ever reaches the network.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
     && rm -rf /var/lib/apt/lists/*
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
@@ -77,8 +79,8 @@ FROM timberio/vector:${VECTOR_VERSION}-debian            AS up-vector
 FROM redpandadata/redpanda:${REDPANDA_VERSION}           AS up-redpanda
 FROM clickhouse/clickhouse-server:${CLICKHOUSE_VERSION}  AS up-clickhouse
 FROM postgres:${POSTGRES_VERSION}-bookworm               AS up-postgres
-FROM minio/minio:${MINIO_VERSION}                        AS up-minio
-FROM minio/mc:${MINIO_MC_VERSION}                        AS up-mc
+FROM quay.io/minio/minio:${MINIO_VERSION}                        AS up-minio
+FROM quay.io/minio/mc:${MINIO_MC_VERSION}                        AS up-mc
 FROM grafana/loki:${LOKI_VERSION}                        AS up-loki
 FROM grafana/grafana:${GRAFANA_VERSION}-ubuntu           AS up-grafana
 FROM prom/prometheus:${PROMETHEUS_VERSION}               AS up-prometheus
@@ -109,6 +111,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates nginx openssl procps netcat-openbsd wget curl jq xz-utils tzdata locales \
       libicu72 libssl3 liblz4-1 libzstd1 libxml2 libxslt1.1 libldap-2.5-0 libnuma1 libatomic1 \
+      libpq5 \
       python3-minimal libpython3-stdlib \
     && rm -rf /var/lib/apt/lists/* \
     && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
@@ -130,7 +133,8 @@ COPY --from=up-loki       /usr/bin/loki              /usr/local/bin/loki
 COPY --from=up-grafana    /usr/share/grafana         /usr/share/grafana
 COPY --from=up-prometheus /bin/prometheus            /usr/local/bin/prometheus
 COPY --from=up-prometheus /bin/promtool              /usr/local/bin/promtool
-COPY --from=up-prometheus /usr/share/prometheus      /usr/share/prometheus
+# Prometheus v3 removed the bundled console templates (/usr/share/prometheus), and the run
+# script passes no --web.console.* flags, so there is nothing left to copy from that path.
 
 RUN set -eux; \
     ln -sf /usr/local/bin/clickhouse /usr/local/bin/clickhouse-server; \
@@ -179,12 +183,21 @@ COPY docker/allinone/healthcheck.sh      /usr/local/bin/healthcheck.sh
 RUN chmod +x /usr/local/bin/healthcheck.sh /opt/aletheia/init/*.sh && \
     find /etc/s6-overlay/s6-rc.d -type f \( -name run -o -name up -o -name finish \) -exec chmod +x {} +
 
+# libpq5 is there for initdb specifically: the server binary links statically enough to run,
+# but initdb needs libpq.so.5, which the copied /usr/lib/postgresql tree does not carry.
+# Without it the very first boot dies in init-dirs with exit 127 and s6 stops the container.
+
 # Non-root component users; /data is the only mutable tree.
+# The directory list is a POSIX loop, not brace expansion: RUN uses /bin/sh, which is dash on
+# Debian, and dash does not expand {a,b,c}. The brace form silently created one directory
+# literally named "{postgres,clickhouse,...}" and the chown of /data/postgres then failed.
 RUN set -eux; \
     groupadd -r aletheia; \
     useradd -r -g aletheia -d /data -s /usr/sbin/nologin aletheia; \
     useradd -r -g aletheia -d /data/postgres -s /usr/sbin/nologin pgrun; \
-    mkdir -p /data/{postgres,clickhouse,redpanda,minio,loki,prometheus,grafana,vector,tls,run,logs,bench,demo}; \
+    for d in postgres clickhouse redpanda minio loki prometheus grafana vector tls run logs bench demo; do \
+      mkdir -p "/data/$d"; \
+    done; \
     chown -R aletheia:aletheia /data /opt/aletheia /app /usr/share/aletheia; \
     chown -R pgrun:aletheia /data/postgres
 

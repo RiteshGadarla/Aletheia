@@ -162,6 +162,11 @@ are fixed; do not rename.
 Frozen in `deploy/postgres/init.sql`: `sources`, `packs`, `merkle_batches`, `anchors`,
 `audit_log`, plus `settings` (see §9).
 
+`backend/packs/_sources.yaml` is the file-driven mirror of the `sources` table, for a run with
+no PostgreSQL. An unregistered source still works — it resolves to a synthetic UTC entry — but
+it reaches only the wildcard matcher scope, and RFC3164 syslog carries no year or offset, so an
+undeclared timezone silently reconstructs to the wrong absolute time.
+
 ## 8. Studio ↔ Engine boundary
 
 The Studio never re-implements matching. It shells out to the engine CLI:
@@ -170,8 +175,14 @@ The Studio never re-implements matching. It shells out to the engine CLI:
 aletheia test-pack --pack <file.yaml> --samples <dir>  --json     # reconstruction gate
 aletheia replay --source <id> --from-version A --to-version B --last N --json
 aletheia verify --source <id> --last 15m --json
+aletheia seal   --source <id> --last 24h --json                   # merkle batches for stored events
 aletheia bench  --workers 1,2,4 --duration 60s --json
 ```
+
+`seal` exists because the worker seals on the hot path only. A corpus loaded without the bus
+(the seeder, or `make demo`) has rows but no batches, so `verify` would report `chain_ok:false`
+for want of anything to check. Sealing is idempotent: the batch key is
+`(source_id, partition, minute)`, so re-running over a window rebuilds the same roots.
 
 All four print a single JSON object to stdout and exit non-zero on failure.
 `test-pack` JSON: `{"ok":bool,"samples":n,"reconstructed":n,"failures":[{"sample","reason","offset"}]}`.

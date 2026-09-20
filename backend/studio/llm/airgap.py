@@ -51,8 +51,27 @@ def host_is_private(host: str) -> bool:
     return all(_addr_private(ipaddress.ip_address(i[4][0])) for i in infos)
 
 
+# Ranges that genuinely mean "inside your own network". This is an explicit allowlist
+# rather than `ipaddress.is_private`, which is broader than this control wants: it also
+# calls the documentation ranges 192.0.2/24, 198.51.100/24 and 203.0.113/24 private, plus
+# the 198.18/15 benchmarking block. Those are not routable, so this is hardening rather
+# than a live hole — but an allowlist states the intent instead of inheriting whichever
+# blocks a future Python decides to fold into is_private. 100.64/10 (CGNAT) is excluded
+# here too; is_private already reports False for it, and it is genuinely off-box.
+_PRIVATE_NETS = tuple(ipaddress.ip_network(n) for n in (
+    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",   # RFC1918
+    "127.0.0.0/8", "169.254.0.0/16",                   # loopback, link-local
+    "::1/128", "fc00::/7", "fe80::/10",                # IPv6 loopback, unique-local, link-local
+))
+
+
 def _addr_private(addr) -> bool:
-    return bool(addr.is_loopback or addr.is_private or addr.is_link_local)
+    # An IPv4-mapped IPv6 address (::ffff:8.8.8.8) must be judged on the address it maps to,
+    # or it would slip past every IPv4 entry above.
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        addr = mapped
+    return any(addr in net for net in _PRIVATE_NETS)
 
 
 def check(provider: str, base_url: str, airgap: bool) -> None:

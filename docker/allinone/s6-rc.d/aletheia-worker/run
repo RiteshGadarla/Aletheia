@@ -3,7 +3,7 @@
 set -eu
 exec 2>&1
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:9092 120
-/opt/aletheia/init/wait-for.sh tcp 127.0.0.1:9000 120
+/opt/aletheia/init/wait-for.sh tcp 127.0.0.1:9100 120
 N="${ALETHEIA_WORKERS:-2}"
 pids=()
 for i in $(seq 1 "$N"); do

@@ -1,0 +1,94 @@
+# Source registry (CONTRACTS §7). Mirrors the PostgreSQL `sources` table for a
+# file-driven or air-gapped run; the worker reads it at startup and on `control`.
+#
+# Why this file has to exist: an unregistered source still works — Sources.Get
+# returns a synthetic UTC entry — but it loses the two things registration buys.
+# First, timezone: RFC3164 syslog carries no year and no offset, so a device in
+# a non-UTC zone is reconstructed with the wrong absolute time unless its zone
+# is declared here. Second, scope: the matcher tries source-scoped templates
+# before vendor-scoped ones before the wildcard, and an unknown source can only
+# ever reach the wildcard bucket.
+#
+# `vendor`/`product` must match the pack's `applies_to` exactly or the
+# vendor-scoped bucket is never hit.
+
+sources:
+  - source_id: asa
+    vendor: Cisco
+    product: ASA
+    device_type: firewall
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  - source_id: fortigate
+    vendor: Fortinet
+    product: FortiGate
+    device_type: firewall
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  - source_id: pfsense/opnsense_filterlog
+    vendor: Netgate
+    product: pfSense/OPNsense filterlog
+    device_type: firewall
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  - source_id: openvpn
+    vendor: OpenVPN Inc
+    product: OpenVPN
+    device_type: vpn
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  - source_id: suricata
+    vendor: OISF
+    product: Suricata
+    device_type: ids
+    listener: file:eve.json
+    timezone: UTC
+    enabled: true
+
+  - source_id: squid
+    vendor: Squid Cache
+    product: Squid
+    device_type: proxy
+    listener: file:access.log
+    timezone: UTC
+    enabled: true
+
+  # CEF and LEEF are framing formats rather than products, so their packs scope
+  # on `applies_to.format` and these sources deliberately declare no vendor.
+  - source_id: cef_generic
+    device_type: unknown
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  - source_id: leef_generic
+    device_type: unknown
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  # Demo devices. Both emit Cisco ASA free text, so they are registered as ASA
+  # to reach the vendor-scoped bucket rather than falling through to wildcard.
+  - source_id: fw01
+    vendor: Cisco
+    product: ASA
+    device_type: firewall
+    listener: udp:5514
+    timezone: UTC
+    enabled: true
+
+  - source_id: edge01
+    vendor: Cisco
+    product: ASA
+    device_type: firewall
+    listener: udp:5514
+    timezone: UTC
+    enabled: true

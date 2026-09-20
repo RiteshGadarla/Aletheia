@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from ..cluster.engine import ClusterEngine
 from ..core.bus import ControlPublisher
+from ..core.crypto import resolve_secret
 from ..core.db import Repo, build_repo
 from ..core.settings import SettingsStore
 from ..llm.limits import UsageCounter
@@ -26,7 +27,9 @@ class AppState:
     bus: ControlPublisher = field(init=False)
 
     def __post_init__(self) -> None:
-        self.settings = SettingsStore(self.repo, secret=os.environ.get("ALETHEIA_SECRET"))
+        # resolve_secret falls back to a persisted local secret, so saving an API key from the
+        # Settings page works on a plain `make dev` with nothing configured (CONTRACTS §9).
+        self.settings = SettingsStore(self.repo, secret=resolve_secret())
         self.bus = ControlPublisher(str(self.settings.get("bus.brokers") or ""))
 
 
