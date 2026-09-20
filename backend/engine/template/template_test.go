@@ -262,3 +262,22 @@ func TestSpliceAndSlotIndex(t *testing.T) {
 		t.Fatal("Splice reported success for a slot the envelope does not have")
 	}
 }
+
+// The literal prefilter is a necessary condition only: it must never reject a real match,
+// and must agree with the bare regexp on near misses.
+func TestPrefilterAgreesWithRegexp(t *testing.T) {
+	tpl, err := Compile("p", []Token{{Lit: "user="}, {Slot: "u", Type: TypeWord}, {Lit: " from "},
+		{Slot: "ip", Type: TypeIPv4}, {Lit: " ok"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []string{
+		"user=bob from 10.0.0.1 ok", "user=bob from 10.0.0.1 ok\n", "xuser=bob from 10.0.0.1 ok",
+		"user=bob from 10.0.0.1 no", "user=bob fro 10.0.0.1 ok", "user= from 10.0.0.1 ok", "", "ok",
+	} {
+		_, got := tpl.Match([]byte(in))
+		if want := tpl.re.MatchString(in); got != want {
+			t.Errorf("%q: prefiltered=%v regexp=%v", in, got, want)
+		}
+	}
+}

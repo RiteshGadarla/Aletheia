@@ -1,6 +1,7 @@
 package template
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"regexp"
@@ -14,6 +15,11 @@ type Template struct {
 	Slots  []string // slot names in token order
 	Expr   string
 	re     *regexp.Regexp
+
+	// Necessary conditions of a whole-line match, checked before the regexp runs.
+	minLen         int
+	prefix, suffix []byte
+	needle         []byte
 }
 
 // Compile validates the tokens and builds the anchored regexp `^...$`.
@@ -44,7 +50,33 @@ func Compile(id string, toks []Token) (*Template, error) {
 	if err != nil {
 		return nil, fmt.Errorf("template %s: %w", id, err)
 	}
-	return &Template{ID: id, Tokens: append([]Token(nil), toks...), Slots: slots, Expr: expr, re: re}, nil
+	t := &Template{ID: id, Tokens: append([]Token(nil), toks...), Slots: slots, Expr: expr, re: re}
+	t.prefilter()
+	return t, nil
+}
+
+// prefilter derives byte-exact necessary conditions from the literals: total literal
+// length, leading and trailing literal, and the longest literal. Never rejects a real match.
+func (t *Template) prefilter() {
+	for _, tk := range t.Tokens {
+		if tk.IsLit() {
+			t.minLen += len(tk.Lit)
+			if len(tk.Lit) > len(t.needle) {
+				t.needle = []byte(tk.Lit)
+			}
+		}
+	}
+	if first := t.Tokens[0]; first.IsLit() {
+		t.prefix = []byte(first.Lit)
+	}
+	if last := t.Tokens[len(t.Tokens)-1]; last.IsLit() {
+		t.suffix = []byte(last.Lit)
+	}
+}
+
+func (t *Template) possible(b []byte) bool {
+	return len(b) >= t.minLen && bytes.HasPrefix(b, t.prefix) && bytes.HasSuffix(b, t.suffix) &&
+		(len(t.needle) < 2 || bytes.Contains(b, t.needle))
 }
 
 // Validate enforces the compiler rules of CONTRACTS §1.
@@ -101,6 +133,9 @@ func (t *Template) Regexp() *regexp.Regexp { return t.re }
 // Match runs the anchored regexp and returns the capture groups as exact byte
 // substrings of b. It never allocates a copy of the input beyond the captures.
 func (t *Template) Match(b []byte) ([]string, bool) {
+	if !t.possible(b) {
+		return nil, false
+	}
 	m := t.re.FindSubmatchIndex(b)
 	if m == nil {
 		return nil, false

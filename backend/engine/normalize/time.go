@@ -17,8 +17,15 @@ var iso8601Layouts = []string{
 	"2006-01-02 15:04:05",
 }
 
+// isoShaped: every layout starts YYYY-MM-DD and is at least 19 bytes; anything else
+// (syslog, epoch) skips eight failing parses and their error allocations.
+func isoShaped(s string) bool { return len(s) >= 19 && s[4] == '-' && s[7] == '-' }
+
 // ParseISO8601 parses an ISO 8601 timestamp to epoch milliseconds.
 func ParseISO8601(s string) (int64, bool) {
+	if !isoShaped(s) {
+		return 0, false
+	}
 	for _, l := range iso8601Layouts {
 		if t, err := time.Parse(l, s); err == nil {
 			return t.UnixMilli(), true
@@ -29,6 +36,9 @@ func ParseISO8601(s string) (int64, bool) {
 
 // ParseISO8601In parses a timestamp that may lack an offset, using loc.
 func ParseISO8601In(s string, loc *time.Location) (int64, bool) {
+	if !isoShaped(s) {
+		return 0, false
+	}
 	for _, l := range iso8601Layouts {
 		if t, err := time.ParseInLocation(l, s, loc); err == nil {
 			return t.UnixMilli(), true
@@ -39,6 +49,9 @@ func ParseISO8601In(s string, loc *time.Location) (int64, bool) {
 
 // ParseEpoch parses a possibly fractional epoch-seconds timestamp.
 func ParseEpoch(s string) (int64, bool) {
+	if s == "" || !(s[0] >= '0' && s[0] <= '9' || s[0] == '+' || s[0] == '.') {
+		return 0, false
+	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil || f < 1e8 || f > 4e10 {
 		return 0, false

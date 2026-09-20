@@ -24,7 +24,7 @@ func classify(r *Result) {
 		return
 	case strings.HasPrefix(b, "{"):
 		r.BodyType = BodyJSON
-	case len(reKV.FindAllString(b, 2)) >= 2:
+	case strings.Count(b, "=") >= 2 && len(reKV.FindAllString(b, 2)) >= 2:
 		r.BodyType = BodyKV
 	case strings.Count(b, ",") >= 5:
 		r.BodyType = BodyCSV
@@ -36,11 +36,13 @@ func classify(r *Result) {
 		r.Discriminator = "tag:" + tag
 		return
 	}
-	if m := reASA.FindString(b); m != "" {
-		r.Discriminator = m
-		return
+	if strings.HasPrefix(b, "%") { // reASA is anchored on '%'
+		if m := reASA.FindString(b); m != "" {
+			r.Discriminator = m
+			return
+		}
 	}
-	if r.BodyType == BodyKV {
+	if r.BodyType == BodyKV && strings.Contains(b, "logid=") {
 		if m := reLogID.FindStringSubmatch(b); m != nil {
 			r.Discriminator = m[1]
 			return

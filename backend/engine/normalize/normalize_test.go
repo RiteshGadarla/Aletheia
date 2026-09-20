@@ -303,3 +303,17 @@ func mustMS(rfc3339 string) int64 {
 	}
 	return t.UnixMilli()
 }
+
+// The ISO/epoch shape guards must not change what ParseAny accepts.
+func TestParseAnyShapeGuards(t *testing.T) {
+	cases := map[string]bool{
+		"2026-09-19T14:31:02Z": true, "2026-09-19 14:31:02.123": true, "1789828262.123": true,
+		"Sep 19 14:31:02": true, "Sep  9 04:05:06": true,
+		"": false, "2026-09-19": false, "+1789828262": true, "abc": false, "12": false, "NaN": false,
+	}
+	for in, want := range cases {
+		if _, ok := ParseAny(in, 1789828262123, time.UTC); ok != want {
+			t.Errorf("ParseAny(%q) ok=%v want %v", in, ok, want)
+		}
+	}
+}

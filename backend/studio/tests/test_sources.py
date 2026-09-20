@@ -125,3 +125,37 @@ def test_stats_overview(client: Any) -> None:
     assert sum(d["by_severity"].values()) == 120
     assert d["sources"][0]["id"] == "app-live" and len(d["sources"][0]["spark"]) == len(d["series"])
     assert d["normalized"]["available"] in (True, False)
+
+
+_OLD_PRI = __import__("re").compile(r"^<(\d{1,3})>")
+_OLD_ASA = __import__("re").compile(r"%ASA-(\d)-")
+_OLD_LEVEL = __import__("re").compile(r'"level"\s*:\s*"(\w+)"', __import__("re").I)
+_OLD_RISK = __import__("re").compile(r"attack|inject|brute|malware|exploit|sqlmap|nikto|masscan|etc/passwd|1=1|TCP_DENIED|stuffing|panic", __import__("re").I)
+_OLD_BAD = __import__("re").compile(r"denied|deny|block|failed|fatal|error|timeout|exhausted", __import__("re").I)
+
+
+def _old_guess(line: str) -> str:
+    """The regex implementation the substring version replaced; must agree on real lines."""
+    base = "info"
+    a, m, lv = _OLD_ASA.search(line[:80]), _OLD_PRI.match(line), _OLD_LEVEL.search(line)
+    num = lambda n: "info" if n >= 6 else "notice" if n == 5 else "warn" if n == 4 else "risk"  # noqa: E731
+    if a:
+        base = num(int(a.group(1)))
+    elif m:
+        base = num(int(m.group(1)) % 8)
+    elif lv:
+        v = lv.group(1).lower()
+        base = "risk" if v in ("error", "fatal", "critical") else "warn" if v in ("warn", "warning") else "info"
+    if base != "risk" and _OLD_RISK.search(line):
+        return "risk"
+    if base in ("info", "notice") and _OLD_BAD.search(line):
+        return "warn"
+    return base
+
+
+def test_guess_severity_matches_regex_version() -> None:
+    from studio.ingest.rawstore import guess_severity
+    lines = [ln for k in ("asa", "fortigate", "web", "vpn", "cef", "app") for ln in _lines(k, 400)]
+    lines += ["", "plain text", "<>x", "<999>y", '{"level":"FATAL"}', "%ASA-x-1: a", "<164>%ASA-6-1: brute"]
+    bad = [ln for ln in lines if guess_severity(ln) != _old_guess(ln)]
+    assert not bad, bad[:3]

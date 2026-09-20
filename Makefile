@@ -27,7 +27,7 @@ export PATH := $(GOROOT_LOCAL)/bin:$(PATH)
 .DEFAULT_GOAL := help
 .PHONY: help doctor setup venv node-deps secrets check test verify-packs engine engine-test \
         studio-test frontend-check dev studio frontend lite cli bench-storage demo up down \
-        logs install-go clean distclean services services-down gens gens-down services-logs run topics \
+        logs install-go clean distclean services services-down gens gens-down bench-engine services-logs run topics \
         worker-smoke seal bench-storage-full
 
 ## ---------------------------------------------------------------- help / doctor
@@ -140,6 +140,10 @@ $(BIN):
 engine-test:
 	@command -v $(GO) >/dev/null 2>&1 || { echo "SKIP engine-test: go not installed (make install-go)"; exit 0; }
 	cd $(ENGINE) && $(GO) test ./...
+
+# Per-event hot-path cost (ns/op, allocs). Use -count 6 and compare medians: this box is noisy.
+bench-engine:
+	cd $(ENGINE) && ALETHEIA_PACKS_DIR=../packs $(GO) test ./pipeline -run xxx -bench Process -benchmem -count 6
 
 studio-test:
 	@[ -d $(VENV) ] || { echo "SKIP studio-test: no venv (make setup)"; exit 0; }
