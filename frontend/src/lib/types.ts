@@ -355,3 +355,22 @@ export interface SourceProposal {
 }
 
 export interface RawLine { ts_ns: number; line: string; severity: string }
+
+/* ---- stats overview ---- */
+export interface SourceStat {
+  id: string; type: string; state: SourceState; enabled: boolean; status: string; error: string;
+  lines: number; bytes: number; errors: number; eps: number; by_severity: Record<string, number>;
+  last_seen: number | null; spark: number[];
+}
+
+export interface Overview {
+  generated_at: number; window_s: number; bucket_s: number; store: string; bus: boolean;
+  kpis: {
+    lines: number; bytes: number; eps: number; sources: number; connected: number; in_review: number;
+    approved: number; rejected: number; risk_pct: number; errors: number; buffered: number;
+    forwarded: number; packs: number;
+  };
+  by_severity: Record<string, number>; series: number[]; sources: SourceStat[];
+  normalized: { available: boolean; total?: number; full?: number; partial?: number; raw_only?: number; templates?: number; normalized_pct?: number };
+  history: { at: number; action: string; actor: string; source: string; reason?: string }[];
+}

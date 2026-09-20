@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .api import sources as sources_api
+from .api import sources as sources_api, stats as stats_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -853,4 +853,5 @@ def set_airgap(update: AirgapUpdate) -> dict[str, Any]:
 
 
 api.include_router(sources_api.router)
+api.include_router(stats_api.router)
 app.include_router(api)

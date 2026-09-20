@@ -6,7 +6,7 @@ import { mockApi } from './mocks';
 import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
-  QuarantineCluster, RawLine, ReplayDiff, SourceInfo, SourceList, SourceProposal,
+  Overview, QuarantineCluster, RawLine, ReplayDiff, SourceInfo, SourceList, SourceProposal,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -106,6 +106,9 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ approver, reason }),
       }),
+
+  /* dashboard stats */
+  overview: (): Promise<Overview> => http('/stats/overview'),
 
   /* sources */
   listSources: (): Promise<SourceList> => http('/sources'),

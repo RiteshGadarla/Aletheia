@@ -113,3 +113,15 @@ async def test_tcp_connector_reads_generator_stream() -> None:
     await pipe.stop()
     srv.close()
     assert {r["line"] for r in store.query("t")} >= {f"line {i}" for i in range(5)}
+
+
+def test_stats_overview(client: Any) -> None:
+    client.post("/api/v1/ingest/app-live", content="\n".join(_lines("app", 120)))
+    _flush(client)
+    d = client.get("/api/v1/stats/overview").json()
+    k = d["kpis"]
+    assert k["lines"] == 120 and k["sources"] == 1 and k["bytes"] > 0
+    assert len(d["series"]) == d["window_s"] // d["bucket_s"] and sum(d["series"]) > 0
+    assert sum(d["by_severity"].values()) == 120
+    assert d["sources"][0]["id"] == "app-live" and len(d["sources"][0]["spark"]) == len(d["series"])
+    assert d["normalized"]["available"] in (True, False)

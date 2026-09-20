@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import { useTheme } from '../lib/theme';
 import {
-  IconEvents, IconLineage, IconStudio, IconDemo, IconSettings,
+  IconEvents, IconSources, IconLineage, IconStudio, IconDemo, IconSettings,
   IconShield, IconCheck, IconAlert, IconSpinner, IconMoon, IconSun,
 } from '../components/Icons';
 import type { ReactNode } from 'react';
@@ -272,7 +272,8 @@ Variables (stored per event):
           <h2>Explore the Console</h2>
           <p className="lp-section-sub">Every section of the pipeline has a dedicated interface.</p>
           <div className="lp-nav-grid">
-            <NavCard to="/dashboard" icon={<IconEvents size={20} />} title="Events Explorer" desc="Unified OCSF table — filter, search and paginate all sources." />
+            <NavCard to="/dashboard/events" icon={<IconEvents size={20} />} title="Events Explorer" desc="Unified OCSF table — filter, search and paginate all sources." />
+            <NavCard to="/dashboard/sources" icon={<IconSources size={20} />} title="Sources" desc="Connect log systems, then approve, reject or retry the mapping." />
             <NavCard to="/dashboard/lineage" icon={<IconLineage size={20} />} title="Lineage Viewer" desc="Byte provenance for every normalized field." />
             <NavCard to="/dashboard/studio" icon={<IconStudio size={20} />} title="Onboarding Studio" desc="Cluster, derive templates, gate and approve." />
             <NavCard to="/dashboard/demo" icon={<IconDemo size={20} />} title="Demo Console" desc="Run the nine demonstration scenarios." />

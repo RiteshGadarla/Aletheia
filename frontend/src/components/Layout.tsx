@@ -7,12 +7,13 @@ import { useAsync } from '../lib/useAsync';
 import { isCloudProvider } from '../lib/types';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
-  IconClose, IconCloud, IconDemo, IconEvents, IconInfo, IconLineage, IconMenu, IconMoon,
+  IconClose, IconCloud, IconDemo, IconEvents, IconHome, IconInfo, IconLineage, IconMenu, IconMoon,
   IconSettings, IconShieldAlert, IconSources, IconStudio, IconSun,
 } from './Icons';
 
 const NAV = [
-  { to: '/dashboard', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: true },
+  { to: '/dashboard', label: 'Overview', desc: 'Live stats', Icon: IconHome, end: true },
+  { to: '/dashboard/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: false },
   { to: '/dashboard/lineage', label: 'Lineage', desc: 'Byte provenance', Icon: IconLineage, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
   { to: '/dashboard/studio', label: 'Studio', desc: 'Onboard new formats', Icon: IconStudio, end: false },

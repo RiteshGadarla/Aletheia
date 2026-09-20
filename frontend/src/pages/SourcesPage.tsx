@@ -7,7 +7,7 @@ import type { BadgeKind } from '../components/Bits';
 import type { SourceCluster, SourceInfo, SourceProposal, SourceState } from '../lib/types';
 
 const SEV_COLOR: Record<string, string> = {
-  info: 'var(--ok, #2e9d6a)', notice: 'var(--info, #4b8bd6)', warn: 'var(--warn, #d9a21b)', risk: 'var(--bad, #d64b4b)',
+  info: 'var(--sev-info)', notice: 'var(--sev-notice)', warn: 'var(--sev-warn)', risk: 'var(--sev-risk)',
 };
 const STATE_KIND: Record<SourceState, BadgeKind> = { collecting: 'plain', review: 'warn', approved: 'ok', rejected: 'bad' };
 const TYPE_FIELDS: Record<string, { k: string; label: string; ph: string }[]> = {

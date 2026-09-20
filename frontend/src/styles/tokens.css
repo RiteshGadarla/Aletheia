@@ -201,3 +201,7 @@
 
   color-scheme: dark;
 }
+
+/* Severity: info = categorical blue, the other three = status steps (always paired with a label). */
+:root { --sev-info: #2a78d6; --sev-notice: #fab219; --sev-warn: #ec835a; --sev-risk: #d03b3b; }
+[data-theme="dark"] { --sev-info: #3987e5; }

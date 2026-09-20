@@ -5,6 +5,7 @@ import { EventsPage } from './pages/EventsPage';
 import { HomePage } from './pages/HomePage';
 import { LineagePage } from './pages/LineagePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { OverviewPage } from './pages/OverviewPage';
 import { SourcesPage } from './pages/SourcesPage';
 import { StudioPage } from './pages/StudioPage';
 
@@ -16,7 +17,8 @@ export default function App() {
 
       {/* Dashboard — sidebar layout wraps all app pages */}
       <Route path="/dashboard" element={<Layout />}>
-        <Route index element={<EventsPage />} />
+        <Route index element={<OverviewPage />} />
+        <Route path="events" element={<EventsPage />} />
         <Route path="lineage" element={<LineagePage />} />
         <Route path="lineage/:eventUid" element={<LineagePage />} />
         <Route path="sources" element={<SourcesPage />} />
@@ -27,7 +29,7 @@ export default function App() {
       </Route>
 
       {/* Legacy redirects */}
-      <Route path="/events" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/events" element={<Navigate to="/dashboard/events" replace />} />
       <Route path="/lineage/*" element={<Navigate to="/dashboard/lineage" replace />} />
       <Route path="/studio" element={<Navigate to="/dashboard/studio" replace />} />
       <Route path="/settings" element={<Navigate to="/dashboard/settings" replace />} />
