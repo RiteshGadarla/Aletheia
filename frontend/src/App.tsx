@@ -5,6 +5,7 @@ import { EventsPage } from './pages/EventsPage';
 import { HomePage } from './pages/HomePage';
 import { LineagePage } from './pages/LineagePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SourcesPage } from './pages/SourcesPage';
 import { StudioPage } from './pages/StudioPage';
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
         <Route index element={<EventsPage />} />
         <Route path="lineage" element={<LineagePage />} />
         <Route path="lineage/:eventUid" element={<LineagePage />} />
+        <Route path="sources" element={<SourcesPage />} />
         <Route path="studio" element={<StudioPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="demo" element={<DemoPage />} />

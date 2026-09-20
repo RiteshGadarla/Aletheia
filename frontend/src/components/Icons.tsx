@@ -130,3 +130,7 @@ export const IconHome = (p: P) => (
   <Svg {...p}><path d="M3 10.2L12 3l9 7.2V20a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 20z" /><path d="M9 21.5V12h6v9.5" /></Svg>
 );
 
+
+export const IconSources = (p: P) => (
+  <Svg {...p}><circle cx="12" cy="12" r="2.4" /><path d="M7 7a7 7 0 0 0 0 10M17 7a7 7 0 0 1 0 10M4 4a11 11 0 0 0 0 16M20 4a11 11 0 0 1 0 16" /></Svg>
+);

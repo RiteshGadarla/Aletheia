@@ -74,7 +74,23 @@ services:
       timeout: 5s
       retries: 20
 
+  loki:
+    image: grafana/loki:3.3.2
+    user: "0:0"
+    command: ["-config.file=/etc/loki/loki.yml"]
+    ports: ["3100:3100"]
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki:/data/loki
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3100/ready | grep -q ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
 volumes:
+  loki:
   redpanda:
   clickhouse:
   postgres:

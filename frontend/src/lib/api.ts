@@ -6,7 +6,7 @@ import { mockApi } from './mocks';
 import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
-  QuarantineCluster, ReplayDiff,
+  QuarantineCluster, RawLine, ReplayDiff, SourceInfo, SourceList, SourceProposal,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -106,6 +106,22 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ approver, reason }),
       }),
+
+  /* sources */
+  listSources: (): Promise<SourceList> => http('/sources'),
+  createSource: (b: { id: string; type: string; config: Record<string, unknown> }): Promise<SourceInfo> =>
+    http('/sources', { method: 'POST', body: JSON.stringify(b) }),
+  patchSource: (id: string, b: { enabled?: boolean }): Promise<SourceInfo> =>
+    http(`/sources/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(b) }),
+  deleteSource: (id: string): Promise<unknown> => http(`/sources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  sourceRaw: (id: string, q = '', severity = ''): Promise<{ lines: RawLine[] }> =>
+    http(`/sources/${encodeURIComponent(id)}/raw${qs({ limit: 50, q, severity })}`),
+  sourceReview: (id: string): Promise<{ source: SourceInfo; proposal: SourceProposal | null }> =>
+    http(`/sources/${encodeURIComponent(id)}/review`),
+  sourcePropose: (id: string): Promise<SourceProposal> =>
+    http(`/sources/${encodeURIComponent(id)}/propose`, { method: 'POST', body: '{}' }),
+  sourceDecide: (id: string, b: { action: 'approve' | 'reject' | 'retry'; approver: string; reason?: string; feedback?: string; class_hint?: number }): Promise<{ source: SourceInfo; proposal?: SourceProposal; backfilled?: number; packs?: string[] }> =>
+    http(`/sources/${encodeURIComponent(id)}/decision`, { method: 'POST', body: JSON.stringify(b) }),
 
   /* settings, CONTRACTS section 9 and spec 8.12.8 */
   getSettings: (): Promise<LlmSettings> => (USE_MOCKS ? mockApi.getSettings() : http('/settings/llm')),

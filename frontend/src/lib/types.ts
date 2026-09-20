@@ -324,3 +324,34 @@ export interface DemoRunResult {
   output: string;
   link?: { label: string; href: string; external?: boolean } | null;
 }
+
+/* ---- sources: connect, collect raw, approve mappings ---- */
+export type SourceState = 'collecting' | 'review' | 'approved' | 'rejected';
+
+export interface SourceInfo {
+  id: string; name: string; type: string; config: Record<string, unknown>; enabled: boolean;
+  state: SourceState; attempts: number; status: string; error: string; lines: number; bytes: number;
+  errors: number; eps: number; last_seen: number | null; by_severity: Record<string, number>;
+  has_proposal: boolean; ready_for_review: boolean;
+  history: { at: number; action: string; actor: string; reason?: string; feedback?: string }[];
+}
+
+export interface SourceList { store: string; bus: boolean; types: string[]; sources: SourceInfo[] }
+
+export interface MappingRow {
+  slot: string; type: string; sample: string; path: string | null; confidence: number;
+  transform: string | null; evidence: string[];
+}
+
+export interface SourceCluster {
+  cluster_id: string; size: number; share: number; samples: string[]; format: string; warnings: string[];
+  mapping: { class_uid: number; class_name: string; activity_id: number; confidence: number; origin: string; rows: MappingRow[] };
+  gate: { ok: boolean; reconstructed?: number; samples?: number; error?: string } | null;
+}
+
+export interface SourceProposal {
+  source_id: string; attempt: number; sim_th: number; class_hint: number | null; feedback: string;
+  lines_examined: number; covered: number; clusters: SourceCluster[];
+}
+
+export interface RawLine { ts_ns: number; line: string; severity: string }

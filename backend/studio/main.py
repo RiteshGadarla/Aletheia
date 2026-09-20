@@ -5,12 +5,14 @@ packages; this module only wires them to HTTP.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import subprocess
 import sys
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .api import sources as sources_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -37,7 +40,20 @@ log = logging.getLogger("studio.main")
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO_SCRIPT = REPO_ROOT / "demo" / "scenarios.py"
 
-app = FastAPI(title="Aletheia Studio", version="1.0.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Start the raw-ingest pipeline, source connectors and the onboarding watcher."""
+    st = get_state()
+    await st.pipeline.start()
+    st.connectors.start_all()
+    watcher = asyncio.create_task(sources_api.auto_propose_loop())
+    yield
+    watcher.cancel()
+    st.connectors.stop_all()
+    await st.pipeline.stop()
+
+
+app = FastAPI(title="Aletheia Studio", version="1.0.0", lifespan=lifespan)
 
 # The frontend calls /api/v1/*; /healthz stays unprefixed for container probes.
 api = APIRouter(prefix="/api/v1")
@@ -836,4 +852,5 @@ def set_airgap(update: AirgapUpdate) -> dict[str, Any]:
     return _settings_payload()
 
 
+api.include_router(sources_api.router)
 app.include_router(api)
