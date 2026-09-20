@@ -21,20 +21,26 @@ UDP_TARGET = os.environ.get("ALETHEIA_SAMPLES_UDP_TARGET", "127.0.0.1:5514")
 
 # id -> generator type, ports, and the Sources preset the Connect button pre-fills.
 SAMPLES: dict[str, dict[str, Any]] = {
-    "asa": {"title": "Cisco ASA firewall", "format": "ASA syslog", "transport": "TCP stream", "ctl": 9201,
+    "asa": {"category": "Network security", "purpose": "Cisco firewall: connections built and torn down plus blocked traffic, the classic perimeter log.", "title": "Cisco ASA firewall", "format": "ASA syslog", "transport": "TCP stream", "ctl": 9201,
             "port": 9101, "preset": {"id": "asa-fw", "type": "tcp", "config": {"host": HOST, "port": "9101"}}},
-    "fortigate": {"title": "FortiGate firewall", "format": "key=value", "transport": "HTTP NDJSON", "ctl": 9102,
+    "fortigate": {"category": "Network security", "purpose": "FortiGate next-gen firewall: traffic, web-filter and intrusion-prevention events in key=value form.", "title": "FortiGate firewall", "format": "key=value", "transport": "HTTP NDJSON", "ctl": 9102,
                   "port": 9102, "preset": {"id": "fortigate", "type": "http_stream",
                                            "config": {"url": f"http://{HOST}:9102/stream"}}},
-    "web": {"title": "Web proxy and server", "format": "Squid + nginx", "transport": "Loki API", "ctl": 9103,
+    "web": {"category": "Web and apps", "purpose": "Company web proxy and site: Squid and nginx access logs, including scanner and blocked-site hits.", "title": "Web proxy and server", "format": "Squid + nginx", "transport": "Loki API", "ctl": 9103,
             "port": 9103, "preset": {"id": "web-proxy", "type": "loki_pull",
                                      "config": {"url": f"http://{HOST}:9103", "query": '{job="web"}'}}},
-    "vpn": {"title": "OpenVPN gateway", "format": "OpenVPN auth", "transport": "WebSocket", "ctl": 9104,
+    "vpn": {"category": "Access", "purpose": "Remote-access VPN gateway: logins, failures and brute-force bursts from repeat attackers.", "title": "OpenVPN gateway", "format": "OpenVPN auth", "transport": "WebSocket", "ctl": 9104,
             "port": 9104, "preset": {"id": "vpn-gw", "type": "websocket", "config": {"url": f"ws://{HOST}:9104/ws"}}},
-    "cef": {"title": "WAF and NGFW", "format": "CEF + LEEF", "transport": "UDP push", "ctl": 9105,
+    "cef": {"category": "Network security", "purpose": "WAF and next-gen firewall alerts in CEF and LEEF: SQL injection, blocks and policy denies.", "title": "WAF and NGFW", "format": "CEF + LEEF", "transport": "UDP push", "ctl": 9105,
             "port": 5514, "preset": {"id": "waf-cef", "type": "udp_listen", "config": {"port": "5514"}}},
-    "app": {"title": "Custom app (no parser)", "format": "JSON app logs", "transport": "REST cursor", "ctl": 9106,
+    "app": {"category": "Web and apps", "purpose": "Custom JSON microservice logs with no parser yet, made to show onboarding a brand-new format.", "title": "Custom app (no parser)", "format": "JSON app logs", "transport": "REST cursor", "ctl": 9106,
             "port": 9106, "preset": {"id": "app-logs", "type": "rest_cursor", "config": {"url": f"http://{HOST}:9106/logs"}}},
+    "shop": {"category": "Web and apps", "purpose": "AmazonMart, a fictional online store: load-balancer access logs plus order, payment, cart and fraud events.",
+             "title": "AmazonMart online store", "format": "ALB + JSON events", "transport": "HTTP NDJSON", "ctl": 9107, "port": 9107,
+             "preset": {"id": "shop-mart", "type": "http_stream", "config": {"url": f"http://{HOST}:9107/stream"}}},
+    "defense": {"category": "Critical", "purpose": "Fictional military command network: classified-access, crypto-tamper and enclave-breach alerts, always high stakes.",
+                "title": "Defense command network", "format": "CEF (SentinelDef)", "transport": "TCP stream", "ctl": 9210, "port": 9110,
+                "preset": {"id": "defense-net", "type": "tcp", "config": {"host": HOST, "port": "9110"}}},
 }
 _PROCS: dict[str, subprocess.Popen] = {}
 
@@ -59,7 +65,7 @@ def _view(sid: str) -> dict[str, Any]:
     s, p = SAMPLES[sid], _PROCS.get(sid)
     managed = p is not None and p.poll() is None
     up = _up(s["ctl"])
-    return {"id": sid, **{k: s[k] for k in ("title", "format", "transport", "port", "preset")},
+    return {"id": sid, **{k: s[k] for k in ("title", "format", "transport", "port", "preset", "purpose", "category")},
             "running": up, "managed": managed, "stats": _stats(sid) if up else None}
 
 

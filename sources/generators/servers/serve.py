@@ -17,6 +17,8 @@ SERVICES = {
     "vpn":       (formats.vpn,       9104, 9104, 55.0, "http"),
     "cef":       (formats.cef,       9105, 9105, 55.0, "udp"),
     "app":       (formats.app,       9106, 9106, 55.0, "http"),
+    "shop":      (formats.shop,      9107, 9107, 55.0, "http"),
+    "defense":   (formats.defense,   9110, 9210, 55.0, "tcp"),
 }
 
 

@@ -205,3 +205,7 @@
 /* Severity: info = categorical blue, the other three = status steps (always paired with a label). */
 :root { --sev-info: #2a78d6; --sev-notice: #fab219; --sev-warn: #ec835a; --sev-risk: #d03b3b; }
 [data-theme="dark"] { --sev-info: #3987e5; }
+
+/* Demo card categories (categorical blue, aqua, violet; critical uses the status red). */
+:root { --cat-net: #2a78d6; --cat-web: #1baf7a; --cat-access: #4a3aa7; --cat-crit: #d03b3b; }
+[data-theme="dark"] { --cat-net: #3987e5; --cat-web: #199e70; --cat-access: #9085e9; }

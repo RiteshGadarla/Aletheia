@@ -379,7 +379,7 @@ export interface Overview {
 export interface SamplePreset { id: string; type: string; config: Record<string, string> }
 export interface SampleServer {
   id: string; title: string; format: string; transport: string; port: number; preset: SamplePreset;
-  running: boolean; managed: boolean;
+  purpose: string; category: string; running: boolean; managed: boolean;
   stats: { total: number; avg_eps: number; base_rate: number; mood: string; risk: number; paused: boolean;
     by_severity: Record<string, number>; subscribers: number } | null;
 }

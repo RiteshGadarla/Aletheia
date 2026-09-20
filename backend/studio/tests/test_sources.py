@@ -165,7 +165,7 @@ def test_sample_catalogue_and_errors(client: Any) -> None:
     from studio.api import samples
     listing = client.get("/api/v1/demo/samples").json()
     assert listing["available"] and {x["id"] for x in listing["samples"]} == set(samples.SAMPLES)
-    assert all(x["preset"]["type"] and x["preset"]["id"] for x in listing["samples"])
+    assert all(x["preset"]["type"] and x["preset"]["id"] and x["purpose"] for x in listing["samples"])
     assert client.post("/api/v1/demo/samples/nope/start").status_code == 404
     assert client.post("/api/v1/demo/samples/nope/control", json={"rate": 5}).status_code == 404
 

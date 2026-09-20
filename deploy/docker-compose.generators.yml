@@ -40,3 +40,13 @@ services:
     <<: *gen
     command: ["--type", "app"]
     ports: ["9106:9106"]
+
+  gen-shop:
+    <<: *gen
+    command: ["--type", "shop"]
+    ports: ["9107:9107"]
+
+  gen-defense:
+    <<: *gen
+    command: ["--type", "defense"]
+    ports: ["9110:9110", "9210:9210"]

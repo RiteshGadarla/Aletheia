@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "so
 import formats  # noqa: E402
 from common import Feed  # noqa: E402
 
-TYPES = ["asa", "fortigate", "web", "vpn", "cef", "app"]
+TYPES = ["asa", "fortigate", "web", "vpn", "cef", "app", "shop", "defense"]
 
 
 def _mix(name, risk, n=400):
