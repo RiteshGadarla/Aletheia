@@ -1,0 +1,27 @@
+{
+  "activity_id": 1,
+  "aletheia": {
+    "pack": "llm_training",
+    "pack_version": 1,
+    "parse_status": "full",
+    "storage_mode": "verbatim",
+    "template_id": "llm_training_telemetry"
+  },
+  "category_uid": 4,
+  "class_uid": 4001,
+  "metadata": {
+    "product": {
+      "name": "LLM-Trainer",
+      "vendor_name": "AI-Cluster"
+    }
+  },
+  "src_endpoint": {
+    "hostname": "gpu-node-01"
+  },
+  "status": "ok",
+  "status_id": 1,
+  "type_uid": 400101,
+  "unmapped": {
+    "json": "{\"ts\":\"2026-09-21T21:58:00Z\",\"node\":\"gpu-node-01\",\"model\":\"LLaMA-3-70B-Instruct\",\"phase\":\"training_step\",\"epoch\":3,\"step\":18450,\"loss\":1.2845,\"perplexity\":3.612,\"lr\":0.00015,\"tflops\":284.5,\"tokens_per_sec\":51200,\"vram_used_gb\":76.8,\"status\":\"ok\"}"
+  }
+}

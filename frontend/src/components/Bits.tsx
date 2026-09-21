@@ -170,10 +170,10 @@ export function Cli({ cmd }: { cmd: string }) {
 
 /* ---------------------------------------------------------------- states */
 
-export function Spinner({ label }: { label?: string }) {
+export function Spinner({ label, size }: { label?: string; size?: number }) {
   return (
     <span className="spinner row-tight row-nowrap muted">
-      <IconSpinner size={14} />
+      <IconSpinner size={size ?? 14} />
       {label}
     </span>
   );

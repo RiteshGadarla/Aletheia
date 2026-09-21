@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { USE_MOCKS, api } from '../lib/api';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../lib/theme';
@@ -7,18 +7,20 @@ import { useAsync } from '../lib/useAsync';
 import { ErrorBoundary } from './ErrorBoundary';
 import { NotifyProvider, useNotify } from '../lib/notify';
 import {
-  IconClose, IconDemo, IconEvents, IconHome, IconInfo, IconLineage, IconLock, IconMenu, IconMoon,
+  IconClose, IconDemo, IconEvents, IconExport, IconHome, IconInfo, IconLock, IconMenu, IconMoon,
   IconSettings, IconSources, IconSun,
 } from './Icons';
+
 
 const NAV = [
   { to: '/dashboard', label: 'Overview', desc: 'Live stats', Icon: IconHome, end: true },
   { to: '/dashboard/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: false },
-  { to: '/dashboard/lineage', label: 'Lineage', desc: 'Byte provenance', Icon: IconLineage, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
+  { to: '/dashboard/export', label: 'Export & Supply', desc: 'Reports, logs & stream', Icon: IconExport, end: false },
   { to: '/dashboard/demo', label: 'Demo', desc: 'Sample servers', Icon: IconDemo, end: false },
   { to: '/dashboard/settings', label: 'Setting', desc: 'LLM & air-gap', Icon: IconSettings, end: false },
 ];
+
 
 /** Pack self-check plus event count: enough to tell at a glance that the stack is alive. */
 function Health() {
@@ -48,6 +50,25 @@ function Health() {
       <span className="label truncate">{label}</span>
       {meta && <span className="meta">{meta}</span>}
     </div>
+  );
+}
+
+function SupplyIndicator() {
+  const navigate = useNavigate();
+  const supply = useAsync(() => api.getSupplyStatus(), []);
+  const active = supply.data?.active;
+  const port = supply.data?.port ?? 9099;
+
+  return (
+    <button
+      type="button"
+      className={`sidebar-supply-pill ${active ? 'active' : ''}`}
+      onClick={() => navigate('/dashboard/export?tab=supply')}
+      title={active ? `Supply Stream ACTIVE on port ${port} (${supply.data?.clients_count ?? 0} clients)` : 'Supply Stream Inactive — Click to configure'}
+    >
+      <span className={`pulse-dot ${active ? 'active' : ''}`} />
+      <span className="truncate">Supply: {active ? `ON (:${port})` : 'OFF'}</span>
+    </button>
   );
 }
 
@@ -130,6 +151,7 @@ function LayoutInner() {
         </nav>
 
         <div className="sidebar-foot stack-sm" style={{ gap: 6 }}>
+          <SupplyIndicator />
           {settings?.airgap && (
             <div className="sidebar-airgap-pill" title="Strict Offline Mode Active: External cloud API calls are refused. Zero data egress.">
               <IconLock size={13} />
@@ -139,6 +161,9 @@ function LayoutInner() {
           <Health />
         </div>
       </aside>
+
+
+
 
       {open && <button type="button" className="scrim" aria-label="Close navigation" onClick={() => setOpen(false)} />}
 

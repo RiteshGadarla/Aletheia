@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .api import samples as samples_api, sources as sources_api, stats as stats_api
+from .api import export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -51,6 +51,8 @@ async def lifespan(_: FastAPI):
     watcher.cancel()
     samples_api.stop_all_managed()
     st.connectors.stop_all()
+    if st.supply_server:
+        st.supply_server.stop()
     await st.pipeline.stop()
 
 
@@ -936,4 +938,5 @@ async def reset_settings() -> dict[str, Any]:
 api.include_router(sources_api.router)
 api.include_router(stats_api.router)
 api.include_router(samples_api.router)
+api.include_router(export_api.router)
 app.include_router(api)

@@ -13,7 +13,7 @@ const connectUrl = (s: SampleServer) => {
   return `/dashboard/sources?${q.toString()}`;
 };
 
-const CAT_CLASS: Record<string, string> = { 'Network security': 'net', 'Web and apps': 'web', Access: 'access', Critical: 'crit' };
+const CAT_CLASS: Record<string, string> = { 'Network security': 'net', 'Web and apps': 'web', Access: 'access', Critical: 'crit', 'AI & ML Workloads': 'crit' };
 
 /** One line-art icon per sample server (24px grid, currentColor). */
 function SampleIcon({ id }: { id: string }) {
@@ -26,6 +26,7 @@ function SampleIcon({ id }: { id: string }) {
     app: <path d="M8 8l-5 4 5 4M16 8l5 4-5 4M14 5l-4 14" />,
     shop: <><path d="M3 4h2l2.5 11h10l2-8H6.5" /><circle cx="9" cy="20" r="1.3" /><circle cx="17" cy="20" r="1.3" /></>,
     defense: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><path d="M12 1v5M12 18v5M1 12h5M18 12h5" /></>,
+    llm: <><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M7 12h10M12 7v10M8 8l8 8M16 8l-8 8" /></>,
   };
   return (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

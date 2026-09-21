@@ -49,7 +49,7 @@ help:
 	@echo "  bench-storage-full  reproducible storage measurement (own corpus, own db)"
 	@echo "  frontend-check  tsc --noEmit && vite build"
 	@echo
-	@echo "  dev             Studio API (:8081) + frontend (:5173), no Docker"
+	@echo "  dev             start full dev environment (services + studio + frontend + worker)"
 	@echo "  studio          Studio API only"
 	@echo "  frontend        frontend dev server only"
 	@echo "  lite            dockerless end-to-end over files"
@@ -179,15 +179,11 @@ worker: engine
 frontend:
 	cd $(FRONTEND) && npm run dev -- --host 0.0.0.0 --port 5173
 
-dev:
+dev: services engine
 	@echo "Studio  -> http://localhost:8081"
 	@echo "Frontend-> http://localhost:5173"
-	@if [ -x $(BIN)/aletheia-worker ]; then \
-	  echo "Worker  -> engine metrics on :9108"; \
-	  $(MAKE) -j3 studio frontend worker; \
-	else \
-	  $(MAKE) -j2 studio frontend; \
-	fi
+	@echo "Worker  -> engine metrics on :9108"
+	@$(MAKE) -j3 studio frontend worker
 
 # Dockerless end-to-end: generate logs, parse them, reconstruct, verify byte-equality.
 # Proves the core claim on this machine with no bus and no databases.

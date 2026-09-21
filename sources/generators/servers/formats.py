@@ -140,9 +140,9 @@ def vpn(seed: int):
     return gen
 
 
-# ------------------------------------------------------------------ custom JSON app logs
-_SVC = ["payments-api", "auth-service", "inventory", "search-gateway"]
-_ROUTES = ["/v1/checkout", "/v1/login", "/v1/items", "/v1/search", "/v1/orders/{id}"]
+# ------------------------------------------------------------------ AetherOS 2030 Cyber-App logs
+_2030_SERVICES = ["quantum-auth", "subspace-gateway", "neural-router", "holo-matrix"]
+_2030_ROUTES = ["/v2030/synapse", "/v2030/telemetry", "/v2030/quantum-link", "/v2030/holo-mesh"]
 
 
 def app(seed: int):
@@ -151,25 +151,45 @@ def app(seed: int):
 
     def gen(feed):
         r, risk = feed.rng, feed.mood.risk
-        svc, route = r.choice(_SVC), r.choice(_ROUTES)
+        svc, route = r.choice(_2030_SERVICES), r.choice(_2030_ROUTES)
         bad = r.random() < risk
         mid = r.random() < risk * 2 + 0.05
         if bad:
-            level, msg, status = r.choice([
-                ("ERROR", "upstream timeout", 504), ("ERROR", "db connection pool exhausted", 503),
-                ("ERROR", "credential stuffing suspected", 401), ("FATAL", "unrecoverable panic in handler", 500)])
+            level, msg, status, q_state = r.choice([
+                ("ERROR", "subspace timeout in quantum route", 504, "DECOHERENCE_COLLAPSE"),
+                ("ERROR", "neural synapse pool exhausted", 503, "FLUX_OVERLOAD"),
+                ("ERROR", "quantum credential spoof suspected", 401, "QUANTUM_INTRUSION"),
+                ("FATAL", "unrecoverable quantum desync panic", 500, "CRITICAL_COLLAPSE"),
+            ])
         elif mid:
-            level, msg, status = r.choice([
-                ("WARN", "slow query", 200), ("WARN", "rate limit exceeded", 429), ("WARN", "retrying upstream", 200)])
+            level, msg, status, q_state = r.choice([
+                ("WARN", "slow quantum query in subspace db", 200, "STABILITY_DEGRADED"),
+                ("WARN", "subspace bandwidth rate limit exceeded", 429, "SYNAPSE_LAG_WARN"),
+                ("WARN", "retrying subspace telemetry route", 200, "QUANTUM_REBUFFER"),
+            ])
         else:
-            level, msg, status = r.choices(
-                [("INFO", "request completed", 200), ("INFO", "user logged in", 200), ("DEBUG", "cache hit", 200)],
-                [70, 10, 20])[0]
-        ev = {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-              "level": level, "service": svc, "route": route, "status": status,
-              "latency_ms": int(r.lognormvariate(4.2 + (1.5 if bad else 0.5 if mid else 0), 0.6)),
-              "trace_id": f"{r.getrandbits(64):016x}", "user_id": r.randint(1000, 9999),
-              "client_ip": r.choice(pools.attackers) if bad else pools.external_ip(r, 0.0), "msg": msg}
+            level, msg, status, q_state = r.choices(
+                [
+                    ("INFO", "quantum payload transferred", 200, "ENTANGLED_STABLE"),
+                    ("INFO", "synapse authenticated successfully", 200, "NEURAL_LINK_NOMINAL"),
+                    ("DEBUG", "holo frame cache hit", 200, "QUANTUM_SYNC_OK"),
+                ],
+                [70, 10, 20],
+            )[0]
+        ev = {
+            "stardate": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "level": level,
+            "service": svc,
+            "route": route,
+            "status": status,
+            "quantum_state": q_state,
+            "subspace_hops": r.randint(1, 7),
+            "latency_ms": int(r.lognormvariate(4.2 + (1.5 if bad else 0.5 if mid else 0), 0.6)),
+            "trace_id": f"q2030-{r.getrandbits(64):016x}",
+            "user_id": r.randint(1000, 9999),
+            "client_ip": r.choice(pools.attackers) if bad else pools.external_ip(r, 0.0),
+            "msg": msg,
+        }
         return json.dumps(ev, separators=(",", ":")), \
             "risk" if level in ("ERROR", "FATAL") else "warn" if level == "WARN" else "info"
     return gen
@@ -292,3 +312,62 @@ def defense(seed: int):
         line = f"<{4 * 8 + ps}>{ts} jcn-gw01 CEF:0|SentinelDef|JCN-Gateway|7.2|{sig}|{name}|{cs}|{ext}"
         return line, sev_from_pri(line)
     return gen
+
+
+# ------------------------------------------------------------------ LLM cluster trainer mock
+_LLM_MODELS = ["LLaMA-3-70B-Instruct", "DeepSeek-V3-Base", "Qwen2.5-Coder-32B", "Gemma-2-27B-IT", "Mistral-Large-2"]
+_LLM_NODES = ["gpu-node-01", "gpu-node-02", "gpu-node-03", "gpu-node-04", "gpu-node-05", "gpu-node-06", "gpu-node-07", "gpu-node-08"]
+
+
+def llm(seed: int):
+    import random
+    step_ctr = 10000
+
+    def gen(feed):
+        nonlocal step_ctr
+        r, risk = feed.rng, feed.mood.risk
+        step_ctr += 1
+        node = r.choice(_LLM_NODES)
+        model = r.choice(_LLM_MODELS)
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        if r.random() < risk:
+            err_type = r.choice(["grad_overflow", "cuda_oom", "nvlink_degraded"])
+            if err_type == "grad_overflow":
+                payload = {
+                    "ts": ts, "node": node, "model": model, "phase": "gradient_step",
+                    "epoch": 3, "step": step_ctr, "loss": "NaN", "grad_norm": round(r.uniform(150.0, 950.0), 2),
+                    "status": "grad_overflow",
+                    "error": f"Gradient norm exceeded threshold 1.0 on tensor layer {r.randint(12, 64)}; step discarded"
+                }
+            elif err_type == "cuda_oom":
+                payload = {
+                    "ts": ts, "node": node, "model": model, "phase": "checkpoint_save",
+                    "epoch": 3, "step": step_ctr, "vram_used_gb": 80.0, "status": "cuda_oom",
+                    "error": f"CUDA out of memory. Tried to allocate {r.uniform(2.0, 8.0):.2f} GiB (GPU {r.randint(0, 7)}; 80.00 GiB total capacity)"
+                }
+            else:
+                payload = {
+                    "ts": ts, "node": node, "model": model, "phase": "all_reduce_sync",
+                    "epoch": 3, "step": step_ctr, "nvlink_bandwidth_gbps": round(r.uniform(2.1, 14.5), 1),
+                    "status": "throttled",
+                    "warning": f"NVLink interconnect bandwidth degradation detected on GPU bus {r.randint(1, 4)}:00.0"
+                }
+            sev = "risk"
+        else:
+            phase = r.choice(["training_step", "training_step", "training_step", "checkpoint_save", "eval_perplexity"])
+            loss = round(r.uniform(1.15, 2.85), 4)
+            payload = {
+                "ts": ts, "node": node, "model": model, "phase": phase,
+                "epoch": r.randint(1, 5), "step": step_ctr, "loss": loss,
+                "perplexity": round(2.71828 ** loss, 3), "lr": 0.00015,
+                "tflops": round(r.uniform(260.0, 312.0), 1),
+                "tokens_per_sec": r.randint(42000, 58000),
+                "vram_used_gb": round(r.uniform(68.0, 78.5), 1), "status": "ok"
+            }
+            sev = "info"
+
+        line = json.dumps(payload, separators=(",", ":"))
+        return line, sev
+    return gen
+

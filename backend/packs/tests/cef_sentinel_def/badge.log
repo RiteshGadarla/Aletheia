@@ -1,0 +1,1 @@
+<38>Sep 21 20:27:45 jcn-gw01 CEF:0|SentinelDef|JCN-Gateway|7.2|4003|Badge access granted|2|rt=1790022465000 suser=op.falcon src=10.20.8.206 dst=10.20.8.10 cs1Label=classification cs1=SECRET cs2Label=unit cs2=CYBER-OPS cn1Label=clearance cn1=4 outcome=success msg=Badge access granted

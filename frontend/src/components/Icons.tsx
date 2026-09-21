@@ -175,3 +175,10 @@ export const IconLock = (p: P) => (
   </Svg>
 );
 
+export const IconExport = (p: P) => (
+  <Svg {...p}>
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+  </Svg>
+);
+
+

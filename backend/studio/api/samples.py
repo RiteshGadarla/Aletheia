@@ -33,14 +33,17 @@ SAMPLES: dict[str, dict[str, Any]] = {
             "port": 9104, "preset": {"id": "vpn-gw", "type": "websocket", "config": {"url": f"ws://{HOST}:9104/ws"}}},
     "cef": {"category": "Network security", "purpose": "WAF and next-gen firewall alerts in CEF and LEEF: SQL injection, blocks and policy denies.", "title": "WAF and NGFW", "format": "CEF + LEEF", "transport": "UDP push", "ctl": 9105,
             "port": 5514, "preset": {"id": "waf-cef", "type": "udp_listen", "config": {"port": "5514"}}},
-    "app": {"category": "Web and apps", "purpose": "Custom JSON microservice logs with no parser yet, made to show onboarding a brand-new format.", "title": "Custom app (no parser)", "format": "JSON app logs", "transport": "REST cursor", "ctl": 9106,
-            "port": 9106, "preset": {"id": "app-logs", "type": "rest_cursor", "config": {"url": f"http://{HOST}:9106/logs"}}},
+    "app": {"category": "Web and apps", "purpose": "AetherOS 2030 Cyber-App logs: quantum-mesh traces, holo-session telemetry and bio-neural events with a futuristic 2030 nested schema.", "title": "AetherOS 2030 Cyber-App", "format": "2030 Telemetry JSON", "transport": "REST cursor", "ctl": 9106,
+            "port": 9106, "preset": {"id": "aether2030-app", "type": "rest_cursor", "config": {"url": f"http://{HOST}:9106/logs"}}},
     "shop": {"category": "Web and apps", "purpose": "AmazonMart, a fictional online store: load-balancer access logs plus order, payment, cart and fraud events.",
              "title": "AmazonMart online store", "format": "ALB + JSON events", "transport": "HTTP NDJSON", "ctl": 9107, "port": 9107,
              "preset": {"id": "shop-mart", "type": "http_stream", "config": {"url": f"http://{HOST}:9107/stream"}}},
     "defense": {"category": "Critical", "purpose": "Fictional military command network: classified-access, crypto-tamper and enclave-breach alerts, always high stakes.",
                 "title": "Defense command network", "format": "CEF (SentinelDef)", "transport": "TCP stream", "ctl": 9210, "port": 9110,
                 "preset": {"id": "defense-net", "type": "tcp", "config": {"host": HOST, "port": "9110"}}},
+    "llm": {"category": "AI & ML Workloads", "purpose": "Distributed LLM training cluster (LLaMA-70B, DeepSeek-V3): GPU utilization, loss/perplexity telemetry, CUDA OOM warnings and gradient overflow alerts.",
+            "title": "LLM Cluster Trainer", "format": "JSON Telemetry", "transport": "TCP stream", "ctl": 9211, "port": 9111,
+            "preset": {"id": "llm-cluster", "type": "tcp", "config": {"host": HOST, "port": "9111"}}},
 }
 _PROCS: dict[str, subprocess.Popen] = {}
 

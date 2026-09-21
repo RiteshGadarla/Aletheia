@@ -7,6 +7,7 @@ import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
   Overview, QuarantineCluster, RawLine, SampleList, SampleServer, ReplayDiff, SourceInfo, SourceList, SourceProposal,
+  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -162,7 +163,21 @@ export const api = {
     USE_MOCKS
       ? Promise.resolve({ ok: true, samples: 30, reconstructed: 30, normalized: 30, failures: 0 })
       : http('/packs/verify'),
+
+  /* export & log supply stream */
+  exportReportUrl: (p: ExportReportParams = {}): string =>
+    `${BASE}/export/report${qs({ format: p.format, source_id: p.source_id, window_s: p.window_s, categories: p.categories })}`,
+
+  exportLogsUrl: (p: ExportLogsParams = {}): string =>
+    `${BASE}/export/logs${qs({ log_type: p.log_type, format: p.format, source_id: p.source_id, severity: p.severity, q: p.q, limit: p.limit })}`,
+
+  getSupplyStatus: (): Promise<SupplyStatus> =>
+    USE_MOCKS ? mockApi.getSupplyStatus() : http('/export/supply/status'),
+
+  configureSupply: (b: SupplyConfigUpdate): Promise<SupplyStatus> =>
+    USE_MOCKS ? mockApi.configureSupply(b) : http('/export/supply/configure', { method: 'POST', body: JSON.stringify(b) }),
 };
 
 export const errMessage = (e: unknown): string =>
   e instanceof Error ? e.message : typeof e === 'string' ? e : 'unexpected error';
+

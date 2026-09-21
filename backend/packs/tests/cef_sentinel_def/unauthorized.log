@@ -1,0 +1,1 @@
+<34>Sep 21 20:48:37 jcn-gw01 CEF:0|SentinelDef|JCN-Gateway|7.2|4201|Unauthorized device on secure enclave|9|rt=1790003917314 suser=op.viper src=10.20.5.12 dst=10.20.5.1 cs1Label=classification cs1=TOP SECRET cs2Label=unit cs2=SIGINT cn1Label=clearance cn1=5 outcome=failure msg=Unauthorized device on secure enclave

@@ -20,6 +20,7 @@ SERVICES = {
     "app":       (formats.app,       9106, 9106, 65.0, "http"),
     "shop":      (formats.shop,      9107, 9107, 72.0, "http"),
     "defense":   (formats.defense,   9110, 9210, 52.0, "tcp"),
+    "llm":       (formats.llm,       9111, 9211, 58.0, "tcp"),
 }
 
 

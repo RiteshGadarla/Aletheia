@@ -385,3 +385,43 @@ export interface SampleServer {
     by_severity: Record<string, number>; subscribers: number } | null;
 }
 export interface SampleList { available: boolean; samples: SampleServer[] }
+
+/* ---- Export & Log Supply Stream ---- */
+export type ReportFormat = 'json' | 'csv' | 'markdown' | 'html';
+export type LogExportFormat = 'json' | 'jsonl' | 'csv' | 'text';
+export type LogExportType = 'raw' | 'ocsf' | 'system';
+
+export interface ExportReportParams {
+  format?: ReportFormat;
+  source_id?: string;
+  window_s?: number;
+  categories?: string;
+}
+
+export interface ExportLogsParams {
+  log_type?: LogExportType;
+  format?: LogExportFormat;
+  source_id?: string;
+  severity?: string;
+  q?: string;
+  limit?: number;
+}
+
+export interface SupplyStatus {
+  active: boolean;
+  enabled: boolean;
+  port: number;
+  log_type: string;
+  source_id: string;
+  clients_count: number;
+  lines_sent: number;
+  bytes_sent: number;
+  started_at: number | null;
+}
+
+export interface SupplyConfigUpdate {
+  enabled?: boolean;
+  port?: number;
+  log_type?: string;
+  source_id?: string;
+}

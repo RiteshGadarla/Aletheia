@@ -5,6 +5,8 @@ import { Badge, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../comp
 import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import type { Overview } from '../lib/types';
+import { IconExport } from '../components/Icons';
+
 
 const SEVS = ['info', 'notice', 'warn', 'risk'] as const;
 const SEV_VAR: Record<string, string> = {
@@ -120,9 +122,22 @@ export function OverviewPage() {
 
   return (
     <div className="stack">
-      <PageHead title="Overview" right={d && <Badge kind="info">raw store: {d.store}{d.bus ? ' · bus on' : ''}</Badge>}>
+      <PageHead
+        title="Overview"
+        right={
+          <Link
+            to="/dashboard/export?tab=report"
+            className="btn secondary sm flex align-center"
+            style={{ gap: 4 }}
+          >
+            <IconExport size={14} /> Export Report & Logs
+          </Link>
+        }
+      >
         Live ingest across every connected source. Updates every 3 seconds.
       </PageHead>
+
+
       {q.error && <ErrorState error={q.error} what="stats" />}
       {q.loading && !d && <Spinner label="Loading stats" />}
       {d && k && (

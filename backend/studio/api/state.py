@@ -20,6 +20,7 @@ from ..ingest.forward import RawForwarder
 from ..ingest.pipeline import IngestPipeline
 from ..ingest.rawstore import RawStore, build_rawstore
 from ..ingest.sources import SourceRegistry
+from ..ingest.supply import LogSupplyServer
 from ..llm.limits import UsageCounter
 
 
@@ -35,6 +36,7 @@ class AppState:
     forwarder: RawForwarder = field(init=False)
     pipeline: IngestPipeline = field(init=False)
     connectors: ConnectorManager = field(init=False)
+    supply_server: LogSupplyServer = field(default_factory=LogSupplyServer)
 
     def __post_init__(self) -> None:
         # resolve_secret falls back to a persisted local secret, so saving an API key from the
@@ -45,6 +47,8 @@ class AppState:
         self.forwarder = RawForwarder(str(self.settings.get("bus.brokers") or ""))
 
         def forward(sid, entries):
+            if self.supply_server and self.supply_server.enabled:
+                self.supply_server.broadcast(sid, entries)
             s = self.registry.get(sid)
             if s and s.state == "approved":
                 self.forwarder.send(sid, [e for e in entries if e[0] >= s.approved_ns])

@@ -636,4 +636,32 @@ export const mockApi = {
     state.settings.airgap = airgap;
     return delay({ ok: true, output: 'demo state restored: tampered byte reverted, approvals cleared, generators reseeded (seed 26156).' }, 600);
   },
+
+  mockSupplyState: {
+    active: true,
+    enabled: true,
+    port: 9099,
+    log_type: 'raw',
+    source_id: '',
+    clients_count: 2,
+    lines_sent: 14820,
+    bytes_sent: 1845020,
+    started_at: Date.now() / 1000 - 3600,
+  },
+
+  async getSupplyStatus() {
+    return delay(this.mockSupplyState, 200);
+  },
+
+  async configureSupply(b: { enabled?: boolean; port?: number; log_type?: string; source_id?: string }) {
+    if (b.enabled !== undefined) {
+      this.mockSupplyState.enabled = b.enabled;
+      this.mockSupplyState.active = b.enabled;
+    }
+    if (b.port !== undefined) this.mockSupplyState.port = b.port;
+    if (b.log_type !== undefined) this.mockSupplyState.log_type = b.log_type;
+    if (b.source_id !== undefined) this.mockSupplyState.source_id = b.source_id;
+    return delay(this.mockSupplyState, 300);
+  },
 };
+

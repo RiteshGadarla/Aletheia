@@ -151,3 +151,43 @@ templates:
                                "6": 2, "7": 3, "8": 3, "9": 4, "10": 4}}]
       unmapped_keep: [cef_version, sig_id, request, request_method, suser]
     tests: {samples: "tests/cef_waf_100_block/*.log", expected: "tests/cef_waf_100_block/*.json"}
+
+  # Defense command network (SentinelDef) CEF logs
+  - id: cef_sentinel_def
+    discriminator: "|SentinelDef|JCN-Gateway|7.2|"
+    body:
+      - {lit: "rt="}
+      - {slot: rt, type: int}
+      - {lit: " suser="}
+      - {slot: suser, type: word}
+      - {lit: " src="}
+      - {slot: src, type: ip}
+      - {lit: " dst="}
+      - {slot: dst, type: ip}
+      - {lit: " cs1Label=classification cs1="}
+      - {slot: cs1, type: enum, values: ["TOP SECRET", "UNCLASS", "CUI", "SECRET"]}
+      - {lit: " cs2Label=unit cs2="}
+      - {slot: cs2, type: word}
+      - {lit: " cn1Label=clearance cn1="}
+      - {slot: cn1, type: int}
+      - {lit: " outcome="}
+      - {slot: outcome, type: enum, values: [success, failure]}
+      - {lit: " msg="}
+      - {slot: msg, type: text}
+    ocsf:
+      class_uid: 3002
+      activity_id: 1
+      map:
+        src: src_endpoint.ip
+        dst: dst_endpoint.ip
+        suser: actor.user.name
+        msg: message
+        outcome: [status, {path: status_id, enum: {success: 1, failure: 2}}]
+        dev_vendor: metadata.product.vendor_name
+        dev_product: metadata.product.name
+        dev_version: metadata.product.version
+        cef_severity: {path: severity_id,
+                       enum: {"0": 1, "1": 2, "2": 2, "3": 2, "4": 3, "5": 3,
+                              "6": 3, "7": 4, "8": 4, "9": 5, "10": 5}}
+      unmapped_keep: [cef_version, sig_id, rt, cs1, cs2, cn1]
+    tests: {samples: "tests/cef_sentinel_def/*.log", expected: "tests/cef_sentinel_def/*.json"}

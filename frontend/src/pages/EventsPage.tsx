@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   Badge, EmptyState, ErrorState, PageHead, Panel, ParseStatusBadge, TableSkeleton,
 } from '../components/Bits';
-import { IconInbox, IconSearch, IconSources } from '../components/Icons';
+import { IconExport, IconInbox, IconSearch, IconSources } from '../components/Icons';
 import { Pagination } from '../components/Pagination';
+import { LineageModal } from '../components/LineageModal';
 import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import type { Endpoint, EventQuery, NormalizedEvent, ParseStatus } from '../lib/types';
+
 
 const fmtTime = (ms: number): string => {
   const d = new Date(ms);
@@ -43,7 +45,6 @@ const SEVERITY: Record<number, { label: string; tone: 'ok' | 'warn' | 'bad' | 'p
 };
 
 export function EventsPage() {
-  const navigate = useNavigate();
   const [sourceId, setSourceId] = useState('');
   const [classUid, setClassUid] = useState('');
   const [parseStatus, setParseStatus] = useState('');
@@ -51,7 +52,9 @@ export function EventsPage() {
   const [debouncedQ, setDebouncedQ] = useState('');
   const [limit, setLimit] = useState(25);
   const [offset, setOffset] = useState(0);
+  const [inspectEventUid, setInspectEventUid] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedQ(q), 250);
@@ -101,26 +104,36 @@ export function EventsPage() {
       <PageHead
         title="Events Explorer"
         right={
-          data && (
-            <div className="header-stats-row">
-              <div className="hs-chip">
-                <span className="hs-val">{total.toLocaleString()}</span>
-                <span className="hs-lbl">{filtered ? 'matching' : 'events'}</span>
+          <div className="flex align-center" style={{ gap: 12 }}>
+            {data && (
+              <div className="header-stats-row">
+                <div className="hs-chip">
+                  <span className="hs-val">{total.toLocaleString()}</span>
+                  <span className="hs-lbl">{filtered ? 'matching' : 'events'}</span>
+                </div>
+                <div className="hs-chip">
+                  <span className="hs-val">{facets.sources.length}</span>
+                  <span className="hs-lbl">sources</span>
+                </div>
+                <div className="hs-chip">
+                  <span className="hs-val">{facets.classes.length}</span>
+                  <span className="hs-lbl">classes</span>
+                </div>
               </div>
-              <div className="hs-chip">
-                <span className="hs-val">{facets.sources.length}</span>
-                <span className="hs-lbl">sources</span>
-              </div>
-              <div className="hs-chip">
-                <span className="hs-val">{facets.classes.length}</span>
-                <span className="hs-lbl">classes</span>
-              </div>
-            </div>
-          )
+            )}
+            <Link
+              to={`/dashboard/export?tab=logs${sourceId ? `&source=${encodeURIComponent(sourceId)}` : ''}`}
+              className="btn secondary sm flex align-center"
+              style={{ gap: 4 }}
+            >
+              <IconExport size={14} /> Export Logs
+            </Link>
+          </div>
         }
       >
-        Every log source normalizes to unified OCSF security schemas. Filter, search, or inspect exact byte provenance.
+        Every normalized OCSF record in ClickHouse. Search by source, class or raw bytes.
       </PageHead>
+
 
       <Panel
         flush
@@ -218,7 +231,7 @@ export function EventsPage() {
                       <tr
                         key={`${ev.aletheia.event_uid}:${i}`}
                         className="clickable"
-                        onClick={() => navigate(`/dashboard/lineage/${ev.aletheia.event_uid}`)}
+                        onClick={() => setInspectEventUid(ev.aletheia.event_uid)}
                         title="Open byte lineage for this event"
                       >
                         <td className="mono nowrap">
@@ -254,7 +267,7 @@ export function EventsPage() {
                             className="primary btn-sm"
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigate(`/dashboard/lineage/${ev.aletheia.event_uid}`);
+                              setInspectEventUid(ev.aletheia.event_uid);
                             }}
                           >
                             Inspect →
@@ -279,6 +292,13 @@ export function EventsPage() {
           </>
         )}
       </Panel>
+
+      {inspectEventUid && (
+        <LineageModal
+          eventUid={inspectEventUid}
+          onClose={() => setInspectEventUid(null)}
+        />
+      )}
     </div>
   );
 }

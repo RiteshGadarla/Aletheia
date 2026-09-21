@@ -289,9 +289,9 @@ export function SettingsPage() {
 
   const keyBadge = currentProvider === 'gemini' ? (
     form.api_key_set ? (
-      <Badge kind="ok"><IconKey size={12} /> key configured · …{form.api_key_last4}</Badge>
+      <Badge kind="ok"><IconKey size={12} /> Key Configured</Badge>
     ) : (
-      <Badge kind="warn"><IconAlert size={12} /> no key set</Badge>
+      <Badge kind="warn"><IconAlert size={12} /> No Key Set</Badge>
     )
   ) : undefined;
 
@@ -343,7 +343,9 @@ export function SettingsPage() {
 
                 <div className="provider-card-footer">
                   {isSelected ? (
-                    <Badge kind="ok"><IconCheck size={12} /> Active Provider ({form.model || 'default'})</Badge>
+                    <Badge kind="ok">
+                      <IconCheck size={12} /> Active Provider{p === 'local' && form.model ? ` (${form.model})` : ''}
+                    </Badge>
                   ) : isBlocked ? (
                     <Badge kind="bad"><IconLock size={12} /> Blocked by Strict Offline</Badge>
                   ) : (
@@ -564,7 +566,7 @@ export function SettingsPage() {
               <input
                 type="password"
                 value={apiKey}
-                placeholder={form.api_key_set ? `stored — ends …${form.api_key_last4}` : 'Paste your Gemini API key'}
+                placeholder={form.api_key_set ? 'API Key Configured (leave blank to keep)' : 'Paste your Gemini API key'}
                 onChange={(e) => { setTest(null); setApiKey(e.target.value); }}
                 autoComplete="off"
               />
