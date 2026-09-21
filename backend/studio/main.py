@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .api import export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
+from .api import chat as chat_api, export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -939,4 +939,5 @@ api.include_router(sources_api.router)
 api.include_router(stats_api.router)
 api.include_router(samples_api.router)
 api.include_router(export_api.router)
+api.include_router(chat_api.router)
 app.include_router(api)

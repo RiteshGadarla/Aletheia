@@ -7,13 +7,14 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { NotifyProvider, useNotify } from '../lib/notify';
 import {
   IconClose, IconDemo, IconEvents, IconExport, IconHome, IconInfo, IconLock, IconMenu, IconMoon,
-  IconSettings, IconSources, IconSun,
+  IconLyra, IconSettings, IconSources, IconSun,
 } from './Icons';
 
 
 const NAV = [
   { to: '/dashboard', label: 'Overview', desc: 'Live stats', Icon: IconHome, end: true },
   { to: '/dashboard/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: false },
+  { to: '/dashboard/lyra', label: 'Lyra', desc: 'Ask your data', Icon: IconLyra, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
   { to: '/dashboard/export', label: 'Export & Supply', desc: 'Reports, logs & stream', Icon: IconExport, end: false },
   { to: '/dashboard/demo', label: 'Demo', desc: 'Sample servers', Icon: IconDemo, end: false },

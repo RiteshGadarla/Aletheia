@@ -7,7 +7,7 @@ import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
   Overview, QuarantineCluster, RawLine, SampleList, SampleServer, ReplayDiff, SourceInfo, SourceList, SourceProposal,
-  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate,
+  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate, ChatMessage, ChatReply,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -175,6 +175,11 @@ export const api = {
 
   getSupplyStatus: (): Promise<SupplyStatus> =>
     USE_MOCKS ? mockApi.getSupplyStatus() : http('/export/supply/status'),
+
+  chat: (messages: ChatMessage[]): Promise<ChatReply> =>
+    USE_MOCKS
+      ? Promise.resolve({ available: false, answer: 'Lyra needs the live backend.', blocks: [] })
+      : http('/chat', { method: 'POST', body: JSON.stringify({ messages }) }),
 
   configureSupply: (b: SupplyConfigUpdate): Promise<SupplyStatus> =>
     USE_MOCKS ? mockApi.configureSupply(b) : http('/export/supply/configure', { method: 'POST', body: JSON.stringify(b) }),

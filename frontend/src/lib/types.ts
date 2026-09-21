@@ -444,3 +444,8 @@ export interface SupplyConfigUpdate {
   log_type?: string;
   source_id?: string;
 }
+
+/* Lyra chat */
+export interface ChatMessage { role: 'user' | 'assistant'; content: string }
+export interface ChatBlock { type: 'table'; sql: string; rows: Record<string, unknown>[] }
+export interface ChatReply { available: boolean; answer: string; blocks: ChatBlock[] }

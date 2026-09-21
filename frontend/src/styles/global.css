@@ -1975,3 +1975,21 @@ tr.wk-hot td { background: var(--surface-hover); }
 .modal.wide { width: min(1400px, 96vw); max-width: none; }
 .dt-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 @media (max-width: 900px) { .dt-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---- Lyra chat ---- */
+.lyra { display: flex; flex-direction: column; height: calc(100vh - 140px); min-height: 420px; }
+.lyra-thread { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) 0; }
+.lyra-empty { margin: auto; text-align: center; color: var(--text-muted); display: grid; gap: var(--s3); justify-items: center; }
+.lyra-chips { display: flex; flex-wrap: wrap; gap: var(--s2); justify-content: center; max-width: 640px; }
+.lyra-msg { display: flex; flex-direction: column; gap: var(--s2); max-width: 85%; }
+.lyra-msg.user { align-self: flex-end; align-items: flex-end; }
+.lyra-bubble { padding: var(--s3) var(--s4); border-radius: 12px; background: var(--surface); border: 1px solid var(--border); white-space: pre-wrap; line-height: var(--lh-normal); }
+.lyra-msg.user .lyra-bubble { background: var(--accent); color: var(--text-inverse); border-color: var(--accent); }
+.lyra-table { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: var(--s2) var(--s3); font-size: var(--fs-xs); }
+.lyra-table summary { cursor: pointer; color: var(--text-muted); }
+.lyra-sql { margin: var(--s2) 0; padding: var(--s2); background: var(--surface-inset); border-radius: 6px; overflow-x: auto; }
+.lyra-scroll { max-height: 320px; overflow: auto; }
+.lyra-scroll table { border-collapse: collapse; width: 100%; }
+.lyra-scroll th, .lyra-scroll td { text-align: left; padding: 4px 10px; border-bottom: 1px solid var(--border-soft); white-space: nowrap; }
+.lyra-input { display: flex; gap: var(--s2); padding-top: var(--s3); border-top: 1px solid var(--border-soft); }
+.lyra-input input { flex: 1; padding: var(--s3); border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }

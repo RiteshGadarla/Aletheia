@@ -112,7 +112,7 @@ def delete_source(sid: str) -> dict[str, Any]:
     st = get_state()
     st.connectors.remove(sid)
     st.registry.delete(sid)
-    onboarding.PROPOSALS.pop(sid, None)
+    onboarding.delete_proposal(sid, st.repo)
     return {"deleted": sid}
 
 
@@ -190,7 +190,7 @@ def _run_proposal(s: Source, class_hint: int | None, feedback: str) -> dict[str,
     st = get_state()
     if not any(True for _ in st.raw.query(s.id, limit=1)):
         raise HTTPException(409, "no raw lines collected yet")
-    prop = onboarding.propose(st.raw, s.id, s.attempts, class_hint=class_hint, feedback=feedback)
+    prop = onboarding.propose(st.raw, s.id, s.attempts, class_hint=class_hint, feedback=feedback, repo=st.repo)
     st.registry.update(s.id, state="review")
     return prop
 
@@ -207,7 +207,8 @@ def make_proposal(sid: str, body: ProposeIn | None = None) -> dict[str, Any]:
 @router.get("/sources/{sid}/review")
 def review(sid: str) -> dict[str, Any]:
     s = _get(sid)
-    prop = onboarding.PROPOSALS.get(sid)
+    st = get_state()
+    prop = onboarding.get_proposal(sid, st.repo, st.raw)
     return {"source": _view(s), "proposal": onboarding.public(prop) if prop else None}
 
 
@@ -229,7 +230,7 @@ async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
         return {"source": _view(_get(sid)), "proposal": onboarding.public(prop)}
     if body.action != "approve":
         raise HTTPException(422, "action must be approve, reject or retry")
-    prop = onboarding.PROPOSALS.get(sid)
+    prop = onboarding.get_proposal(sid, st.repo, st.raw)
     if s.state != "review" or not prop:
         raise HTTPException(409, "nothing to approve: generate a proposal first")
     chosen = [c for c in prop["clusters"] if not body.cluster_ids or c["cluster_id"] in body.cluster_ids]
@@ -238,7 +239,7 @@ async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
     bad = [c["cluster_id"] for c in chosen if c["gate"] is not None and not c["gate"].get("ok")]
     if bad:
         raise HTTPException(409, f"reconstruction gate failed for {', '.join(bad)}; retry or reject")
-    rows = onboarding.build_packs(sid, [c["cluster_id"] for c in chosen], actor)
+    rows = onboarding.build_packs(sid, [c["cluster_id"] for c in chosen], actor, st.repo)
     version, everything = onboarding.snapshot(st.repo, rows)
     for r in everything:
         st.repo.pack_upsert(r)
@@ -249,6 +250,7 @@ async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
     st.registry.update(sid, state="approved", approved_ns=approved_ns)
     st.registry.event(sid, "approved", actor, {"packs": [r["pack"] for r in rows], "version": version})
     st.repo.audit(actor, "source.approve", sid, {"packs": [r["pack"] for r in rows], "version": version})
+    onboarding.save_proposal(sid, prop, st.repo)
     fwd = await asyncio.to_thread(backfill, st.raw, st.forwarder, sid, 200_000, approved_ns)
     return {"source": _view(_get(sid)), "packs": [r["pack"] for r in rows], "backfilled": fwd,
             "bus": st.forwarder.enabled}
@@ -261,8 +263,9 @@ async def auto_propose_loop() -> None:
         st = get_state()
         for s in st.registry.list():
             ps = st.pipeline.stats.get(s.id)
-            if s.state == "collecting" and s.id not in onboarding.PROPOSALS and ps and ps.lines >= MIN_LINES_FOR_REVIEW:
+            if s.state == "collecting" and not onboarding.get_proposal(s.id, st.repo) and ps and ps.lines >= MIN_LINES_FOR_REVIEW:
                 try:
                     await asyncio.to_thread(_run_proposal, s, None, "")
                 except Exception:                                                # noqa: BLE001
                     pass
+
