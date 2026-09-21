@@ -364,7 +364,26 @@ export interface SourceStat {
   last_seen: number | null; spark: number[];
 }
 
+export interface KN { k: string | number; n: number }
+export interface Insights {
+  peak_eps: number; mean_eps: number; z: number; spike: boolean; noisiest: string | null;
+  risk_rank: { id: string; risk: number; lines: number; pct: number }[];
+  freshness_s: number | null; stale: number; by_type: KN[]; share: KN[]; trend_pct: number; eps_min: number;
+  mean_approval_s: number | null; proj_day_lines: number; proj_day_bytes: number;
+  warn_pct: number; onboarded_pct: number; health_pct: number; error_rate: number; posture: number; bytes_per_line: number;
+  ch: {
+    available: boolean; top_src?: KN[]; top_dst?: KN[]; top_ports?: KN[]; top_users?: KN[]; top_templates?: KN[];
+    top_denied?: KN[]; scanners?: KN[]; fanout?: KN[]; hours?: { t: number; n: number; hi: number }[];
+    lag?: { avg_ms: number; p95_ms: number; good: number; skewed: number; first: number; last: number; avg_vars: number; denied: number };
+    protocols?: KN[]; actions?: KN[]; classes?: KN[]; ocsf_sev?: KN[]; modes?: Record<string, number>;
+    timeline?: { t: number; n: number; hi: number }[];
+    unique?: { si: number; di: number; us: number; mb: number; hashed: number; n: number };
+    disk?: Record<string, { compressed: number; uncompressed: number; rows: number }>;
+  };
+}
+
 export interface Overview {
+  insights: Insights;
   generated_at: number; window_s: number; bucket_s: number; store: string; bus: boolean;
   kpis: {
     lines: number; bytes: number; eps: number; sources: number; connected: number; in_review: number;
@@ -387,8 +406,8 @@ export interface SampleServer {
 export interface SampleList { available: boolean; samples: SampleServer[] }
 
 /* ---- Export & Log Supply Stream ---- */
-export type ReportFormat = 'json' | 'csv' | 'markdown' | 'html';
-export type LogExportFormat = 'json' | 'jsonl' | 'csv' | 'text';
+export type ReportFormat = 'pdf' | 'json' | 'csv' | 'markdown' | 'html';
+export type LogExportFormat = 'json' | 'jsonl' | 'csv' | 'tsv' | 'text' | 'cef' | 'leef' | 'xml';
 export type LogExportType = 'raw' | 'ocsf' | 'system';
 
 export interface ExportReportParams {

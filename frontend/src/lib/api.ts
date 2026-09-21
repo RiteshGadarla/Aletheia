@@ -114,6 +114,8 @@ export const api = {
   /* demo sample servers */
   listSamples: (): Promise<SampleList> => http('/demo/samples'),
   startSample: (id: string): Promise<SampleServer> => http(`/demo/samples/${id}/start`, { method: 'POST' }),
+  sampleLogs: (id: string, after = -1): Promise<{ items: { cursor: number; ts: number; severity: string; line: string }[]; next: number }> =>
+    http(`/demo/samples/${id}/logs?after=${after}`),
   stopSample: (id: string): Promise<SampleServer> => http(`/demo/samples/${id}/stop`, { method: 'POST' }),
   controlSample: (id: string, b: { rate?: number; risk?: number; clear_risk?: boolean; paused?: boolean; drift?: boolean }): Promise<SampleServer> =>
     http(`/demo/samples/${id}/control`, { method: 'POST', body: JSON.stringify(b) }),

@@ -1,5 +1,5 @@
 // Sources: connect log systems in a dialog, watch raw lines land, approve, reject or retry the mapping.
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Confidence, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../components/Bits';
 import { Modal } from '../components/Modal';
@@ -7,7 +7,7 @@ import { api, errMessage } from '../lib/api';
 import { useNotify } from '../lib/notify';
 import { useAsync } from '../lib/useAsync';
 import type { BadgeKind } from '../components/Bits';
-import type { SourceCluster, SourceInfo, SourceProposal, SourceState } from '../lib/types';
+import type { MappingRow, SourceCluster, SourceInfo, SourceProposal, SourceState } from '../lib/types';
 
 const SEV_COLOR: Record<string, string> = {
   info: 'var(--sev-info)', notice: 'var(--sev-notice)', warn: 'var(--sev-warn)', risk: 'var(--sev-risk)',
@@ -40,8 +40,8 @@ export function SeverityBar({ by }: { by: Record<string, number> }) {
 }
 
 function StatusCell({ s }: { s: SourceInfo }) {
-  const kind: Record<SourceState, BadgeKind> = { collecting: 'plain', review: 'warn', approved: 'ok', rejected: 'bad' };
-  if (s.state === 'review') return <Badge kind="warn">Ready to approve</Badge>;
+  const kind: Record<SourceState, BadgeKind> = { collecting: 'plain', review: 'info', approved: 'ok', rejected: 'bad' };
+  if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
   if (s.state === 'collecting') {
     return (
       <div className="stack-sm" style={{ gap: 4 }}>
@@ -106,36 +106,131 @@ function AddDialog({ types, prefill, onClose, onDone }: {
 }
 
 // ------------------------------------------------------------------ source dialog
-function ClusterCard({ c }: { c: SourceCluster }) {
+const HUES = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#ef4444', '#84cc16'];
+
+/** Splits a raw line into plain text and highlighted field values, in order of appearance. */
+function segment(line: string, rows: MappingRow[]) {
+  const hits: { at: number; end: number; i: number }[] = [];
+  const taken = new Array<boolean>(line.length).fill(false);
+  rows.forEach((r, i) => {
+    if (!r.sample) return;
+    let at = line.indexOf(r.sample);
+    while (at >= 0 && taken.slice(at, at + r.sample.length).some(Boolean)) at = line.indexOf(r.sample, at + 1);
+    if (at < 0) return;
+    for (let k = at; k < at + r.sample.length; k++) taken[k] = true;
+    hits.push({ at, end: at + r.sample.length, i });
+  });
+  hits.sort((x, y) => x.at - y.at);
+  const out: { text: string; i: number | null }[] = [];
+  let pos = 0;
+  for (const h of hits) {
+    if (h.at > pos) out.push({ text: line.slice(pos, h.at), i: null });
+    out.push({ text: line.slice(h.at, h.end), i: h.i }); pos = h.end;
+  }
+  if (pos < line.length) out.push({ text: line.slice(pos), i: null });
+  return out;
+}
+
+/** Builds the nested OCSF event that this pattern would produce from the sample line. */
+function buildEvent(c: SourceCluster) {
+  const ev: Record<string, unknown> = { class_name: c.mapping.class_name, class_uid: c.mapping.class_uid, activity_id: c.mapping.activity_id };
+  const extra: Record<string, string> = {};
+  for (const r of c.mapping.rows) {
+    if (!r.path) { extra[r.slot] = r.sample; continue; }
+    const keys = r.path.split('.');
+    let cur = ev;
+    keys.slice(0, -1).forEach((k) => { if (typeof cur[k] !== 'object' || cur[k] === null) cur[k] = {}; cur = cur[k] as Record<string, unknown>; });
+    cur[keys[keys.length - 1]] = r.sample;
+  }
+  if (Object.keys(extra).length) ev.unmapped = extra;
+  return JSON.stringify(ev, null, 2);
+}
+
+function PatternWalk({ clusters }: { clusters: SourceCluster[] }) {
+  const [n, setN] = useState(0);
+  const [hot, setHot] = useState<number | null>(null);
+  const [sampleIx, setSampleIx] = useState(0);
+  const c = clusters[n];
+  const go = (d: number) => { setN((n + d + clusters.length) % clusters.length); setHot(null); setSampleIx(0); };
+  const jump = (v: string) => {
+    const k = Math.min(clusters.length, Math.max(1, parseInt(v, 10) || n + 1)) - 1;
+    if (k !== n) { setN(k); setHot(null); setSampleIx(0); }
+  };
   const g = c.gate;
+  const line = c.samples[sampleIx] ?? c.samples[0] ?? '';
+  // Sample values only line up with the first sample line.
+  const parts = segment(c.samples[0] ?? '', c.mapping.rows);
+  const showParts = sampleIx === 0;
   return (
-    <div className="panel" style={{ marginBottom: 'var(--s4)' }}>
+    <div className="panel">
       <header>
         <div className="panel-title">
-          {c.mapping.class_name} <span className="panel-sub">{c.size} lines · {(c.share * 100).toFixed(0)}% of sample</span>
+          Pattern {n + 1} of {clusters.length}: {c.mapping.class_name}
+          <span className="panel-sub">{c.size} lines · {(c.share * 100).toFixed(0)}% of sample</span>
         </div>
         <div className="panel-right row-tight">
           <Badge kind={g === null ? 'plain' : g.ok ? 'ok' : 'bad'}>{g === null ? 'check not run' : g.ok ? 'rebuilds byte-for-byte' : 'check failed'}</Badge>
           <Confidence value={c.mapping.confidence} />
         </div>
       </header>
-      <div className="panel-body flush">
-        <div className="table-scroll" style={{ maxHeight: 260 }}>
-          <table className="data">
-            <thead><tr><th>Field in log</th><th>Sample value</th><th>Maps to (OCSF)</th><th>Confidence</th></tr></thead>
-            <tbody>
-              {c.mapping.rows.map((r) => (
-                <tr key={r.slot}>
-                  <td className="mono">{r.slot} <span className="hint">{r.type}</span></td>
-                  <td className="mono truncate" style={{ maxWidth: 240 }}>{r.sample}</td>
-                  <td>{r.path ? <code>{r.path}</code> : <span className="hint">kept as extra data</span>}</td>
-                  <td>{r.path ? <Confidence value={r.confidence} /> : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="panel-body wk-body">
+        <div className="wk-nav">
+          <button onClick={() => go(-1)} disabled={clusters.length < 2}>← Previous</button>
+          <label className="row-tight hint" style={{ gap: 6 }}>Go to pattern
+            <input type="number" min={1} max={clusters.length} key={n} defaultValue={n + 1} style={{ width: 64 }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); jump((e.target as HTMLInputElement).value); } }}
+              onBlur={(e) => jump(e.target.value)} />
+            of {clusters.length}
+          </label>
+          <button onClick={() => go(1)} disabled={clusters.length < 2}>Next →</button>
         </div>
-        <pre className="mono hint" style={{ margin: 'var(--s3)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{c.samples[0]}</pre>
+
+        <section className="wk-card">
+          <h4 className="wk-h"><span className="wk-step">1</span> The raw line Aletheia stored</h4>
+          <pre className="wk-line">
+            {showParts ? parts.map((p, i) => p.i === null ? <span key={i}>{p.text}</span> : (
+              <mark key={i} className={hot === p.i ? 'hot' : ''} style={{ ['--h' as string]: HUES[p.i % HUES.length] }}
+                onMouseEnter={() => setHot(p.i)} onMouseLeave={() => setHot(null)}>{p.text}</mark>
+            )) : line}
+          </pre>
+          {c.samples.length > 1 && (
+            <div className="row-tight" style={{ marginTop: 6 }}>
+              <span className="hint">Example line:</span>
+              {c.samples.slice(0, 5).map((_, i) => (
+                <button key={i} className={i === sampleIx ? 'primary btn-sm' : 'ghost btn-sm'} onClick={() => setSampleIx(i)}>{i + 1}</button>
+              ))}
+              {!showParts && <span className="hint">Highlights are shown on example 1.</span>}
+            </div>
+          )}
+        </section>
+
+        <section className="wk-card">
+          <h4 className="wk-h"><span className="wk-step">2</span> How each part is picked out and where it goes</h4>
+          <div className="table-scroll" style={{ maxHeight: 340 }}>
+            <table className="data">
+              <thead><tr><th>Field</th><th>Value taken</th><th>Goes to (OCSF)</th><th>Rule</th><th>Confidence</th></tr></thead>
+              <tbody>
+                {c.mapping.rows.map((r, i) => (
+                  <tr key={r.slot} className={hot === i ? 'wk-hot' : ''} onMouseEnter={() => setHot(i)} onMouseLeave={() => setHot(null)}>
+                    <td className="mono"><i className="wk-dot" style={{ background: HUES[i % HUES.length] }} />{r.slot} <span className="hint">{r.type}</span></td>
+                    <td className="mono truncate" style={{ maxWidth: 220 }}>{r.sample}</td>
+                    <td>{r.path ? <code>{r.path}</code> : <span className="hint">kept as extra data</span>}</td>
+                    <td className="hint">{r.transform ?? (r.path ? 'copied as is' : '—')}{r.evidence?.length ? ` · ${r.evidence[0]}` : ''}</td>
+                    <td>{r.path ? <Confidence value={r.confidence} /> : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="wk-card">
+          <h4 className="wk-h"><span className="wk-step">3</span> The normalized event you get</h4>
+          <pre className="wk-json">{buildEvent(c)}</pre>
+        </section>
+        {(c.warnings.length > 0 || (g && !g.ok)) && (
+          <p className="hint err">{[...c.warnings, g && !g.ok ? g.error ?? 'Rebuild check failed.' : ''].filter(Boolean).join(' · ')}</p>
+        )}
       </div>
     </div>
   );
@@ -149,7 +244,7 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [prop, setProp] = useState<SourceProposal | null>(null);
-  const [showAll, setShowAll] = useState(false);
+  const [ask, setAsk] = useState<'approve' | 'retry' | 'reject' | null>(null);
   const proposal = prop ?? rev.data?.proposal ?? null;
   const decidable = src.state === 'review' && !!proposal;
 
@@ -173,13 +268,18 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
           onClose();
         } else toast({ kind: 'info', title: 'New proposal generated', body: 'Re-clustered with your feedback.' });
       }
-      onChanged(); rev.reload();
+      setAsk(null); onChanged(); rev.reload();
     } catch (e) { setErr(errMessage(e)); } finally { setBusy(false); }
   };
 
   if (src.state === 'approved' || src.state === 'rejected') {
-    const last = [...src.history].reverse().find((h) => h.action === src.state);
-    return <p className="hint">This source was <b>{src.state}</b>{last ? ` by ${last.actor}` : ''}. {src.state === 'rejected' ? 'Raw logs are still stored, but nothing is normalized.' : 'Its logs are normalized with the approved parser.'}</p>;
+    return (
+      <div className="stack-sm">
+        {rev.loading && !proposal && <Spinner label="Loading mapping" />}
+        {proposal ? <PatternWalk key={proposal.attempt} clusters={proposal.clusters} />
+          : !rev.loading && <p className="hint">The mapping is no longer in memory (the server was restarted since approval). The approved parser is still active.</p>}
+      </div>
+    );
   }
   return (
     <div className="stack-sm">
@@ -197,29 +297,32 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
             Aletheia grouped {proposal.covered} of {proposal.lines_examined} sampled lines into {proposal.clusters.length} pattern(s)
             (attempt {src.attempts + 1}). Check the mapping, then decide.
           </p>
-          <div className="panel"><div className="panel-body stack-sm">
-            <div className="btn-row">
-              <label className="field"><span className="lbl">Your name (required to approve)</span>
-                <input value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="e.g. ritesh" /></label>
-              <label className="field" style={{ flex: 1, minWidth: 220 }}><span className="lbl">Reason or feedback</span>
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. these are authentication events" /></label>
-            </div>
-            <div className="btn-row">
-              <button className="primary" disabled={busy || !decidable || !approver.trim()} onClick={() => void act('approve')}>Approve</button>
-              <button disabled={busy || !decidable || !approver.trim()} onClick={() => void act('retry')} title="Regroup with different settings">Retry</button>
-              <button disabled={busy || !decidable || !approver.trim()} onClick={() => void act('reject')}>Reject</button>
-              <button className="ghost" disabled={busy} onClick={() => void act('propose')}>Regenerate</button>
-            </div>
-            {err && <p className="hint err">{err}</p>}
-          </div></div>
-          <h3 style={{ margin: 'var(--s2) 0 0', fontSize: 14 }}>Patterns found ({proposal.clusters.length})</h3>
-          {(showAll ? proposal.clusters : proposal.clusters.slice(0, 3)).map((c) => <ClusterCard key={c.cluster_id} c={c} />)}
-          {proposal.clusters.length > 3 && (
-            <button className="ghost" onClick={() => setShowAll(!showAll)}>
-              {showAll ? 'Show fewer patterns' : `Show ${proposal.clusters.length - 3} more patterns`}
-            </button>
-          )}
+          <div className="btn-row">
+            <button className="primary" disabled={busy || !decidable} onClick={() => setAsk('approve')}>Approve</button>
+            <button disabled={busy || !decidable} onClick={() => setAsk('retry')} title="Regroup with different settings">Retry</button>
+            <button disabled={busy || !decidable} onClick={() => setAsk('reject')}>Reject</button>
+            <button className="ghost" disabled={busy} onClick={() => void act('propose')}>Regenerate</button>
+          </div>
+          {err && !ask && <p className="hint err">{err}</p>}
+          <PatternWalk key={proposal.attempt} clusters={proposal.clusters} />
         </>
+      )}
+      {ask && (
+        <Modal title={{ approve: 'Approve this mapping', retry: 'Retry with feedback', reject: 'Reject this source' }[ask]}
+          subtitle="Your name is recorded in the audit history." onClose={() => { setAsk(null); setErr(null); }}
+          footer={<>
+            <button onClick={() => { setAsk(null); setErr(null); }}>Cancel</button>
+            <button className="primary" disabled={busy || !approver.trim()} onClick={() => void act(ask)}>
+              {busy ? 'Working…' : { approve: 'Approve', retry: 'Retry', reject: 'Reject' }[ask]}</button>
+          </>}>
+          <form className="stack" onSubmit={(e) => { e.preventDefault(); if (approver.trim() && !busy) void act(ask); }}>
+            <label className="field"><span className="lbl">Your name (required)</span>
+              <input autoFocus value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="e.g. ritesh" /></label>
+            <label className="field"><span className="lbl">{ask === 'retry' ? 'Feedback for the next attempt' : 'Comment (optional)'}</span>
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. these are authentication events" /></label>
+            {err && <p className="hint err">{err}</p>}
+          </form>
+        </Modal>
       )}
     </div>
   );
@@ -264,39 +367,63 @@ function RawTab({ id }: { id: string }) {
 
 function DetailsTab({ s }: { s: SourceInfo }) {
   const when = (t: number) => new Date(t * 1000).toLocaleString();
+  const stat = (label: string, value: string, sub?: string) => (
+    <div className="dt-stat"><span className="dt-k">{label}</span><b>{value}</b>{sub && <span className="hint">{sub}</span>}</div>
+  );
   return (
-    <div className="stack">
-      <dl className="kv">
-        <dt>Connection</dt><dd>{TYPE_LABEL[s.type] ?? s.type} · {s.enabled ? s.status : 'paused'}{s.error ? ` · ${s.error}` : ''}</dd>
-        {Object.entries(s.config).map(([k, v]) => <><dt key={`k${k}`}>{k}</dt><dd key={`v${k}`} className="mono">{String(v)}</dd></>)}
-        <dt>Lines stored</dt><dd>{s.lines.toLocaleString()} ({(s.bytes / 1024).toFixed(0)} KB) · {s.eps}/s</dd>
-        <dt>Severity mix</dt><dd><SeverityBar by={s.by_severity} /></dd>
-        <dt>Errors</dt><dd>{s.errors}</dd>
-        <dt>Created</dt><dd>{when(s.created_at)}</dd>
-      </dl>
-      <div>
-        <h3 style={{ margin: '0 0 var(--s2)', fontSize: 14 }}>History</h3>
-        {s.history.length === 0 ? <p className="hint">Nothing yet.</p> : (
-          <ul className="stack-sm" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {[...s.history].reverse().map((h) => (
-              <li key={h.at} className="row-tight">
-                <Badge kind={h.action === 'approved' ? 'ok' : h.action === 'rejected' ? 'bad' : 'plain'}>{h.action}</Badge>
-                <span>{h.actor}</span><span className="hint">{when(h.at)}{h.reason ? ` · ${h.reason}` : ''}{h.feedback ? ` · ${h.feedback}` : ''}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+    <div className="dt-wrap">
+      <div className="dt-stats">
+        {stat('Lines stored', s.lines.toLocaleString(), `${(s.bytes / 1024).toFixed(0)} KB`)}
+        {stat('Rate', `${s.eps}/s`, 'lines per second')}
+        {stat('Errors', String(s.errors), s.errors ? 'check the connection' : 'none')}
+        {stat('Created', new Date(s.created_at * 1000).toLocaleDateString(), new Date(s.created_at * 1000).toLocaleTimeString())}
+      </div>
+      <div className="dt-cols">
+        <section className="wk-card">
+          <h4 className="wk-h">Connection</h4>
+          <dl className="kv">
+            <dt>Type</dt><dd>{TYPE_LABEL[s.type] ?? s.type}</dd>
+            <dt>Status</dt><dd>{s.enabled ? s.status : 'paused'}{s.error ? ` · ${s.error}` : ''}</dd>
+            {Object.entries(s.config).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd className="mono">{String(v)}</dd></Fragment>)}
+          </dl>
+          <h4 className="wk-h" style={{ marginTop: 'var(--s4)' }}>Severity mix</h4>
+          <SeverityBar by={s.by_severity} />
+          <div className="row-tight" style={{ marginTop: 8, gap: 12, flexWrap: 'wrap' }}>
+            {SEVS.map((k) => <span key={k} className="hint"><i className="wk-dot" style={{ background: SEV_COLOR[k] }} />{k} {(s.by_severity[k] ?? 0).toLocaleString()}</span>)}
+          </div>
+        </section>
+        <section className="wk-card">
+          <h4 className="wk-h">History</h4>
+          {s.history.length === 0 ? <p className="hint">Nothing yet.</p> : (
+            <ul className="dt-hist">
+              {[...s.history].reverse().map((h) => (
+                <li key={h.at}>
+                  <Badge kind={h.action === 'approved' ? 'ok' : h.action === 'rejected' ? 'bad' : 'plain'}>{h.action}</Badge>
+                  <div><b>{h.actor}</b> <span className="hint">{when(h.at)}</span>
+                    {(h.reason || h.feedback) && <div className="hint">{[h.reason, h.feedback].filter(Boolean).join(' · ')}</div>}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       </div>
     </div>
   );
 }
 
 function SourceDialog({ src, onClose, onChanged }: { src: SourceInfo; onClose: () => void; onChanged: () => void }) {
+  const decided = [...src.history].reverse().find((h) => h.action === src.state);
   const [tab, setTab] = useState<'review' | 'raw' | 'details'>(src.state === 'review' || src.state === 'collecting' ? 'review' : 'raw');
   return (
     <Modal wide onClose={onClose} title={src.name || src.id}
-      subtitle={<span className="row-tight"><Badge kind={src.status === 'connected' ? 'ok' : 'plain'}>{src.enabled ? src.status : 'paused'}</Badge>
-        {TYPE_LABEL[src.type] ?? src.type} · {src.lines.toLocaleString()} lines · {src.eps}/s</span>}>
+      subtitle={<>
+        <Badge kind={src.status === 'connected' ? 'ok' : 'plain'}>{src.enabled ? src.status : 'paused'}</Badge>
+        <span>{TYPE_LABEL[src.type] ?? src.type} · {src.lines.toLocaleString()} lines · {src.eps}/s</span>
+        {(src.state === 'approved' || src.state === 'rejected') && (
+          <span>· <b>{src.state === 'approved' ? 'Approved' : 'Rejected'}</b>{decided ? ` by ${decided.actor}` : ''}
+            {src.state === 'approved' ? ', logs normalized with this mapping' : ', raw logs kept but not normalized'}</span>
+        )}
+      </>}>
       <div className="tabs" role="tablist">
         {([['review', src.state === 'review' ? 'Review mapping' : 'Mapping'], ['raw', 'Raw logs'], ['details', 'Details']] as const).map(([k, label]) => (
           <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{label}</button>
@@ -380,14 +507,24 @@ export function SourcesPage() {
         <span className="ah-cta">Add source</span>
       </button>
 
-      {ready.length > 0 && (
-        <div className="ready-banner" role="status">
-          <b>{ready.length === 1 ? '1 source is' : `${ready.length} sources are`} ready for your approval</b>
-          <span className="row-tight">{ready.map((s) => <button key={s.id} className="primary" onClick={() => setSel(s.id)}>Review {s.id}</button>)}</span>
-        </div>
-      )}
-
-      <Panel title="Connected systems" flush>
+      <Panel
+        title="Connected systems"
+        right={
+          ready.length > 0 ? (
+            <div className="row-tight align-center" style={{ gap: 8 }}>
+              <span className="hint bold">
+                {ready.length === 1 ? '1 source ready for approval:' : `${ready.length} sources ready:`}
+              </span>
+              {ready.map((s) => (
+                <button key={s.id} className="primary btn-sm" onClick={() => setSel(s.id)}>
+                  Review {s.name || s.id}
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
+        flush
+      >
         {list.loading && !list.data && <div className="panel-pad"><Spinner label="Loading" /></div>}
         {list.data && sources.length === 0 && (
           <EmptyState title="No sources yet">

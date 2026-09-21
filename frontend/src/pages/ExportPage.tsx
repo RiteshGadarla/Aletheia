@@ -1,35 +1,26 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, PageHead, Panel, Spinner } from '../components/Bits';
+import { Badge, PageHead, Spinner } from '../components/Bits';
 import { IconCheck, IconCopy, IconEvents, IconExport, IconServer, IconTerminal } from '../components/Icons';
 import { api, errMessage } from '../lib/api';
+import { useNotify } from '../lib/notify';
 import { useAsync } from '../lib/useAsync';
-import type { LogExportFormat, LogExportType, ReportFormat, SupplyStatus } from '../lib/types';
+import type { LogExportFormat, LogExportType, SupplyStatus } from '../lib/types';
 
 export function ExportPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialTab = (searchParams.get('tab') as 'report' | 'logs' | 'supply') || 'report';
+  const initialTab = (searchParams.get('tab') as 'logs' | 'report' | 'supply') || 'logs';
   const initialSource = searchParams.get('source') || '';
 
-  const [tab, setTab] = useState<'report' | 'logs' | 'supply'>(initialTab);
+  const [tab, setTab] = useState<'logs' | 'report' | 'supply'>(initialTab);
   const [sourceId, setSourceId] = useState(initialSource);
+  const { toast } = useNotify();
 
   // Load available sources
   const sourcesQuery = useAsync(() => api.listSources(), []);
   const availableSources = sourcesQuery.data?.sources.map((s) => s.id) ?? [];
 
-
-  // Report State
-  const [reportFmt, setReportFmt] = useState<ReportFormat>('json');
-  const [windowS, setWindowS] = useState(300);
-  const [catKpis, setCatKpis] = useState(true);
-  const [catSources, setCatSources] = useState(true);
-  const [catSeverity, setCatSeverity] = useState(true);
-  const [catNormalized, setCatNormalized] = useState(true);
-  const [catUsage, setCatUsage] = useState(true);
-  const [catHistory, setCatHistory] = useState(true);
-
-  // Logs State
+  // Logs State (First Tab)
   const [logType, setLogType] = useState<LogExportType>('raw');
   const [logFmt, setLogFmt] = useState<LogExportFormat>('json');
   const [severity, setSeverity] = useState('');
@@ -38,7 +29,19 @@ export function ExportPage() {
   const [copied, setCopied] = useState(false);
   const [copying, setCopying] = useState(false);
 
-  // Supply Server State
+  // System Report State (Second Tab, PDF Only)
+  const [windowS, setWindowS] = useState(300);
+  const [catKpis, setCatKpis] = useState(true);
+  const [catSources, setCatSources] = useState(true);
+  const [catSeverity, setCatSeverity] = useState(true);
+  const [catNormalized, setCatNormalized] = useState(true);
+  const [catUsage, setCatUsage] = useState(true);
+  const [catHistory, setCatHistory] = useState(true);
+  const [catInsights, setCatInsights] = useState(true);
+  const [catTraffic, setCatTraffic] = useState(true);
+  const [catStorage, setCatStorage] = useState(true);
+
+  // Supply Server State (Third Tab)
   const [supply, setSupply] = useState<SupplyStatus | null>(null);
   const [supplyPort, setSupplyPort] = useState(9099);
   const [supplyFormat, setSupplyFormat] = useState('raw');
@@ -46,10 +49,9 @@ export function ExportPage() {
   const [supplyEnabled, setSupplyEnabled] = useState(false);
   const [loadingSupply, setLoadingSupply] = useState(false);
   const [savingSupply, setSavingSupply] = useState(false);
-  const [msg, setMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
-    loadSupplyStatus();
+    void loadSupplyStatus();
   }, []);
 
   const loadSupplyStatus = async () => {
@@ -61,21 +63,20 @@ export function ExportPage() {
       setSupplyPort(st.port);
       setSupplyFormat(st.log_type || 'raw');
       setSupplySource(st.source_id || '');
-    } catch (e) {
+    } catch {
       // silent fallback
     } finally {
       setLoadingSupply(false);
     }
   };
 
-  const handleTabChange = (newTab: 'report' | 'logs' | 'supply') => {
+  const handleTabChange = (newTab: 'logs' | 'report' | 'supply') => {
     setTab(newTab);
     setSearchParams({ tab: newTab, ...(sourceId ? { source: sourceId } : {}) });
   };
 
   const handleSaveSupply = async (overrideEnabled?: boolean) => {
     setSavingSupply(true);
-    setMsg(null);
     try {
       const en = overrideEnabled !== undefined ? overrideEnabled : supplyEnabled;
       const res = await api.configureSupply({
@@ -86,9 +87,16 @@ export function ExportPage() {
       });
       setSupply(res);
       setSupplyEnabled(res.enabled);
-      setMsg({ type: 'ok', text: `Log Supply Stream server ${res.active ? 'ACTIVE on TCP port ' + res.port : 'STOPPED'}.` });
+      window.dispatchEvent(new Event('supply-status-changed'));
+      toast({
+        kind: 'ok',
+        title: res.active ? `Supply Stream Active on TCP :${res.port}` : 'Supply Stream Stopped',
+        body: res.active
+          ? `Broadcasting ${res.log_type} telemetry over TCP port ${res.port}.`
+          : 'The dedicated TCP streaming server was stopped.',
+      });
     } catch (e) {
-      setMsg({ type: 'error', text: errMessage(e) });
+      toast({ kind: 'bad', title: 'Supply configuration failed', body: errMessage(e) });
     } finally {
       setSavingSupply(false);
     }
@@ -102,10 +110,13 @@ export function ExportPage() {
       catNormalized && 'normalized',
       catUsage && 'usage',
       catHistory && 'history',
+      catInsights && 'insights',
+      catTraffic && 'traffic',
+      catStorage && 'storage',
     ].filter(Boolean).join(',');
 
     const url = api.exportReportUrl({
-      format: reportFmt,
+      format: 'pdf',
       source_id: sourceId,
       window_s: windowS,
       categories,
@@ -142,394 +153,297 @@ export function ExportPage() {
       const text = await res.text();
       await navigator.clipboard.writeText(text);
       setCopied(true);
+      toast({ kind: 'ok', title: 'Copied to Clipboard', body: `Preview dataset copied (${Math.min(limit, 200)} logs).` });
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
-      setMsg({ type: 'error', text: 'Failed to copy to clipboard: ' + errMessage(e) });
+      toast({ kind: 'bad', title: 'Failed to copy', body: errMessage(e) });
     } finally {
       setCopying(false);
     }
   };
 
+  const sourceLabel = sourceId || 'All sources';
+  const windowLabel = windowS === 300 ? 'Last 5 minutes' : windowS === 3600 ? 'Last 1 hour' : 'Last 24 hours';
+  const reportSections: { on: boolean; set: (v: boolean) => void; title: string; desc: string }[] = [
+    { on: catKpis, set: setCatKpis, title: 'Performance KPIs', desc: 'Lines, bytes, EPS, bus and worker status' },
+    { on: catSources, set: setCatSources, title: 'Source health', desc: 'Connected sources and connector breakdown' },
+    { on: catSeverity, set: setCatSeverity, title: 'Severity mix', desc: 'INFO, NOTICE, WARN and RISK distribution' },
+    { on: catNormalized, set: setCatNormalized, title: 'OCSF normalization', desc: 'Metrics and pack coverage' },
+    { on: catUsage, set: setCatUsage, title: 'Resource usage', desc: 'System usage and airgap telemetry' },
+    { on: catInsights, set: setCatInsights, title: 'Insights & findings', desc: 'Posture score, findings, ingest, threat and integrity analytics' },
+    { on: catTraffic, set: setCatTraffic, title: 'Traffic analysis', desc: 'Top IPs, ports, users, blocked sources, scan suspects, OCSF classes' },
+    { on: catStorage, set: setCatStorage, title: 'Storage efficiency', desc: 'Compression versus raw and the baseline store' },
+    { on: catHistory, set: setCatHistory, title: 'Approval audit trail', desc: 'Source approval decisions' },
+  ];
+  const sectionCount = reportSections.filter((r) => r.on).length;
+  const datasets: { v: LogExportType; title: string; desc: string }[] = [
+    { v: 'raw', title: 'Raw logs', desc: 'Verbatim lines as ingested' },
+    { v: 'ocsf', title: 'OCSF events', desc: 'Normalized, transformed events' },
+    { v: 'system', title: 'System audit', desc: 'Platform activity trail' },
+  ];
+  const modes: { k: 'logs' | 'report' | 'supply'; icon: JSX.Element; title: string; desc: string }[] = [
+    { k: 'logs', icon: <IconEvents size={16} />, title: 'Log datasets', desc: '' },
+    { k: 'report', icon: <IconExport size={16} />, title: 'System report', desc: '' },
+    { k: 'supply', icon: <IconServer size={16} />, title: 'Supply stream', desc: '' },
+  ];
+
+  const sourceOptions = (allLabel: string) => (
+    <>
+      <option value="">{allLabel}</option>
+      {availableSources.map((s) => (
+        <option key={s} value={s}>{s}</option>
+      ))}
+    </>
+  );
+
   return (
     <div className="stack">
       <PageHead
-        title="Export & Centralized Log Supply"
+        title="Export & Log Supply"
         right={
-          <div className="flex align-center" style={{ gap: 10 }}>
-            <Badge kind={supply?.active ? 'ok' : 'plain'}>
-              {supply?.active ? `Log Supply Stream ACTIVE (: ${supply.port})` : 'Log Supply Stream INACTIVE'}
-            </Badge>
-          </div>
+          <Badge kind={supply?.active ? 'ok' : 'plain'}>
+            {supply?.active ? `Stream active · :${supply.port}` : 'Stream inactive'}
+          </Badge>
         }
       >
-        Export high-level operational system reports, filter & download centralized log datasets, or stream live centralized logs to third-party receivers via a dedicated TCP port.
+        Download log datasets, generate a PDF report, or stream live logs over TCP.
       </PageHead>
 
-      {/* Interactive Navigation Cards */}
-      <div className="provider-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', margin: '0' }}>
-        <button
-          type="button"
-          className={tab === 'report' ? 'provider-card selected' : 'provider-card'}
-          onClick={() => handleTabChange('report')}
-          style={{ padding: 'var(--s4)' }}
-        >
-          <div className="provider-card-header">
-            <div className="provider-card-icon-title">
-              <div className="provider-icon-wrapper local-icon">
-                <IconExport size={20} />
-              </div>
-              <div>
-                <div className="provider-card-title-text">System Reports</div>
-                <div className="hint" style={{ fontSize: '12px' }}>JSON, CSV, MD, HTML</div>
-              </div>
-            </div>
-            {tab === 'report' && <Badge kind="info">Active</Badge>}
-          </div>
-        </button>
-
-        <button
-          type="button"
-          className={tab === 'logs' ? 'provider-card selected' : 'provider-card'}
-          onClick={() => handleTabChange('logs')}
-          style={{ padding: 'var(--s4)' }}
-        >
-          <div className="provider-card-header">
-            <div className="provider-card-icon-title">
-              <div className="provider-icon-wrapper gemini-icon">
-                <IconEvents size={20} />
-              </div>
-              <div>
-                <div className="provider-card-title-text">Log Dataset Exporter</div>
-                <div className="hint" style={{ fontSize: '12px' }}>Raw, OCSF & Audit</div>
-              </div>
-            </div>
-            {tab === 'logs' && <Badge kind="info">Active</Badge>}
-          </div>
-        </button>
-
-        <button
-          type="button"
-          className={tab === 'supply' ? 'provider-card selected' : 'provider-card'}
-          onClick={() => handleTabChange('supply')}
-          style={{ padding: 'var(--s4)' }}
-        >
-          <div className="provider-card-header">
-            <div className="provider-card-icon-title">
-              <div className={`provider-icon-wrapper ${supply?.active ? 'local-icon' : 'none-icon'}`}>
-                <IconServer size={20} />
-              </div>
-              <div>
-                <div className="provider-card-title-text">Supply Stream Server</div>
-                <div className="hint" style={{ fontSize: '12px' }}>{supply?.active ? `Active (: ${supply.port})` : 'Disabled'}</div>
-              </div>
-            </div>
-            {tab === 'supply' && <Badge kind="info">Active</Badge>}
-          </div>
-        </button>
+      <div className="xp-seg" role="tablist" style={{ ['--i' as string]: modes.findIndex((m) => m.k === tab) }}>
+        <span className="xp-seg-thumb" aria-hidden="true" />
+        {modes.map((m) => (
+          <button
+            key={m.k}
+            role="tab"
+            type="button"
+            aria-selected={tab === m.k}
+            className={tab === m.k ? 'on' : ''}
+            onClick={() => handleTabChange(m.k)}
+          >
+            {m.icon} {m.title}
+          </button>
+        ))}
       </div>
 
-      {msg && (
-        <div className={`banner ${msg.type === 'error' ? 'bad' : 'info'}`}>
-          <span>{msg.text}</span>
-        </div>
-      )}
+      <div className="xp-layout">
+        {/* ============ LOGS ============ */}
+        {tab === 'logs' && (
+          <>
+            <div className="xp-main">
+              <section className="xp-card">
+                <h3 className="xp-h">Dataset</h3>
+                <div className="xp-choice">
+                  {datasets.map((d) => (
+                    <button
+                      key={d.v}
+                      type="button"
+                      className={`xp-opt${logType === d.v ? ' on' : ''}`}
+                      onClick={() => setLogType(d.v)}
+                    >
+                      <strong>{d.title}</strong>
+                      <small>{d.desc}</small>
+                    </button>
+                  ))}
+                </div>
+                <label className="field">
+                  <span className="lbl">File format</span>
+                  <select value={logFmt} onChange={(e) => setLogFmt(e.target.value as LogExportFormat)}>
+                    <option value="json">JSON array (.json)</option>
+                    <option value="jsonl">NDJSON stream (.jsonl)</option>
+                    <option value="csv">CSV table (.csv)</option>
+                    <option value="tsv">TSV table (.tsv)</option>
+                    <option value="text">Syslog text lines (.log)</option>
+                    <option value="cef">CEF, Common Event Format (.cef)</option>
+                    <option value="leef">LEEF, Log Event Extended Format (.leef)</option>
+                    <option value="xml">XML document (.xml)</option>
+                  </select>
+                </label>
+              </section>
 
+              <section className="xp-card">
+                <h3 className="xp-h">Filters</h3>
+                <div className="xp-fields">
+                  <label className="field">
+                    <span className="lbl">Source</span>
+                    <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>{sourceOptions('All sources')}</select>
+                  </label>
+                  <label className="field">
+                    <span className="lbl">Severity</span>
+                    <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+                      <option value="">All severities</option>
+                      <option value="info">INFO</option>
+                      <option value="notice">NOTICE</option>
+                      <option value="warn">WARN</option>
+                      <option value="risk">RISK / ERROR</option>
+                    </select>
+                  </label>
+                  <label className="field xp-full">
+                    <span className="lbl">Keyword</span>
+                    <input type="text" placeholder="Only lines containing…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+                  </label>
+                  <label className="field xp-full">
+                    <span className="lbl">Record limit <b className="xp-val">{limit.toLocaleString()}</b></span>
+                    <input type="range" min="50" max="10000" step="50" value={limit} onChange={(e) => setLimit(Number(e.target.value))} />
+                  </label>
+                </div>
+              </section>
+            </div>
 
-      {/* Tab 1: System Report Exporter */}
-      {tab === 'report' && (
-        <Panel title="Generate Operational System Report" subtitle="Download a comprehensive metric report of pipeline stats, log sources, OCSF normalization, and system audit history.">
-          <div className="stack-md" style={{ padding: 'var(--s2) 0' }}>
-            <div className="form-grid">
-              <div className="field">
-                <label className="lbl">Report Format</label>
-                <div className="radio-group">
-                  {(['json', 'csv', 'markdown', 'html'] as ReportFormat[]).map((fmt) => (
-                    <label key={fmt} className={reportFmt === fmt ? 'radio-pill checked' : 'radio-pill'}>
-                      <input
-                        type="radio"
-                        name="reportFmt"
-                        value={fmt}
-                        checked={reportFmt === fmt}
-                        onChange={() => setReportFmt(fmt)}
-                      />
-                      {fmt.toUpperCase()}
+            <aside className="xp-side">
+              <h3 className="xp-h">Summary</h3>
+              <dl className="xp-kv">
+                <dt>Dataset</dt><dd>{datasets.find((d) => d.v === logType)?.title}</dd>
+                <dt>Format</dt><dd>{logFmt.toUpperCase()}</dd>
+                <dt>Source</dt><dd>{sourceLabel}</dd>
+                <dt>Severity</dt><dd>{severity ? severity.toUpperCase() : 'All'}</dd>
+                <dt>Keyword</dt><dd>{searchQuery || 'None'}</dd>
+                <dt>Limit</dt><dd>{limit.toLocaleString()} records</dd>
+              </dl>
+              <div className="xp-btns">
+                <button type="button" className="primary" onClick={handleDownloadLogs}>
+                  <IconExport size={16} /> Download {logFmt.toUpperCase()}
+                </button>
+                <button type="button" onClick={handleCopyLogs} disabled={copying}>
+                  {copying ? <Spinner /> : copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                  {copied ? 'Copied' : 'Copy preview'}
+                </button>
+              </div>
+            </aside>
+          </>
+        )}
+
+        {/* ============ REPORT ============ */}
+        {tab === 'report' && (
+          <>
+            <div className="xp-main">
+              <section className="xp-card">
+                <h3 className="xp-h">Scope</h3>
+                <div className="xp-fields">
+                  <label className="field">
+                    <span className="lbl">Source</span>
+                    <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}>{sourceOptions('All sources')}</select>
+                  </label>
+                  <label className="field">
+                    <span className="lbl">Time window</span>
+                    <select value={windowS} onChange={(e) => setWindowS(Number(e.target.value))}>
+                      <option value={300}>Last 5 minutes</option>
+                      <option value={3600}>Last 1 hour</option>
+                      <option value={86400}>Last 24 hours</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              <section className="xp-card">
+                <h3 className="xp-h">Sections in the PDF <span className="xp-count">{sectionCount}/{reportSections.length} selected</span></h3>
+                <div className="xp-fields">
+                  {reportSections.map((r) => (
+                    <label key={r.title} className={`xp-check${r.on ? ' on' : ''}`}>
+                      <input type="checkbox" checked={r.on} onChange={(e) => r.set(e.target.checked)} />
+                      <span><strong>{r.title}</strong><small>{r.desc}</small></span>
                     </label>
                   ))}
                 </div>
-              </div>
-
-              <div className="field">
-                <label className="lbl">Source Filter</label>
-                <select className="input" value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
-                  <option value="">All Connected Log Sources</option>
-                  {availableSources.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="field">
-                <label className="lbl">Time Range Window</label>
-                <select className="input" value={windowS} onChange={(e) => setWindowS(Number(e.target.value))}>
-                  <option value={300}>Last 5 Minutes</option>
-                  <option value={3600}>Last 1 Hour</option>
-                  <option value={86400}>Last 24 Hours</option>
-                </select>
-              </div>
+              </section>
             </div>
 
-            <div className="panel" style={{ background: 'var(--surface-2)', padding: 'var(--s4)', borderRadius: 'var(--r-xl)' }}>
-              <div className="lbl" style={{ marginBottom: 'var(--s3)', fontSize: '13px', fontWeight: 600 }}>Report Metric Sections to Include</div>
-              <div className="checkbox-grid">
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={catKpis} onChange={(e) => setCatKpis(e.target.checked)} />
-                  System KPIs (EPS, Lines, Bytes, Bus)
-                </label>
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={catSources} onChange={(e) => setCatSources(e.target.checked)} />
-                  Source Health & Connectors Status
-                </label>
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={catSeverity} onChange={(e) => setCatSeverity(e.target.checked)} />
-                  Severity Distribution Breakdown
-                </label>
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={catNormalized} onChange={(e) => setCatNormalized(e.target.checked)} />
-                  OCSF Normalization Metrics
-                </label>
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={catUsage} onChange={(e) => setCatUsage(e.target.checked)} />
-                  System Usage & Airgap Status
-                </label>
-                <label className="checkbox-label">
-                  <input type="checkbox" checked={catHistory} onChange={(e) => setCatHistory(e.target.checked)} />
-                  Source Decision & Audit History
-                </label>
+            <aside className="xp-side">
+              <h3 className="xp-h">Summary</h3>
+              <dl className="xp-kv">
+                <dt>Format</dt><dd>PDF</dd>
+                <dt>Source</dt><dd>{sourceLabel}</dd>
+                <dt>Window</dt><dd>{windowLabel}</dd>
+                <dt>Sections</dt><dd>{sectionCount} of {reportSections.length}</dd>
+              </dl>
+              <div className="xp-btns">
+                <button type="button" className="primary" onClick={handleDownloadReport} disabled={sectionCount === 0}>
+                  <IconExport size={16} /> Download report
+                </button>
               </div>
-            </div>
+            </aside>
+          </>
+        )}
 
-            <div className="modal-actions-right">
-              <button type="button" className="btn primary flex align-center" onClick={handleDownloadReport} style={{ gap: 6 }}>
-                <IconExport size={16} /> Download System Report ({reportFmt.toUpperCase()})
-              </button>
-            </div>
-          </div>
-        </Panel>
-      )}
+        {/* ============ SUPPLY ============ */}
+        {tab === 'supply' && (
+          <>
+            <div className="xp-main">
+              {loadingSupply ? (
+                <section className="xp-card"><Spinner label="Loading supply settings…" /></section>
+              ) : (
+                <>
+                  <section className="xp-card">
+                    <h3 className="xp-h">Stream settings</h3>
+                    <div className="xp-fields">
+                      <label className="field">
+                        <span className="lbl">TCP port</span>
+                        <input type="number" value={supplyPort} onChange={(e) => setSupplyPort(Number(e.target.value))} disabled={supplyEnabled} placeholder="9099" />
+                      </label>
+                      <label className="field">
+                        <span className="lbl">Source</span>
+                        <select value={supplySource} disabled={supplyEnabled} onChange={(e) => setSupplySource(e.target.value)}>{sourceOptions('All sources')}</select>
+                      </label>
+                      <label className="field xp-full">
+                        <span className="lbl">Payload format</span>
+                        <select value={supplyFormat} disabled={supplyEnabled} onChange={(e) => setSupplyFormat(e.target.value)}>
+                          <option value="raw">Raw lines: [source] [SEV] text</option>
+                          <option value="ocsf">OCSF JSON (NDJSON)</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p className="hint xp-p">{supplyEnabled ? 'Settings are locked while the stream is on. Turn it off to edit.' : 'Settings apply when you turn the stream on.'}</p>
+                  </section>
 
-      {/* Tab 2: Logs Exporter */}
-      {tab === 'logs' && (
-        <Panel title="Query & Export Centralized Logs" subtitle="Filter logs by dataset type, severity, source ID, and search terms, then export in your preferred format.">
-          <div className="stack-md" style={{ padding: 'var(--s2) 0' }}>
-            <div className="form-grid">
-              <div className="field">
-                <label className="lbl">Dataset Type</label>
-                <div className="radio-group">
-                  <label className={logType === 'raw' ? 'radio-pill checked' : 'radio-pill'}>
-                    <input type="radio" name="logType" value="raw" checked={logType === 'raw'} onChange={() => setLogType('raw')} />
-                    Raw Verbatim Logs
-                  </label>
-                  <label className={logType === 'ocsf' ? 'radio-pill checked' : 'radio-pill'}>
-                    <input type="radio" name="logType" value="ocsf" checked={logType === 'ocsf'} onChange={() => setLogType('ocsf')} />
-                    Transformed OCSF Events
-                  </label>
-                  <label className={logType === 'system' ? 'radio-pill checked' : 'radio-pill'}>
-                    <input type="radio" name="logType" value="system" checked={logType === 'system'} onChange={() => setLogType('system')} />
-                    System Audit Logs
-                  </label>
-                </div>
-              </div>
-
-              <div className="field">
-                <label className="lbl">Output Format</label>
-                <div className="radio-group">
-                  {(['json', 'jsonl', 'csv', 'text'] as LogExportFormat[]).map((fmt) => (
-                    <label key={fmt} className={logFmt === fmt ? 'radio-pill checked' : 'radio-pill'}>
-                      <input type="radio" name="logFmt" value={fmt} checked={logFmt === fmt} onChange={() => setLogFmt(fmt)} />
-                      {fmt === 'jsonl' ? 'NDJSON (JSONL)' : fmt === 'text' ? 'Syslog / Text' : fmt.toUpperCase()}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="field">
-                <label className="lbl">Source Filter</label>
-                <select className="input" value={sourceId} onChange={(e) => setSourceId(e.target.value)}>
-                  <option value="">All Sources</option>
-                  {availableSources.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="field">
-                <label className="lbl">Severity / Level</label>
-                <select className="input" value={severity} onChange={(e) => setSeverity(e.target.value)}>
-                  <option value="">All Severities</option>
-                  <option value="info">INFO</option>
-                  <option value="notice">NOTICE</option>
-                  <option value="warn">WARN</option>
-                  <option value="risk">RISK / ERROR</option>
-                </select>
-              </div>
-
-              <div className="field">
-                <label className="lbl">Search Term / Keyword</label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="Filter lines containing keyword..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-
-              <div className="field">
-                <label className="lbl">Record Limit ({limit.toLocaleString()} logs)</label>
-                <input
-                  type="range"
-                  min="50"
-                  max="10000"
-                  step="50"
-                  value={limit}
-                  onChange={(e) => setLimit(Number(e.target.value))}
-                  style={{ width: '100%', marginTop: '8px' }}
-                />
-              </div>
-            </div>
-
-            <div className="modal-actions-right" style={{ gap: 10 }}>
-              <button type="button" className="btn secondary flex align-center" onClick={handleCopyLogs} disabled={copying} style={{ gap: 6 }}>
-                {copying ? <Spinner /> : copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
-                {copied ? 'Copied to Clipboard!' : 'Copy Preview'}
-              </button>
-              <button type="button" className="btn primary flex align-center" onClick={handleDownloadLogs} style={{ gap: 6 }}>
-                <IconExport size={16} /> Download Filtered Logs ({logFmt.toUpperCase()})
-              </button>
-            </div>
-          </div>
-        </Panel>
-      )}
-
-      {/* Tab 3: Supply Log Stream Server */}
-      {tab === 'supply' && (
-        <Panel title="Centralized Log Supply Streaming Server" subtitle="Supply live log streams to external receivers, SIEMs, or local socket consumers over a dedicated TCP port.">
-          <div className="stack-md" style={{ padding: 'var(--s2) 0' }}>
-            {loadingSupply ? (
-              <div className="flex center p-md"><Spinner label="Loading supply server settings..." /></div>
-            ) : (
-              <>
-                <div className="form-grid">
-                  <div className="field">
-                    <label className="lbl">Server Operational State</label>
-                    <div className="flex align-center" style={{ gap: 12 }}>
+                  <section className="xp-card">
+                    <h3 className="xp-h"><IconTerminal size={16} /> Connect a receiver</h3>
+                    <p className="hint xp-p">Run this in any terminal to read the live feed.</p>
+                    <div className="xp-cmd">
+                      <code className="mono grow">nc 127.0.0.1 {supplyPort}</code>
                       <button
                         type="button"
-                        className={supplyEnabled ? 'btn bad' : 'btn primary'}
+                        className="ghost icon"
                         onClick={() => {
-                          const next = !supplyEnabled;
-                          setSupplyEnabled(next);
-                          handleSaveSupply(next);
+                          void navigator.clipboard.writeText(`nc 127.0.0.1 ${supplyPort}`);
+                          toast({ kind: 'ok', title: 'Command copied', body: `nc 127.0.0.1 ${supplyPort}` });
                         }}
-                        disabled={savingSupply}
+                        title="Copy command"
                       >
-                        {savingSupply ? <Spinner /> : supplyEnabled ? 'Turn OFF Supply Server' : 'Turn ON Supply Server'}
+                        <IconCopy size={16} />
                       </button>
-                      <Badge kind={supply?.active ? 'ok' : 'plain'}>
-                        {supply?.active ? `ACTIVE on TCP :${supply.port}` : 'INACTIVE'}
-                      </Badge>
                     </div>
-                  </div>
+                  </section>
+                </>
+              )}
+            </div>
 
-                  <div className="field">
-                    <label className="lbl">Streaming TCP Port</label>
-                    <input
-                      type="number"
-                      className="input"
-                      value={supplyPort}
-                      onChange={(e) => setSupplyPort(Number(e.target.value))}
-                      placeholder="9099"
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label className="lbl">Stream Payload Format</label>
-                    <select className="input" value={supplyFormat} onChange={(e) => setSupplyFormat(e.target.value)}>
-                      <option value="raw">Raw Line Stream ([source] [SEV] text)</option>
-                      <option value="ocsf">OCSF JSON Stream (NDJSON)</option>
-                    </select>
-                  </div>
-
-                  <div className="field">
-                    <label className="lbl">Filter Source</label>
-                    <select className="input" value={supplySource} onChange={(e) => setSupplySource(e.target.value)}>
-                      <option value="">All Ingested Log Sources</option>
-                      {availableSources.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="modal-actions-right">
-                  <button type="button" className="btn secondary" onClick={() => handleSaveSupply()} disabled={savingSupply}>
-                    {savingSupply ? <Spinner /> : 'Save & Update Supply Settings'}
-                  </button>
-                </div>
-
-                {/* Operational Metrics Grid */}
-                <div className="panel" style={{ background: 'var(--surface-2)', padding: 'var(--s4)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border-soft)' }}>
-                  <div className="panel-title" style={{ fontSize: '0.9rem', marginBottom: 12 }}>
-                    Live Supply Server Metrics
-                  </div>
-                  <div className="grid-3">
-                    <div className="kpi-sm">
-                      <div className="k-label">Active Receivers</div>
-                      <div className="k-value" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--accent)' }}>
-                        {supply?.clients_count ?? 0} clients
-                      </div>
-                    </div>
-                    <div className="kpi-sm">
-                      <div className="k-label">Lines Broadcasted</div>
-                      <div className="k-value" style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--ok)' }}>
-                        {(supply?.lines_sent ?? 0).toLocaleString()} lines
-                      </div>
-                    </div>
-                    <div className="kpi-sm">
-                      <div className="k-label">Total Data Sent</div>
-                      <div className="k-value" style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                        {((supply?.bytes_sent ?? 0) / 1024).toFixed(1)} KB
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Terminal Connection Receiver Helper */}
-                <div className="panel" style={{ background: 'var(--surface-2)', padding: 'var(--s4)', borderRadius: 'var(--r-xl)', border: '1px solid var(--border-soft)' }}>
-                  <div className="lbl" style={{ marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <IconTerminal size={16} /> External Receiver Terminal Command
-                  </div>
-                  <p className="hint" style={{ fontSize: '0.85rem', marginBottom: 8 }}>
-                    Receive live centralized logs directly from any terminal, local script, or external container:
-                  </p>
-                  <div className="code-box flex align-center justify-between" style={{ background: '#090d16', padding: '10px 14px', borderRadius: 6, color: '#38bdf8', fontFamily: 'monospace' }}>
-                    <code>nc 127.0.0.1 {supplyPort}</code>
-                    <button
-                      type="button"
-                      className="ghost icon flex align-center"
-                      onClick={() => navigator.clipboard.writeText(`nc 127.0.0.1 ${supplyPort}`)}
-                      title="Copy connection command"
-                      style={{ color: '#ffffff' }}
-                    >
-                      <IconCopy size={14} />
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </Panel>
-      )}
+            <aside className="xp-side">
+              <h3 className="xp-h">Server</h3>
+              <div className="xp-status">
+                <Badge kind={supply?.active ? 'ok' : 'plain'}>{supply?.active ? `Active :${supply.port}` : 'Inactive'}</Badge>
+              </div>
+              <div className="xp-btns">
+                <button
+                  type="button"
+                  className={supplyEnabled ? '' : 'primary'}
+                  onClick={() => {
+                    const next = !supplyEnabled;
+                    setSupplyEnabled(next);
+                    void handleSaveSupply(next);
+                  }}
+                  disabled={savingSupply}
+                >
+                  {savingSupply ? 'Saving…' : supplyEnabled ? 'Turn off stream' : 'Turn on stream'}
+                </button>
+              </div>
+              <dl className="xp-kv">
+                <dt>Clients</dt><dd>{supply?.clients_count ?? 0}</dd>
+                <dt>Lines sent</dt><dd>{(supply?.lines_sent ?? 0).toLocaleString()}</dd>
+                <dt>Data sent</dt><dd>{((supply?.bytes_sent ?? 0) / 1024).toFixed(1)} KB</dd>
+              </dl>
+            </aside>
+          </>
+        )}
+      </div>
     </div>
   );
 }

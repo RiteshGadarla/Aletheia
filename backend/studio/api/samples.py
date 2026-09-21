@@ -41,7 +41,7 @@ SAMPLES: dict[str, dict[str, Any]] = {
     "defense": {"category": "Critical", "purpose": "Fictional military command network: classified-access, crypto-tamper and enclave-breach alerts, always high stakes.",
                 "title": "Defense command network", "format": "CEF (SentinelDef)", "transport": "TCP stream", "ctl": 9210, "port": 9110,
                 "preset": {"id": "defense-net", "type": "tcp", "config": {"host": HOST, "port": "9110"}}},
-    "llm": {"category": "AI & ML Workloads", "purpose": "Distributed LLM training cluster (LLaMA-70B, DeepSeek-V3): GPU utilization, loss/perplexity telemetry, CUDA OOM warnings and gradient overflow alerts.",
+    "llm": {"category": "AI & ML Workloads", "purpose": "Fictional distributed LLM training cluster: GPU utilization, loss/perplexity telemetry, CUDA OOM warnings and gradient overflow alerts.",
             "title": "LLM Cluster Trainer", "format": "JSON Telemetry", "transport": "TCP stream", "ctl": 9211, "port": 9111,
             "preset": {"id": "llm-cluster", "type": "tcp", "config": {"host": HOST, "port": "9111"}}},
 }
@@ -116,6 +116,21 @@ def stop_sample(sid: str) -> dict[str, Any]:
     except subprocess.TimeoutExpired:
         p.kill()
     return _view(sid)
+
+
+@router.get("/demo/samples/{sid}/logs")
+def sample_logs(sid: str, after: int = -1, tail: int = 30) -> dict[str, Any]:
+    """Recent lines from a running generator. after<0 starts at the last `tail` lines; else lines after that cursor."""
+    s = _known(sid)
+    try:
+        if after < 0:
+            seq = httpx.get(f"http://{HOST}:{s['ctl']}/stats", timeout=1).json().get("seq", 0)
+            after = max(seq - min(max(tail, 1), 200), 0)
+        r = httpx.get(f"http://{HOST}:{s['ctl']}/logs", params={"after": after, "limit": 200}, timeout=2)
+        r.raise_for_status()
+        return r.json()
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(409, "sample is not running") from e
 
 
 class SampleControl(BaseModel):

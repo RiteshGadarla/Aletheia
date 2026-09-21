@@ -315,7 +315,7 @@ def defense(seed: int):
 
 
 # ------------------------------------------------------------------ LLM cluster trainer mock
-_LLM_MODELS = ["LLaMA-3-70B-Instruct", "DeepSeek-V3-Base", "Qwen2.5-Coder-32B", "Gemma-2-27B-IT", "Mistral-Large-2"]
+_LLM_MODELS = ["Model-70B-Instruct", "Model-V3-Base", "Coder-32B-IT", "Dense-27B-Base", "Large-Model-v2"]
 _LLM_NODES = ["gpu-node-01", "gpu-node-02", "gpu-node-03", "gpu-node-04", "gpu-node-05", "gpu-node-06", "gpu-node-07", "gpu-node-08"]
 
 

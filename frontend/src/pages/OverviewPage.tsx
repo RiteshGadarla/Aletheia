@@ -1,4 +1,4 @@
-// Overview: live ingest stats. Polls the Studio API; every chart has a table fallback and legend.
+// Overview: live ingest, threat signals, normalization, traffic, storage and governance in one consistent grid.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../components/Bits';
@@ -6,28 +6,19 @@ import { api } from '../lib/api';
 import { useAsync } from '../lib/useAsync';
 import type { Overview } from '../lib/types';
 import { IconExport } from '../components/Icons';
-
+import {
+  Donut, Finding, Gauge, Heatmap, Kpi, RankBars, Section, Timeline, actionName, bytesFmt, className, dur, findings, ocsfSevName,
+} from '../components/Insights';
 
 const SEVS = ['info', 'notice', 'warn', 'risk'] as const;
 const SEV_VAR: Record<string, string> = {
   info: 'var(--sev-info)', notice: 'var(--sev-notice)', warn: 'var(--sev-warn)', risk: 'var(--sev-risk)',
 };
 const int = (n: number) => n.toLocaleString();
-const bytes = (n: number) => {
-  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let i = 0; let v = n;
-  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-  return `${v >= 100 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
-};
 const ago = (t: number) => {
   const s = Math.max(0, Math.round(Date.now() / 1000 - t));
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
 };
-
-function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return <div className="kpi"><div className="k-label">{label}</div><div className="k-value">{value}</div>{sub && <div className="k-sub">{sub}</div>}</div>;
-}
-
 const niceMax = (v: number) => {
   if (v <= 1) return 1;
   const p = 10 ** Math.floor(Math.log10(v));
@@ -77,15 +68,14 @@ function RateChart({ series, bucketS }: { series: number[]; bucketS: number }) {
   );
 }
 
-function SeverityLegend() {
-  return <div className="legend" aria-label="Severity legend">{SEVS.map((s) => <span key={s}><i style={{ background: SEV_VAR[s] }} />{s}</span>)}</div>;
-}
-
 function SeverityBars({ rows }: { rows: Overview['sources'] }) {
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   const max = Math.max(...rows.map((r) => r.lines), 1);
   return (
     <div className="chart" onMouseLeave={() => setTip(null)}>
+      <div className="legend" aria-label="Severity legend" style={{ marginBottom: 'var(--s3)' }}>
+        {SEVS.map((s) => <span key={s}><i style={{ background: SEV_VAR[s] }} />{s}</span>)}
+      </div>
       {rows.map((r) => (
         <div className="sbar-row" key={r.id}>
           <span className="truncate" title={r.id}>{r.id}</span>
@@ -112,24 +102,22 @@ function Spark({ v }: { v: number[] }) {
   return <svg viewBox="0 0 100 24" width="100" height="24" aria-hidden="true"><path d={d} fill="none" stroke="var(--sev-info)" strokeWidth="1.5" /></svg>;
 }
 
+function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'plain'; children: React.ReactNode }) {
+  return <span className={`pill p-${tone}`}><i />{children}</span>;
+}
+
 export function OverviewPage() {
   const q = useAsync(() => api.overview(), []);
   const { reload } = q;
   useEffect(() => { const t = setInterval(reload, 3000); return () => clearInterval(t); }, [reload]);
   const d = q.data;
-  const k = d?.kpis;
-  const total = d ? Object.values(d.by_severity).reduce((a, b) => a + b, 0) : 0;
 
   return (
     <div className="stack">
       <PageHead
         title="Overview"
         right={
-          <Link
-            to="/dashboard/export?tab=report"
-            className="btn secondary sm flex align-center"
-            style={{ gap: 4 }}
-          >
+          <Link to="/dashboard/export?tab=report" className="btn secondary sm flex align-center" style={{ gap: 4 }}>
             <IconExport size={14} /> Export Report & Logs
           </Link>
         }
@@ -137,62 +125,190 @@ export function OverviewPage() {
         Live ingest across every connected source. Updates every 3 seconds.
       </PageHead>
 
-
       {q.error && <ErrorState error={q.error} what="stats" />}
       {q.loading && !d && <Spinner label="Loading stats" />}
-      {d && k && (
-        <>
-          <div className="kpis">
-            <Kpi label="Lines stored" value={int(k.lines)} sub={bytes(k.bytes)} />
-            <Kpi label="Ingest rate" value={`${k.eps}/s`} sub={`${int(k.buffered)} buffered`} />
-            <Kpi label="Sources online" value={`${k.connected}/${k.sources}`} sub={`${k.errors} connection error${k.errors === 1 ? '' : 's'}`} />
-            <Kpi label="Awaiting approval" value={int(k.in_review)} sub={`${k.approved} approved · ${k.rejected} rejected`} />
-            <Kpi label="Risk share" value={`${k.risk_pct}%`} sub={`${int(d.by_severity.risk ?? 0)} risk lines`} />
-            <Kpi label="Packs approved" value={int(k.packs)} sub={`${int(k.forwarded)} lines sent to bus`} />
-          </div>
+      {d && <Body d={d} />}
+    </div>
+  );
+}
 
-          {d.sources.length === 0 ? (
-            <EmptyState title="Nothing ingesting yet">
-              Start a sample server on the <Link to="/dashboard/demo">Demo</Link> page, or add a source on <Link to="/dashboard/sources">Sources</Link>.
-            </EmptyState>
-          ) : (
-            <div className="viz-grid">
-              <Panel title="Lines per second" subtitle="all sources, last 5 minutes">
-                <RateChart series={d.series} bucketS={d.bucket_s} />
+function Body({ d }: { d: Overview }) {
+  const k = d.kpis; const ins = d.insights; const ch = ins.ch;
+  const disk = ch.disk?.events; const base = ch.disk?.baseline_events; const u = ch.unique; const lag = ch.lag;
+  const reduction = disk && disk.compressed > 0 && k.bytes > 0 ? +(k.bytes / disk.compressed).toFixed(1) : null;
+  const vsBase = disk && base && base.compressed > 0 && disk.compressed > 0 ? Math.round((1 - disk.compressed / base.compressed) * 100) : null;
+  const total = Object.values(d.by_severity).reduce((a, b) => a + b, 0);
+  const fnd = findings(d);
+  const nm = d.normalized;
+  const hasData = d.sources.length > 0;
+  const denied = lag?.denied ?? 0;
+  const perEvent = disk && disk.rows > 0 ? Math.round(disk.compressed / disk.rows) : null;
+
+  return (
+    <>
+      <div className="ov-status" aria-label="System status">
+        <Pill tone={k.errors ? 'warn' : 'ok'}>{k.connected}/{k.sources} sources online</Pill>
+        <Pill tone={ch.available ? 'ok' : 'bad'}>Event DB {ch.available ? 'reachable' : 'down'}</Pill>
+        <Pill tone={d.bus ? 'ok' : 'plain'}>Bus {d.bus ? 'forwarding' : 'off'}</Pill>
+        <Pill tone="plain">Store: {d.store}</Pill>
+        <Pill tone={ins.freshness_s === null ? 'plain' : ins.freshness_s > 60 ? 'warn' : 'ok'}>Last line {ins.freshness_s === null ? '—' : `${dur(ins.freshness_s)} ago`}</Pill>
+        {ins.spike && <Pill tone="warn">Ingest spike</Pill>}
+      </div>
+
+      <Section id="glance" title="At a glance" desc="One score, and the findings behind it, written from the live numbers.">
+        <div className="hero">
+          <Panel title="Posture score" subtitle="onboarding · health · risk">
+            <Gauge value={ins.posture} label={ins.posture >= 80 ? 'healthy' : ins.posture >= 55 ? 'attention' : 'at risk'} />
+            <div className="hint" style={{ textAlign: 'center' }}>{ins.onboarded_pct}% onboarded · {ins.health_pct}% connected</div>
+          </Panel>
+          <Panel title="Key findings" subtitle="auto-generated">
+            <ul className="findings">
+              {fnd.map((f: Finding) => <li key={f.title} className={`f-${f.tone}`}><b>{f.title}</b><span>{f.body}</span></li>)}
+              {fnd.length === 0 && <li className="f-info"><b>Waiting for data</b><span>Start a sample server on the Demo page to see findings.</span></li>}
+            </ul>
+          </Panel>
+        </div>
+      </Section>
+
+      {!hasData ? (
+        <EmptyState title="Nothing ingesting yet">
+          Start a sample server on the <Link to="/dashboard/demo">Demo</Link> page, or add a source on <Link to="/dashboard/sources">Sources</Link>.
+        </EmptyState>
+      ) : (
+        <>
+          <Section id="ingest" title="Ingest" desc="How much is arriving, how fast, and which sources are driving it.">
+            <div className="kpis">
+              <Kpi label="Lines stored" value={int(k.lines)} sub={bytesFmt(k.bytes)} />
+              <Kpi label="Ingest rate" value={`${k.eps}/s`} sub={`1-min avg ${ins.eps_min}/s`} trend={ins.trend_pct} />
+              <Kpi label="Peak rate" value={`${ins.peak_eps}/s`} sub={`5-min mean ${ins.mean_eps}/s`} />
+              <Kpi label="Burst score" value={`${ins.z >= 0 ? '+' : ''}${ins.z}σ`} sub={ins.spike ? 'spike in progress' : 'traffic steady'} tone={ins.spike ? 'warn' : undefined} />
+              <Kpi label="Projected per day" value={int(ins.proj_day_lines)} sub={`${bytesFmt(ins.proj_day_bytes)} raw at this rate`} />
+              <Kpi label="Avg line size" value={`${ins.bytes_per_line} B`} sub={`${int(k.buffered)} buffered`} />
+            </div>
+            <div className="cards c2">
+              <Panel title="Lines per second" subtitle="all sources, last 5 minutes"><RateChart series={d.series} bucketS={d.bucket_s} /></Panel>
+              <Panel title="Source activity" subtitle="per-source heatmap, last 5 minutes"><Heatmap rows={d.sources} /></Panel>
+            </div>
+            <div className="cards c2">
+              <Panel title="Severity by source" subtitle={`${int(total)} lines`}><SeverityBars rows={d.sources} /></Panel>
+              <Panel title="Share of volume" subtitle="top sources"><Donut rows={ins.share.map((r) => ({ label: String(r.k), n: r.n }))} /></Panel>
+            </div>
+          </Section>
+
+          <Section id="threat" title="Threat signals" desc="Risk-severity lines, denied traffic and behaviours that look like reconnaissance.">
+            <div className="kpis">
+              <Kpi label="Risk share" value={`${k.risk_pct}%`} sub={`${int(d.by_severity.risk ?? 0)} risk lines`} tone={k.risk_pct >= 20 ? 'bad' : k.risk_pct >= 5 ? 'warn' : 'ok'} />
+              <Kpi label="Warn + risk" value={`${ins.warn_pct}%`} sub="of all lines" />
+              <Kpi label="Denied traffic" value={ch.available ? int(denied) : '—'} sub={ch.available && nm.total ? `${Math.round((denied / nm.total) * 100)}% of events` : 'needs event DB'} />
+              <Kpi label="Port-scan suspects" value={ch.available ? int(ch.scanners?.length ?? 0) : '—'} sub="≥5 distinct ports from one IP" tone={(ch.scanners?.length ?? 0) > 0 ? 'warn' : undefined} />
+              <Kpi label="Fan-out sources" value={ch.available ? int(ch.fanout?.length ?? 0) : '—'} sub="≥3 distinct destinations" />
+              <Kpi label="Pipeline errors" value={int(k.errors)} sub={`${ins.error_rate}% of lines`} tone={k.errors ? 'bad' : 'ok'} />
+            </div>
+            <div className="cards c3">
+              <Panel title="Severity mix"><Donut rows={SEVS.map((s) => ({ label: s, n: d.by_severity[s] ?? 0 }))} center={`${k.risk_pct}%`} /></Panel>
+              <Panel title="Risk leaderboard" subtitle="% risk lines per source">
+                <RankBars rows={ins.risk_rank.map((r) => ({ k: r.id, n: r.pct }))} color="var(--sev-risk)" empty="No risk-severity lines" />
               </Panel>
-              <Panel title="Severity by source" subtitle={`${int(total)} lines`}>
-                <div style={{ marginBottom: 'var(--s3)' }}><SeverityLegend /></div>
-                <SeverityBars rows={d.sources} />
+              <Panel title="Most blocked sources" subtitle="denied events"><RankBars rows={ch.top_denied ?? []} color="var(--sev-warn)" empty={ch.available ? 'No denied traffic' : 'Needs the event DB'} /></Panel>
+            </div>
+            <div className="cards c2">
+              <Panel title="Port-scan suspects" subtitle="distinct destination ports per source IP"><RankBars rows={ch.scanners ?? []} color="var(--sev-risk)" empty="No scanning behaviour detected" /></Panel>
+              <Panel title="Widest fan-out" subtitle="distinct destination IPs per source IP"><RankBars rows={ch.fanout ?? []} color="var(--sev-notice)" empty="No fan-out detected" /></Panel>
+            </div>
+          </Section>
+
+          <Section id="normalize" title="Normalization & integrity" desc="How much of the stream is understood as OCSF, and proof that it has not been altered.">
+            <div className="kpis">
+              <Kpi label="Events normalized" value={ch.available ? `${nm.normalized_pct ?? 0}%` : '—'} sub={`${int(nm.raw_only ?? 0)} raw only`} tone={(nm.normalized_pct ?? 100) < 90 ? 'warn' : 'ok'} />
+              <Kpi label="Templates" value={int(nm.templates ?? 0)} sub={nm.total && nm.templates ? `${int(Math.round(nm.total / nm.templates))} events / template` : undefined} />
+              <Kpi label="Avg fields / event" value={lag ? String(lag.avg_vars) : '—'} sub="variables extracted" />
+              <Kpi label="Tamper-evident" value={u && u.n ? `${Math.round((u.hashed / u.n) * 100)}%` : '—'} sub="events with SHA-256" />
+              <Kpi label="Merkle batches" value={u ? int(u.mb) : '—'} sub="sealed batches" />
+              <Kpi label="Ingest lag" value={lag && lag.good ? `${lag.avg_ms} ms` : '—'} sub={lag ? (lag.good ? `p95 ${lag.p95_ms} ms` : 'no usable timestamps') : undefined} />
+              <Kpi label="Clock-skewed events" value={lag ? int(lag.skewed) : '—'} sub="log time ≠ arrival time" tone={lag && lag.skewed ? 'warn' : undefined} />
+            </div>
+            <div className="cards c3">
+              <Panel title="Parse quality"><Donut center={`${nm.normalized_pct ?? 0}%`} rows={[
+                { label: 'Full', n: nm.full ?? 0 }, { label: 'Partial', n: nm.partial ?? 0 }, { label: 'Raw only', n: nm.raw_only ?? 0 }]} /></Panel>
+              <Panel title="OCSF classes"><RankBars rows={ch.classes ?? []} fmt={(x) => className(Number(x))} color="var(--ok)" /></Panel>
+              <Panel title="Busiest templates"><RankBars rows={ch.top_templates ?? []} color="var(--sev-info)" /></Panel>
+            </div>
+          </Section>
+
+          <Section id="traffic" title="Traffic" desc="Who is talking to whom, on what, and what the firewall did about it.">
+            <div className="kpis">
+              <Kpi label="Unique source IPs" value={u ? int(u.si) : '—'} />
+              <Kpi label="Unique destinations" value={u ? int(u.di) : '—'} />
+              <Kpi label="Users seen" value={u ? int(u.us) : '—'} />
+              <Kpi label="Events (DB)" value={ch.available ? int(nm.total ?? 0) : '—'} sub={ch.available && lag ? `since ${new Date(lag.first * 1000).toLocaleTimeString()}` : undefined} />
+            </div>
+            <div className="cards c3">
+              <Panel title="Top source IPs"><RankBars rows={ch.top_src ?? []} /></Panel>
+              <Panel title="Top destination IPs"><RankBars rows={ch.top_dst ?? []} color="var(--sev-notice)" /></Panel>
+              <Panel title="Top destination ports"><RankBars rows={ch.top_ports ?? []} color="var(--sev-warn)" /></Panel>
+            </div>
+            <div className="cards c2">
+              <Panel title="Firewall action"><Donut rows={(ch.actions ?? []).map((a) => ({ label: actionName(Number(a.k)), n: a.n }))} /></Panel>
+              <Panel title="Protocols"><Donut rows={(ch.protocols ?? []).map((a) => ({ label: String(a.k), n: a.n }))} /></Panel>
+            </div>
+            <div className="cards c2">
+              <Panel title="Top users"><RankBars rows={ch.top_users ?? []} empty="No user fields in these logs" /></Panel>
+              <Panel title="OCSF severity"><Donut rows={(ch.ocsf_sev ?? []).map((a) => ({ label: ocsfSevName(Number(a.k)), n: a.n }))} /></Panel>
+            </div>
+            <div className="cards c2">
+              <Panel title="Event volume" subtitle="per minute, last hour · red = high/critical"><Timeline rows={ch.timeline ?? []} /></Panel>
+              <Panel title="Event volume" subtitle="per hour, last 24 hours · red = high/critical"><Timeline rows={ch.hours ?? []} left="-24 h" unit="hour" /></Panel>
+            </div>
+          </Section>
+
+          <Section id="storage" title="Storage efficiency" desc="What it costs to keep every event, compared with a conventional raw + JSON store.">
+            <div className="kpis">
+              <Kpi label="Reduction vs raw" value={reduction ? `${reduction}×` : '—'} sub={disk ? `${bytesFmt(disk.compressed)} on disk` : undefined} tone={reduction && reduction > 1 ? 'ok' : undefined} />
+              <Kpi label="Smaller than baseline" value={vsBase !== null ? `${vsBase}%` : '—'} sub="raw + JSON store" tone={vsBase !== null && vsBase > 0 ? 'ok' : undefined} />
+              <Kpi label="Bytes per event" value={perEvent !== null ? `${perEvent} B` : '—'} sub="on disk, compressed" />
+              <Kpi label="Space saved" value={disk && k.bytes > disk.compressed ? bytesFmt(k.bytes - disk.compressed) : '—'} sub="versus raw lines" />
+              <Kpi label="Storage mode" value={ch.modes ? `${Math.round(100 * (ch.modes.template ?? 0) / Math.max(1, (ch.modes.template ?? 0) + (ch.modes.verbatim ?? 0)))}%` : '—'} sub="stored as template + vars" />
+            </div>
+            <div className="cards c1">
+              <Panel title="On-disk size" subtitle="smaller is better">
+                {disk ? (
+                  <>
+                    <RankBars color="var(--ok)" rows={[
+                      { k: 'Raw log lines', n: k.bytes },
+                      ...(base ? [{ k: 'Baseline (raw + JSON)', n: base.compressed }] : []),
+                      { k: 'Aletheia events', n: disk.compressed }]} />
+                    <p className="hint">Bytes: {bytesFmt(k.bytes)} raw{base ? ` · ${bytesFmt(base.compressed)} baseline` : ''} · {bytesFmt(disk.compressed)} Aletheia.</p>
+                  </>
+                ) : <p className="hint">The event database is not reachable.</p>}
               </Panel>
             </div>
-          )}
+          </Section>
 
-          <div className="viz-grid">
-            <Panel title="Source health" flush>
-              <div className="table-scroll"><table className="data">
-                <thead><tr><th>Source</th><th>Connection</th><th>Onboarding</th><th>/s</th><th>Last 5 min</th><th>Last seen</th></tr></thead>
-                <tbody>
-                  {d.sources.map((s) => (
-                    <tr key={s.id}>
-                      <td><Link to="/dashboard/sources">{s.id}</Link></td>
-                      <td><Badge kind={s.status === 'connected' ? 'ok' : s.status === 'passive' ? 'plain' : 'warn'} title={s.error}>{s.enabled ? s.status : 'paused'}</Badge></td>
-                      <td><Badge kind={s.state === 'approved' ? 'ok' : s.state === 'review' ? 'warn' : s.state === 'rejected' ? 'bad' : 'plain'}>{s.state}</Badge></td>
-                      <td className="mono">{s.eps}</td><td><Spark v={s.spark} /></td>
-                      <td className="hint">{s.last_seen ? ago(s.last_seen) : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-            </Panel>
-            <div className="stack">
-              <Panel title="Normalized events" subtitle="ClickHouse">
-                {d.normalized.available ? (
-                  <div className="kpis">
-                    <Kpi label="Events" value={int(d.normalized.total ?? 0)} />
-                    <Kpi label="Normalized" value={`${d.normalized.normalized_pct}%`} sub={`${int(d.normalized.raw_only ?? 0)} raw only`} />
-                    <Kpi label="Templates" value={int(d.normalized.templates ?? 0)} />
-                  </div>
-                ) : <p className="hint">The event database is not reachable. Raw lines are still being stored.</p>}
+          <Section id="sources" title="Sources & governance" desc="Connection health, onboarding state and who approved what.">
+            <div className="kpis">
+              <Kpi label="Sources online" value={`${k.connected}/${k.sources}`} sub={`${ins.stale} quiet`} tone={ins.stale ? 'warn' : 'ok'} />
+              <Kpi label="Awaiting approval" value={int(k.in_review)} tone={k.in_review ? 'warn' : undefined} />
+              <Kpi label="Approved" value={int(k.approved)} sub={`${k.rejected} rejected`} />
+              <Kpi label="Packs approved" value={int(k.packs)} sub={`${int(k.forwarded)} lines sent to bus`} />
+              <Kpi label="Mean time to approve" value={dur(ins.mean_approval_s)} sub="source created → approved" />
+              <Kpi label="Freshness" value={ins.freshness_s === null ? '—' : dur(ins.freshness_s)} sub="since the last line" />
+            </div>
+            <div className="cards c2">
+              <Panel title="Source health" flush>
+                <div className="table-scroll"><table className="data">
+                  <thead><tr><th>Source</th><th>Connection</th><th>Onboarding</th><th>/s</th><th>Last 5 min</th><th>Last seen</th></tr></thead>
+                  <tbody>
+                    {d.sources.map((s) => (
+                      <tr key={s.id}>
+                        <td><Link to="/dashboard/sources">{s.id}</Link></td>
+                        <td><Badge kind={s.status === 'connected' ? 'ok' : s.status === 'passive' ? 'plain' : 'warn'} title={s.error}>{s.enabled ? s.status : 'paused'}</Badge></td>
+                        <td><Badge kind={s.state === 'approved' ? 'ok' : s.state === 'review' ? 'warn' : s.state === 'rejected' ? 'bad' : 'plain'}>{s.state}</Badge></td>
+                        <td className="mono">{s.eps}</td><td><Spark v={s.spark} /></td>
+                        <td className="hint">{s.last_seen ? ago(s.last_seen) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table></div>
               </Panel>
               <Panel title="Recent decisions">
                 {d.history.length === 0 ? <p className="hint">No approvals yet. Open a source in review on <Link to="/dashboard/sources">Sources</Link>.</p> : (
@@ -207,19 +323,9 @@ export function OverviewPage() {
                 )}
               </Panel>
             </div>
-          </div>
-
-          <details>
-            <summary className="hint">Show chart data as a table</summary>
-            <div className="table-scroll"><table className="data">
-              <thead><tr><th>Source</th>{SEVS.map((s) => <th key={s}>{s}</th>)}<th>Total</th></tr></thead>
-              <tbody>{d.sources.map((r) => (
-                <tr key={r.id}><td>{r.id}</td>{SEVS.map((s) => <td key={s} className="mono">{int(r.by_severity[s] ?? 0)}</td>)}<td className="mono">{int(r.lines)}</td></tr>
-              ))}</tbody>
-            </table></div>
-          </details>
+          </Section>
         </>
       )}
-    </div>
+    </>
   );
 }

@@ -71,14 +71,15 @@ def test_db_beats_env(state, monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.source["provider"] == "db"
 
 
-def test_key_file_is_read_when_no_env_key_is_set(state, tmp_path, monkeypatch) -> None:
-    """ALETHEIA_LLM_API_KEY_FILE is the env-side key source Docker secrets use."""
+def test_api_key_ignores_environment_and_key_file(state, tmp_path, monkeypatch) -> None:
+    """API key must come strictly from frontend input (DB settings) and ignore env vars."""
     key_file = tmp_path / "key"
     key_file.write_text(FAKE_API_KEY + "\n", encoding="utf-8")
+    monkeypatch.setenv("ALETHEIA_LLM_API_KEY", FAKE_API_KEY)
     monkeypatch.setenv("ALETHEIA_LLM_API_KEY_FILE", str(key_file))
     cfg = state.settings.llm_config()
-    assert cfg.api_key == FAKE_API_KEY
-    assert cfg.source["api_key"] == "env"
+    assert cfg.api_key == ""
+    assert cfg.source["api_key"] == "default"
 
 
 def test_sealed_db_key_round_trips(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -97,8 +98,9 @@ def test_sealed_db_key_round_trips(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_public_view_exposes_last4_and_nothing_more(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ALETHEIA_LLM_API_KEY", FAKE_API_KEY)
+    monkeypatch.setenv("ALETHEIA_SECRET", SECRET)
     store = SettingsStore(secret=SECRET)
+    store.set("llm.api_key", FAKE_API_KEY)
     pub = store.llm_config().public()
     assert "api_key" not in pub
     assert pub["api_key_set"] is True

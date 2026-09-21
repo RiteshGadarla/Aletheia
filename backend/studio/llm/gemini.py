@@ -124,31 +124,37 @@ class GeminiProvider:
         raise LLMError(f"gemini: response still truncated at {budget} output tokens")
 
     def test_connection(self) -> ConnTest:
-        probe_schema = {
-            "type": "object",
-            "properties": {"ok": {"type": "boolean"}},
-            "required": ["ok"],
-            "additionalProperties": False,
-        }
         t0 = time.monotonic()
+        client = self._http()
         try:
-            out = self.complete_json(
-                "You reply only with JSON.",
-                'Reply with exactly {"ok": true}.',
-                probe_schema,
-            )
-        except LLMError as exc:
-            return ConnTest(ok=False, error=str(exc), provider=self.name, model=self.model,
-                            latency_ms=int((time.monotonic() - t0) * 1000))
-        latency = int((time.monotonic() - t0) * 1000)
-        return ConnTest(ok=bool(out.get("ok", True)), latency_ms=latency,
-                        json_mode="response_schema", models=self.list_models(),
-                        provider=self.name, model=self.model)
+            r = client.get(f"{self.base_url}/models", params={"key": self._key, "pageSize": 50}, timeout=5.0)
+            if r.status_code in (400, 401, 403):
+                err_data = r.json().get("error", {}) if r.content else {}
+                err_msg = err_data.get("message", "Invalid API key")
+                return ConnTest(ok=False, error=f"gemini: {err_msg}", provider=self.name, model=self.model,
+                                latency_ms=int((time.monotonic() - t0) * 1000))
+            r.raise_for_status()
+            models_list = [m.get("name", "").split("/")[-1] for m in (r.json().get("models") or [])]
+            latency = int((time.monotonic() - t0) * 1000)
+            return ConnTest(ok=True, latency_ms=latency, json_mode="response_schema",
+                            models=sorted(n for n in models_list if n), provider=self.name, model=self.model)
+        except Exception as exc:
+            latency = int((time.monotonic() - t0) * 1000)
+            err_msg = str(exc)
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response and exc.response.content:
+                try:
+                    err_msg = exc.response.json().get("error", {}).get("message", str(exc))
+                except Exception:
+                    pass
+            return ConnTest(ok=False, error=f"gemini: {err_msg}", provider=self.name, model=self.model, latency_ms=latency)
+        finally:
+            if self._client is None:
+                client.close()
 
     def list_models(self) -> list[str]:
         client = self._http()
         try:
-            r = client.get(f"{self.base_url}/models", params={"key": self._key, "pageSize": 200})
+            r = client.get(f"{self.base_url}/models", params={"key": self._key, "pageSize": 200}, timeout=5.0)
             r.raise_for_status()
             names = [m.get("name", "").split("/")[-1] for m in (r.json().get("models") or [])]
             return sorted(n for n in names if n)
