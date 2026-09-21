@@ -30,3 +30,4 @@ venv/
 # Run logs only. NOT *.log — golden parser samples are .log files and must stay tracked.
 /*.log
 /.demo-traffic.log
+.chat_sessions.json

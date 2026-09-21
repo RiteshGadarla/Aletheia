@@ -209,6 +209,8 @@ def review(sid: str) -> dict[str, Any]:
     s = _get(sid)
     st = get_state()
     prop = onboarding.get_proposal(sid, st.repo, st.raw)
+    if prop and s.state == "collecting":
+        s = st.registry.update(sid, state="review")
     return {"source": _view(s), "proposal": onboarding.public(prop) if prop else None}
 
 
@@ -231,8 +233,10 @@ async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
     if body.action != "approve":
         raise HTTPException(422, "action must be approve, reject or retry")
     prop = onboarding.get_proposal(sid, st.repo, st.raw)
-    if s.state != "review" or not prop:
+    if not prop:
         raise HTTPException(409, "nothing to approve: generate a proposal first")
+    if s.state == "collecting":
+        s = st.registry.update(sid, state="review")
     chosen = [c for c in prop["clusters"] if not body.cluster_ids or c["cluster_id"] in body.cluster_ids]
     if not chosen:
         raise HTTPException(422, "no matching clusters")
@@ -262,10 +266,15 @@ async def auto_propose_loop() -> None:
         await asyncio.sleep(10)
         st = get_state()
         for s in st.registry.list():
-            ps = st.pipeline.stats.get(s.id)
-            if s.state == "collecting" and not onboarding.get_proposal(s.id, st.repo) and ps and ps.lines >= MIN_LINES_FOR_REVIEW:
-                try:
-                    await asyncio.to_thread(_run_proposal, s, None, "")
-                except Exception:                                                # noqa: BLE001
-                    pass
+            if s.state == "collecting":
+                prop = onboarding.get_proposal(s.id, st.repo, st.raw)
+                if prop:
+                    st.registry.update(s.id, state="review")
+                else:
+                    ps = st.pipeline.stats.get(s.id)
+                    if ps and ps.lines >= MIN_LINES_FOR_REVIEW:
+                        try:
+                            await asyncio.to_thread(_run_proposal, s, None, "")
+                        except Exception:                                                # noqa: BLE001
+                            pass
 

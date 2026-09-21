@@ -74,6 +74,10 @@ class GeminiProvider:
             "temperature": 0,
             "maxOutputTokens": max_tokens or self.max_output_tokens,
         }
+        if self.model.startswith("gemini-3"):
+            gen["thinkingConfig"] = {"thinkingLevel": "minimal"}   # 3.x rejects thinkingBudget
+        elif self.model.startswith("gemini-2.5"):
+            gen["thinkingConfig"] = {"thinkingBudget": 0}
         if schema is not None:
             gen["responseMimeType"] = "application/json"
             gen["responseSchema"] = to_gemini_schema(schema)

@@ -26,3 +26,14 @@ def test_allows(q):
 def test_refuses(q):
     with pytest.raises(GuardError):
         validate_sql(q)
+
+
+def test_query_error_reaches_the_model(monkeypatch):
+    from studio.chat import agent
+
+    def boom(_sql):
+        raise agent.QueryError("Code: 215. Column src_ip is not under aggregate function")
+    monkeypatch.setattr(agent, "run_readonly", boom)
+    from studio.api.state import get_state
+    out = agent._tool({"action": "run_sql", "sql": "SELECT src_ip, count() FROM events"}, get_state(), [], True)
+    assert "not under aggregate" in out and "call run_sql again" in out

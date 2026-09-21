@@ -122,8 +122,16 @@ export function SettingsPage() {
     } else if (p === 'gemini') {
       setActiveModal('gemini_privacy');
     } else if (p === 'local') {
-      setLocalUrl(form.base_url || LOCAL_URL_DEFAULT);
+      const url = form.base_url || LOCAL_URL_DEFAULT;
+      setLocalUrl(url);
       setLocalModel(form.model || 'smollm:135m');
+      if (url.includes('8080')) {
+        setSelectedPreset('llamacpp');
+      } else if (url.includes('11434')) {
+        setSelectedPreset('ollama');
+      } else {
+        setSelectedPreset('custom');
+      }
       setActiveModal('local_config');
     }
   };
@@ -132,7 +140,9 @@ export function SettingsPage() {
     setTest(null);
     setSelectedPreset(preset.id);
     setLocalUrl(preset.baseUrl);
-    setLocalModel(preset.model);
+    if (!localModel || localModel === 'smollm:135m' || localModel === 'smollm-135m') {
+      setLocalModel(preset.model);
+    }
   };
 
   const confirmSelectNone = async () => {
@@ -677,7 +687,18 @@ export function SettingsPage() {
                         ? "http://localhost:8080"
                         : "http://localhost:11434"
                 }
-                onChange={(e) => { setTest(null); setLocalUrl(e.target.value); setSelectedPreset('custom'); }}
+                onChange={(e) => {
+                  setTest(null);
+                  const val = e.target.value;
+                  setLocalUrl(val);
+                  if (val.includes('11434')) {
+                    setSelectedPreset('ollama');
+                  } else if (val.includes('8080')) {
+                    setSelectedPreset('llamacpp');
+                  } else {
+                    setSelectedPreset('custom');
+                  }
+                }}
                 autoComplete="off"
               />
               <span className="help">
@@ -701,17 +722,56 @@ export function SettingsPage() {
                   !selectedPreset
                     ? "Select an engine above to enable editing"
                     : selectedPreset === 'ollama'
-                      ? "e.g. smollm:135m"
+                      ? "e.g. llama3.2, mistral, deepseek-r1:7b, smollm:135m"
                       : selectedPreset === 'llamacpp'
                         ? "e.g. smollm-135m"
                         : "e.g. smollm:135m"
                 }
-                onChange={(e) => { setTest(null); setLocalModel(e.target.value); setSelectedPreset('custom'); }}
+                onChange={(e) => {
+                  setTest(null);
+                  setLocalModel(e.target.value);
+                }}
+                list="ollama-model-suggestions"
                 autoComplete="off"
               />
+              <datalist id="ollama-model-suggestions">
+                <option value="llama3.2" />
+                <option value="llama3" />
+                <option value="deepseek-r1:7b" />
+                <option value="mistral" />
+                <option value="qwen2.5" />
+                <option value="smollm:135m" />
+                <option value="phi3" />
+                <option value="codellama" />
+              </datalist>
+
+              {selectedPreset === 'ollama' && (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--muted)', alignSelf: 'center', marginRight: '4px' }}>Popular Ollama models:</span>
+                  {['llama3.2', 'llama3', 'deepseek-r1:7b', 'mistral', 'qwen2.5', 'smollm:135m'].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => { setTest(null); setLocalModel(m); }}
+                      style={{
+                        fontSize: '11px',
+                        padding: '3px 9px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        background: localModel === m ? 'var(--accent-subtle)' : 'var(--bg-subtle, rgba(255,255,255,0.05))',
+                        color: localModel === m ? 'var(--accent)' : 'inherit',
+                        border: localModel === m ? '1px solid var(--accent)' : '1px solid var(--border)'
+                      }}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <span className="help">
                 {selectedPreset === 'ollama'
-                  ? 'Exact model identifier for Ollama (e.g., smollm:135m)'
+                  ? 'Exact model identifier installed in Ollama (e.g., llama3.2, mistral, deepseek-r1:7b, smollm:135m)'
                   : selectedPreset === 'llamacpp'
                     ? 'Exact model identifier for llama.cpp (e.g., smollm-135m)'
                     : 'Exact model identifier (e.g., smollm:135m for Ollama, smollm-135m for llama.cpp)'}

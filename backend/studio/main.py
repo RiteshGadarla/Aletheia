@@ -931,6 +931,20 @@ async def reset_settings() -> dict[str, Any]:
         st.settings.unset("llm.api_key")
 
     st.usage.reset()
+
+    # 8. Reset Log Supply Stream server & Chat Session history
+    if hasattr(st, "supply_server") and st.supply_server:
+        try:
+            st.supply_server.stop()
+        except Exception:                                           # noqa: BLE001
+            pass
+
+    if hasattr(st, "chat_store") and st.chat_store:
+        try:
+            st.chat_store.clear_all()
+        except Exception:                                           # noqa: BLE001
+            pass
+
     st.connectors.start_all()
     return _settings_payload()
 

@@ -15,6 +15,7 @@ from ..core.bus import ControlPublisher
 from ..core.crypto import resolve_secret
 from ..core.db import Repo, build_repo
 from ..core.settings import SettingsStore
+from ..chat.store import ChatSessionStore
 from ..ingest.connectors import ConnectorManager
 from ..ingest.forward import RawForwarder
 from ..ingest.pipeline import IngestPipeline
@@ -37,6 +38,7 @@ class AppState:
     pipeline: IngestPipeline = field(init=False)
     connectors: ConnectorManager = field(init=False)
     supply_server: LogSupplyServer = field(default_factory=LogSupplyServer)
+    chat_store: ChatSessionStore = field(default_factory=ChatSessionStore)
 
     def __post_init__(self) -> None:
         # resolve_secret falls back to a persisted local secret, so saving an API key from the

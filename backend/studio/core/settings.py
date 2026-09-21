@@ -19,6 +19,7 @@ log = logging.getLogger("studio.settings")
 SPEC: dict[str, tuple[str | None, Any, bool]] = {
     "llm.provider":          ("ALETHEIA_LLM_PROVIDER", "gemini", False),
     "llm.model":             ("ALETHEIA_LLM_MODEL", "gemma-4-31b-it", False),
+    "llm.chat_model":        ("ALETHEIA_LLM_CHAT_MODEL", "", False),   # Lyra only; "" = provider default
     "llm.base_url":          ("ALETHEIA_LLM_BASE_URL", "", False),
     "llm.api_key":           (None, "", True),   # Taken from frontend input / DB settings only
     "llm.send_samples":      ("ALETHEIA_LLM_SEND_SAMPLES", "masked", False),

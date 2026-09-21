@@ -446,6 +446,22 @@ export interface SupplyConfigUpdate {
 }
 
 /* Lyra chat */
-export interface ChatMessage { role: 'user' | 'assistant'; content: string }
-export interface ChatBlock { type: 'table'; sql: string; rows: Record<string, unknown>[] }
-export interface ChatReply { available: boolean; answer: string; blocks: ChatBlock[] }
+export interface ChatMessage { role: 'user' | 'assistant'; content: string; blocks?: ChatBlock[] }
+export interface ChatBlock { type: 'table'; sql?: string; rows: Record<string, unknown>[] }
+export interface ChatReply { available: boolean; answer: string; blocks: ChatBlock[]; session_id?: string; session_title?: string }
+export interface ChatSessionSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_message?: string;
+}
+export interface ChatSession {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: ChatMessage[];
+}
+export type ChatExportFormat = 'pdf' | 'markdown' | 'json' | 'text';

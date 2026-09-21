@@ -246,7 +246,7 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
   const [prop, setProp] = useState<SourceProposal | null>(null);
   const [ask, setAsk] = useState<'approve' | 'retry' | 'reject' | null>(null);
   const proposal = prop ?? rev.data?.proposal ?? null;
-  const decidable = src.state === 'review' && !!proposal;
+  const decidable = !!proposal && src.state !== 'approved' && src.state !== 'rejected';
 
   const act = async (action: 'approve' | 'reject' | 'retry' | 'propose') => {
     setBusy(true); setErr(null);
