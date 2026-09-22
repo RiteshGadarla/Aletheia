@@ -116,10 +116,9 @@ if ($Mode -eq "Container") {
     Write-Host "  Setup Complete! Aletheia services are running:   " -ForegroundColor Cyan
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host "  Frontend Web App:  http://localhost:8080" -ForegroundColor White
-    Write-Host "  Studio API Server: http://localhost:8081" -ForegroundColor White
     Write-Host "  Grafana Dashboard: http://localhost:3000" -ForegroundColor White
-    Write-Host "  MinIO Storage:     http://localhost:9001" -ForegroundColor White
     Write-Host "  ClickHouse HTTP:   http://localhost:8123" -ForegroundColor White
+    Write-Host "  (Studio API is reachable via the Frontend Web App proxy)" -ForegroundColor Gray
     Write-Host "==================================================" -ForegroundColor Cyan
     Write-Host "  To view container status: docker compose -f deploy/docker-compose.yml ps" -ForegroundColor Gray
     Write-Host "  To stop services:         docker compose -f deploy/docker-compose.yml down" -ForegroundColor Gray
