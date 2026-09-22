@@ -51,7 +51,9 @@ FROM python:${PYTHON_VERSION}-slim-${DEBIAN_SUITE} AS py-build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential librdkafka-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY backend/studio/requirements.txt /tmp/requirements.txt
-RUN python -m venv /venv && /venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
+# --copies: the final stage ships python3-minimal, not this python:3.12 image, so a
+# symlinked venv (the venv default) would point at a python binary that doesn't exist there.
+RUN python -m venv --copies /venv && /venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
 
 # s6-overlay: process supervision, dependency-ordered start, clean signal forwarding.
 FROM debian:${DEBIAN_SUITE}-slim AS s6
@@ -125,6 +127,9 @@ COPY --from=up-vector     /usr/bin/vector            /usr/local/bin/vector
 COPY --from=up-vector     /usr/share/vector          /usr/share/vector
 COPY --from=up-redpanda   /opt/redpanda              /opt/redpanda
 COPY --from=up-clickhouse /usr/bin/clickhouse        /usr/local/bin/clickhouse
+# The default config.xml/users.xml the binary needs at boot; the clickhouse-server run script
+# points --config-file at /etc/aletheia/clickhouse/config.xml, which otherwise doesn't exist.
+COPY --from=up-clickhouse /etc/clickhouse-server     /etc/aletheia/clickhouse
 COPY --from=up-postgres   /usr/lib/postgresql        /usr/lib/postgresql
 COPY --from=up-postgres   /usr/share/postgresql      /usr/share/postgresql
 COPY --from=up-minio      /usr/bin/minio             /usr/local/bin/minio
@@ -141,6 +146,7 @@ RUN set -eux; \
     ln -sf /usr/local/bin/clickhouse /usr/local/bin/clickhouse-client; \
     ln -sf /opt/redpanda/bin/redpanda /usr/local/bin/redpanda; \
     ln -sf /opt/redpanda/bin/rpk /usr/local/bin/rpk; \
+    ln -sf /opt/redpanda/bin/rpk /usr/bin/rpk; \
     ln -sf /usr/lib/postgresql/16/bin/postgres /usr/local/bin/postgres; \
     ln -sf /usr/lib/postgresql/16/bin/initdb /usr/local/bin/initdb; \
     ln -sf /usr/lib/postgresql/16/bin/psql /usr/local/bin/psql; \
@@ -152,6 +158,12 @@ RUN set -eux; \
 COPY --from=go-build /out/worker    /usr/local/bin/worker
 COPY --from=go-build /out/aletheia  /usr/local/bin/aletheia
 COPY --from=py-build /venv          /venv
+# python:3.12-slim links its interpreter against a shared libpython rather than embedding it,
+# and the venv's "home" still points at /usr/local for the stdlib (site-packages is the only
+# part --copies actually duplicates into /venv) — both are missing from the final stage.
+COPY --from=py-build /usr/local/lib/libpython3.12.so* /usr/local/lib/
+COPY --from=py-build /usr/local/lib/python3.12       /usr/local/lib/python3.12
+RUN ldconfig
 COPY --from=ui-build /app/dist      /usr/share/aletheia/ui
 COPY backend/studio  /app/studio
 COPY backend/ocsf    /app/ocsf
@@ -162,6 +174,7 @@ COPY sources         /opt/aletheia/sources
 
 # --- configuration (component configs live in the image, state never does)
 COPY deploy/clickhouse/init.sql          /opt/aletheia/sql/clickhouse-init.sql
+COPY deploy/clickhouse/config.d/aletheia.xml /etc/aletheia/clickhouse/config.d/aletheia.xml
 COPY deploy/postgres/init.sql            /opt/aletheia/sql/postgres-init.sql
 COPY deploy/vector/ingest.toml           /etc/aletheia/vector/ingest.toml
 COPY deploy/vector/sinks.toml            /etc/aletheia/vector/sinks.toml
@@ -173,6 +186,7 @@ COPY deploy/grafana/grafana.ini          /etc/aletheia/grafana/grafana.ini
 COPY deploy/grafana/provisioning         /etc/aletheia/grafana/provisioning
 COPY deploy/grafana/dashboards           /etc/aletheia/grafana/dashboards
 COPY deploy/redpanda/create-topics.sh    /opt/aletheia/init/create-topics.sh
+COPY deploy/minio/create-buckets.sh      /opt/aletheia/init/create-buckets.sh
 COPY docker/allinone/rootfs/             /
 COPY docker/allinone/init/               /opt/aletheia/init/
 COPY docker/allinone/s6-rc.d/            /etc/s6-overlay/s6-rc.d/

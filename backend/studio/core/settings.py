@@ -38,7 +38,7 @@ SECRET_KEYS = {k for k, (_, _, enc) in SPEC.items() if enc}
 # so the base URL is what distinguishes them, not the provider name.
 DEFAULT_BASE_URLS = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta",
-    "local": "http://localhost:11434/v1",      # Ollama's default; change for vLLM etc.
+    "local": "http://localhost:11434/v1",      # Ollama's OpenAI-compat endpoint (enforces JSON schema)
     "none": "",
 }
 

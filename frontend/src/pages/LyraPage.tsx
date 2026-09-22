@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Badge, Spinner } from '../components/Bits';
 import {
   IconChevronLeft,
   IconChevronRight,
   IconExport,
   IconHistory,
+  IconOff,
   IconPlus,
   IconSearch,
+  IconSettings,
   IconTrash,
   IconUser,
 } from '../components/Icons';
 import { api, errMessage } from '../lib/api';
+import { useSettings } from '../lib/settings';
 import type { ChatBlock, ChatExportFormat, ChatMessage, ChatSessionSummary } from '../lib/types';
 import lyraIcon from '../assets/lyra-icon.png';
 
@@ -176,6 +180,9 @@ function timeAgo(iso: string): string {
 }
 
 export function LyraPage() {
+  const { settings } = useSettings();
+  const isNoneProvider = settings !== null && settings.provider === 'none';
+
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -290,7 +297,24 @@ export function LyraPage() {
   );
 
   return (
-    <div className="lyra">
+    <div className={`lyra ${isNoneProvider ? 'provider-none' : ''}`}>
+      {isNoneProvider && (
+        <div className="lyra-blur-screen">
+          <div className="lyra-blur-card">
+            <div className="lyra-blur-icon">
+              <IconOff size={32} />
+            </div>
+            <h2 className="lyra-blur-title">LLM Provider Required</h2>
+            <p className="lyra-blur-desc">
+              Lyra Intelligence Engine cannot run without an LLM provider configured. Please set up a provider in Settings to start asking questions about your data.
+            </p>
+            <Link to="/dashboard/settings" className="btn btn-primary lyra-blur-btn">
+              <IconSettings size={16} /> Configure LLM Provider
+            </Link>
+          </div>
+        </div>
+      )}
+
       <ExportModal
         open={exportModalOpen}
         onClose={() => setExportModalOpen(false)}

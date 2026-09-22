@@ -50,8 +50,8 @@ const LOCAL_PRESETS = [
   {
     id: 'ollama',
     name: 'Ollama',
-    baseUrl: 'http://localhost:11434',
-    model: 'smollm:135m',
+    baseUrl: 'http://localhost:11434/api/chat',
+    model: 'llama3.2:1b',
     desc: 'Ollama local server',
     Icon: IconServer,
   },
@@ -59,7 +59,7 @@ const LOCAL_PRESETS = [
     id: 'llamacpp',
     name: 'llama.cpp',
     baseUrl: 'http://localhost:8080',
-    model: 'smollm-135m',
+    model: 'llama-3.2-1b',
     desc: 'llama.cpp server',
     Icon: IconCpu,
   },
@@ -73,7 +73,7 @@ export function SettingsPage() {
   const [form, setForm] = useState<LlmSettings | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [localUrl, setLocalUrl] = useState(LOCAL_URL_DEFAULT);
-  const [localModel, setLocalModel] = useState('smollm:135m');
+  const [localModel, setLocalModel] = useState('llama3.2:1b');
   const [selectedPreset, setSelectedPreset] = useState<'ollama' | 'llamacpp' | 'custom' | null>('ollama');
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
   const [busy, setBusy] = useState<'save' | 'test' | null>(null);
@@ -85,8 +85,8 @@ export function SettingsPage() {
     if (settings && !form) {
       setForm(settings);
       setLocalUrl(settings.base_url || LOCAL_URL_DEFAULT);
-      setLocalModel(settings.model || 'smollm:135m');
-      if (settings.base_url.includes('8080')) {
+      setLocalModel(settings.model && settings.model !== 'smollm:135m' ? settings.model : 'llama3.2:1b');
+      if (settings.base_url?.includes('8080')) {
         setSelectedPreset('llamacpp');
       } else {
         setSelectedPreset('ollama');
@@ -124,7 +124,7 @@ export function SettingsPage() {
     } else if (p === 'local') {
       const url = form.base_url || LOCAL_URL_DEFAULT;
       setLocalUrl(url);
-      setLocalModel(form.model || 'smollm:135m');
+      setLocalModel(form.model && form.model !== 'smollm:135m' ? form.model : 'llama3.2:1b');
       if (url.includes('8080')) {
         setSelectedPreset('llamacpp');
       } else if (url.includes('11434')) {
@@ -140,9 +140,7 @@ export function SettingsPage() {
     setTest(null);
     setSelectedPreset(preset.id);
     setLocalUrl(preset.baseUrl);
-    if (!localModel || localModel === 'smollm:135m' || localModel === 'smollm-135m') {
-      setLocalModel(preset.model);
-    }
+    setLocalModel(preset.model);
   };
 
   const confirmSelectNone = async () => {
@@ -218,11 +216,16 @@ export function SettingsPage() {
   };
 
   const saveAndTestLocal = async () => {
+    if (!localModel.trim()) {
+      setError('Model name is required.');
+      toast({ kind: 'bad', title: 'Validation Error', body: 'Please specify a model name (e.g. llama 3.2)' });
+      return;
+    }
     setBusy('save');
     setError(null);
     setTest(null);
     const targetUrl = localUrl.trim() || LOCAL_URL_DEFAULT;
-    const targetModel = localModel.trim() || 'smollm:135m';
+    const targetModel = localModel.trim();
     const update: LlmSettingsUpdate = {
       provider: 'local',
       model: targetModel,
@@ -605,7 +608,7 @@ export function SettingsPage() {
       {activeModal === 'local_config' && (
         <Modal
           title={<><IconCpu size={20} color="var(--accent)" /> Configure Local Model Server</>}
-          subtitle="OpenAI-Compatible Local Endpoint"
+          subtitle="OpenAI & Ollama Compatible Endpoint"
           onClose={() => setActiveModal(null)}
           footer={
             <>
@@ -616,7 +619,7 @@ export function SettingsPage() {
                 type="button"
                 className="primary"
                 onClick={test?.ok ? () => setActiveModal(null) : saveAndTestLocal}
-                disabled={busy !== null || !selectedPreset}
+                disabled={busy !== null || !localModel.trim()}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               >
                 <IconCheck size={14} />
@@ -633,11 +636,11 @@ export function SettingsPage() {
         >
           <div className="stack">
             <p className="hint">
-              Select an engine supporter below to load and enable configuration fields:
+              Configure your local LLM server details below:
             </p>
 
-            {/* Supporter Presets */}
-            <div style={{ display: 'flex', gap: 'var(--s3)', marginBottom: 'var(--s2)' }}>
+            {/* Engine Preset Shortcuts */}
+            <div style={{ display: 'flex', gap: 'var(--s3)', marginBottom: 'var(--s1)' }}>
               {LOCAL_PRESETS.map((p) => {
                 const PresetIcon = p.Icon;
                 const active = selectedPreset === p.id;
@@ -647,13 +650,9 @@ export function SettingsPage() {
                     key={p.id}
                     className={`button ${active ? 'primary' : 'secondary'}`}
                     onClick={() => selectPreset(p)}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: 'var(--s3)', height: 'auto', gap: '4px' }}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--s3)', gap: '6px', fontWeight: 600 }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                      <PresetIcon size={16} /> {p.name}
-                    </div>
-                    <div style={{ fontSize: '11px', opacity: 0.8 }}>Base URL: {p.baseUrl}</div>
-                    <div style={{ fontSize: '11px', opacity: 0.8 }}>Default Model: {p.model}</div>
+                    <PresetIcon size={16} /> {p.name}
                   </button>
                 );
               })}
@@ -661,15 +660,13 @@ export function SettingsPage() {
                 type="button"
                 className={`button ${selectedPreset === 'custom' ? 'primary' : 'secondary'}`}
                 onClick={() => { setTest(null); setSelectedPreset('custom'); }}
-                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', padding: 'var(--s3)', height: 'auto', gap: '4px' }}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--s3)', gap: '6px', fontWeight: 600 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                  <IconSettings size={16} /> Custom
-                </div>
-                <div style={{ fontSize: '11px', opacity: 0.8 }}>Enter Custom URL & Model</div>
+                <IconSettings size={16} /> Custom
               </button>
             </div>
 
+            {/* Server Base URL Input - fully editable */}
             <label className="field code" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s1)' }}>
               <span className="lbl" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <IconServer size={14} /> Server Base URL
@@ -677,16 +674,7 @@ export function SettingsPage() {
               <input
                 type="text"
                 value={localUrl}
-                disabled={!selectedPreset}
-                placeholder={
-                  !selectedPreset
-                    ? "Select an engine above to enable editing"
-                    : selectedPreset === 'ollama'
-                      ? "http://localhost:11434"
-                      : selectedPreset === 'llamacpp'
-                        ? "http://localhost:8080"
-                        : "http://localhost:11434"
-                }
+                placeholder="http://localhost:11434/api/chat"
                 onChange={(e) => {
                   setTest(null);
                   const val = e.target.value;
@@ -702,86 +690,47 @@ export function SettingsPage() {
                 autoComplete="off"
               />
               <span className="help">
-                {selectedPreset === 'ollama'
-                  ? 'Base URL of your local server for Ollama (e.g., http://localhost:11434)'
-                  : selectedPreset === 'llamacpp'
-                    ? 'Base URL of your local server for llama.cpp (e.g., http://localhost:8080)'
-                    : 'Base URL of your local server (e.g., http://localhost:11434 or http://localhost:8080)'}
+                Base URL or chat endpoint of your local server
               </span>
             </label>
 
+            {/* Model Name Input - no default, required, placeholder llama 3.2 */}
             <label className="field code" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s1)' }}>
               <span className="lbl" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <IconCpu size={14} /> Model Name <span style={{ color: 'var(--warn)', fontSize: '12px' }}>*required</span>
+                <IconCpu size={14} /> Model Name <span style={{ color: 'var(--bad)', fontSize: '12px' }}>*required</span>
               </span>
               <input
                 type="text"
                 value={localModel}
-                disabled={!selectedPreset}
-                placeholder={
-                  !selectedPreset
-                    ? "Select an engine above to enable editing"
-                    : selectedPreset === 'ollama'
-                      ? "e.g. llama3.2, mistral, deepseek-r1:7b, smollm:135m"
-                      : selectedPreset === 'llamacpp'
-                        ? "e.g. smollm-135m"
-                        : "e.g. smollm:135m"
-                }
+                placeholder="llama 3.2"
                 onChange={(e) => {
                   setTest(null);
                   setLocalModel(e.target.value);
                 }}
-                list="ollama-model-suggestions"
                 autoComplete="off"
               />
-              <datalist id="ollama-model-suggestions">
-                <option value="llama3.2" />
-                <option value="llama3" />
-                <option value="deepseek-r1:7b" />
-                <option value="mistral" />
-                <option value="qwen2.5" />
-                <option value="smollm:135m" />
-                <option value="phi3" />
-                <option value="codellama" />
-              </datalist>
-
-              {selectedPreset === 'ollama' && (
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--muted)', alignSelf: 'center', marginRight: '4px' }}>Popular Ollama models:</span>
-                  {['llama3.2', 'llama3', 'deepseek-r1:7b', 'mistral', 'qwen2.5', 'smollm:135m'].map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => { setTest(null); setLocalModel(m); }}
-                      style={{
-                        fontSize: '11px',
-                        padding: '3px 9px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        background: localModel === m ? 'var(--accent-subtle)' : 'var(--bg-subtle, rgba(255,255,255,0.05))',
-                        color: localModel === m ? 'var(--accent)' : 'inherit',
-                        border: localModel === m ? '1px solid var(--accent)' : '1px solid var(--border)'
-                      }}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <span className="help">
-                {selectedPreset === 'ollama'
-                  ? 'Exact model identifier installed in Ollama (e.g., llama3.2, mistral, deepseek-r1:7b, smollm:135m)'
-                  : selectedPreset === 'llamacpp'
-                    ? 'Exact model identifier for llama.cpp (e.g., smollm-135m)'
-                    : 'Exact model identifier (e.g., smollm:135m for Ollama, smollm-135m for llama.cpp)'}
-              </span>
             </label>
 
             {busy === 'test' && (
               <div className="row" style={{ gap: 'var(--s2)', alignItems: 'center' }}>
                 <Spinner label="Connecting to local server & running test..." />
               </div>
+            )}
+
+            {test && test.ok && (
+              <Callout kind="ok" icon={<IconCheck size={18} />}>
+                <div>
+                  <strong>Connection Successful & Verified!</strong>
+                  <p style={{ margin: 'var(--s1) 0 0 0', fontSize: '12.5px' }}>
+                    Successfully connected to model <code>{test.model}</code> at <code>{localUrl}</code> ({test.latency_ms}ms latency).
+                  </p>
+                  {test.sample_response && (
+                    <div style={{ marginTop: '6px', padding: '6px 10px', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', fontSize: '11.5px', fontFamily: 'monospace' }}>
+                      Sample response: "{test.sample_response}"
+                    </div>
+                  )}
+                </div>
+              </Callout>
             )}
 
             {test && !test.ok && (

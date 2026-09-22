@@ -1,0 +1,20 @@
+<clickhouse>
+    <!-- All-in-one override: data lives under the /data volume, not the image layer, and
+         everything binds to loopback since every consumer lives in this one container. -->
+    <listen_host>127.0.0.1</listen_host>
+    <path>/data/clickhouse/</path>
+    <tmp_path>/data/clickhouse/tmp/</tmp_path>
+    <user_files_path>/data/clickhouse/user_files/</user_files_path>
+    <format_schema_path>/data/clickhouse/format_schemas/</format_schema_path>
+    <user_directories>
+        <local_directory>
+            <path>/data/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+
+    <!-- /var/log is not writable by the unprivileged "aletheia" user this runs as. -->
+    <logger>
+        <log>/data/clickhouse/logs/clickhouse-server.log</log>
+        <errorlog>/data/clickhouse/logs/clickhouse-server.err.log</errorlog>
+    </logger>
+</clickhouse>

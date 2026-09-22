@@ -47,12 +47,20 @@ class OpenAICompatibleProvider:
 
     def _chat_endpoints(self) -> list[str]:
         url = self.base_url
+        if url.endswith("/api/chat") or url.endswith("/chat/completions"):
+            return [url]
         if url.endswith("/v1") or url.endswith("/api"):
             return [f"{url}/chat/completions", f"{url}/api/chat"]
         return [f"{url}/v1/chat/completions", f"{url}/chat/completions", f"{url}/api/chat"]
 
     def _models_endpoints(self) -> list[str]:
         url = self.base_url
+        if url.endswith("/api/chat"):
+            root = url[:-9]
+            return [f"{root}/api/tags", f"{root}/v1/models", f"{root}/models"]
+        if url.endswith("/chat/completions"):
+            root = url[:-17]
+            return [f"{root}/v1/models", f"{root}/models", f"{root}/api/tags"]
         if url.endswith("/v1") or url.endswith("/api"):
             return [f"{url}/models", f"{url}/api/tags"]
         return [f"{url}/v1/models", f"{url}/models", f"{url}/api/tags"]
@@ -62,7 +70,7 @@ class OpenAICompatibleProvider:
         user = user_prompt
         messages = [{"role": "system", "content": system_prompt},
                     {"role": "user", "content": user}]
-        body: dict[str, Any] = {"model": self.model, "messages": messages,
+        body: dict[str, Any] = {"model": self.model, "messages": messages, "stream": False,
                                 "temperature": 0, "max_tokens": self.max_output_tokens}
         if mode == "response_schema":
             body["response_format"] = {
@@ -86,14 +94,22 @@ class OpenAICompatibleProvider:
             raise LLMError(f"Provider '{self.name}' is configured but no model name is set.")
         client = self._http()
         endpoints = self._chat_endpoints()
+        payload = dict(body)
+        payload["stream"] = False
         last_exc: Exception | None = None
         for i, url in enumerate(endpoints):
             try:
-                r = client.post(url, headers=self._headers(), json=body)
+                r = client.post(url, headers=self._headers(), json=payload)
                 if r.status_code == 404 and i < len(endpoints) - 1:
                     continue
                 r.raise_for_status()
-                return r.json()
+                try:
+                    return r.json()
+                except json.JSONDecodeError:
+                    lines = [ln.strip() for ln in r.text.strip().splitlines() if ln.strip()]
+                    if lines:
+                        return json.loads(lines[0])
+                    raise
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 404 and i < len(endpoints) - 1:
                     last_exc = exc
