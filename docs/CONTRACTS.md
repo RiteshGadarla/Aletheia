@@ -213,7 +213,13 @@ alias for `local`, but must not appear in the UI — Ollama *is* local, so a sep
 redundant; the base URL is what distinguishes one local server from another.
 
 ### Default provider for this deployment
-`provider=gemini`, `model=gemma-4-31b-it` (verified live; see `docs/llm-provider-notes.md`).
+`provider=gemini`, `model=gemini-3.5-flash-lite` (fast, reliable cloud model).
+`gemma-4-31b-it` is also supported for onboarding proposals but is slower and less reliable
+(see `docs/llm-provider-notes.md`).
+
+Lyra (the chat assistant) uses `llm.chat_model` if set, otherwise the main `llm.model`.
+Default: the same `gemini-3.5-flash-lite`. `gemma-4-31b-it` is too slow (~34-50 s/call) and
+too unreliable (~50% failure rate) for a chat agent that makes several sequential calls per turn.
 
 **Gemma-specific facts that the adapter must honour** (measured, not assumed):
 1. `gemma-4-31b-it` **rejects `systemInstruction`** (HTTP 500). Fold the system prompt into the
@@ -246,3 +252,81 @@ Implementations: `GeminiProvider` (native endpoint, default) and `OpenAICompatib
 4. A proposed pack is rejected unless it reconstructs **100%** of samples byte-exactly.
 5. No outbound network calls except to an operator-configured LLM endpoint.
 6. `vars` hold **exact substrings**; typed values are derived, never replacing them.
+
+## 11. Lyra chat agent contract
+
+Lyra is a guarded, tool-using chat assistant (`backend/studio/chat/`). It answers ad-hoc
+questions about ingested events by running read-only SQL against ClickHouse.
+
+### Action schema
+
+The model emits one JSON action per step:
+
+```json
+{"action": "run_sql", "sql": "SELECT ..."}
+{"action": "list_sources"}
+{"action": "list_packs"}
+{"action": "final", "answer": "Here is what I found..."}
+```
+
+Up to **5 steps** per turn, **20 messages** of history context.
+
+### SQL guardrail (`backend/studio/chat/guard.py`)
+
+| Rule | Detail |
+|---|---|
+| Statement type | Only `SELECT` or `WITH ... SELECT` |
+| Tables | `events`, `templates` only |
+| Columns | Allow-listed: `event_uid`, `recv_time`, `event_time`, `source_id`, `template_id`, `pack_version`, `storage_mode`, `parse_status`, `class_uid`, `activity_id`, `severity_id`, `src_ip`, `src_port`, `dst_ip`, `dst_port`, `protocol`, `action_id`, `user_name`, `pack`, `created_at`, `envelope_id` |
+| Functions | Allow-listed: `count`, `sum`, `avg`, `min`, `max`, `uniq`, `uniqexact`, `countif`, `sumif`, `tostring`, `tostartofminute`, `tostartofhour`, `now`, `today`, `replaceone`, `datediff`, `quantile`, etc. |
+| Forbidden | `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `SET`, `INTO`, `FORMAT`, `SYSTEM`, `KILL`, etc. |
+| `SELECT *` | Refused (raw payloads are off limits) |
+| Max query length | 2000 chars |
+| Max result rows | 200 (`MAX_LIMIT`) |
+| Comments | Forbidden (`--`, `/*`, `#`) |
+| Semicolons | Only one statement |
+| Quoted identifiers | Forbidden (backticks, double quotes) |
+
+Server-side enforcement: `readonly=1`, `max_execution_time=10`, `max_result_rows=200`,
+`max_memory_usage=500MB`, `max_rows_to_read=200M`.
+
+### Chat session persistence (`backend/studio/chat/store.py`)
+
+Sessions are stored in a JSON file (`.chat_sessions.json`). Each session has:
+`id` (UUID), `title` (auto-generated or user-set), `created_at`, `updated_at`,
+`messages` (array of `{role, content, blocks?}`).
+
+### Chat API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/chat` | Synchronous chat turn |
+| `POST` | `/api/v1/chat/stream` | SSE streaming (step events + final result) |
+| `GET` | `/api/v1/chat/sessions` | List all sessions |
+| `GET` | `/api/v1/chat/sessions/{id}` | Get full session with messages |
+| `PATCH` | `/api/v1/chat/sessions/{id}` | Rename session |
+| `DELETE` | `/api/v1/chat/sessions/{id}` | Delete session |
+| `DELETE` | `/api/v1/chat/sessions` | Clear all sessions |
+| `GET` | `/api/v1/chat/export` | Export session (PDF/Markdown/JSON/text) |
+
+### SSE stream events
+
+```
+data: {"type": "step", "step": "Querying ClickHouse telemetry data store…"}
+data: {"type": "done", "available": true, "answer": "...", "blocks": [...], "session_id": "..."}
+```
+
+## 12. Stats / Overview API contract
+
+`GET /api/v1/stats/overview` returns a single JSON object with:
+
+| Key | Content |
+|---|---|
+| `kpis` | `lines`, `bytes`, `eps`, `sources`, `connected`, `in_review`, `approved`, `rejected`, `risk_pct`, `errors`, `buffered`, `forwarded`, `packs` |
+| `insights` | Derived analytics: `posture` (0-100), `peak_eps`, `mean_eps`, `z` (z-score), `spike` (bool), `noisiest`, `risk_rank`, `stale`, `trend_pct`, `onboarded_pct`, `health_pct`, `error_rate`, `bytes_per_line` |
+| `insights.ch` | Deep ClickHouse aggregates: `top_src`, `top_dst`, `top_ports`, `top_users`, `top_templates`, `top_denied`, `scanners`, `fanout`, `protocols`, `actions`, `classes`, `ocsf_sev`, `modes`, `timeline`, `hours`, `lag`, `unique`, `disk` |
+| `by_severity` | `{info, notice, warn, risk}` counts |
+| `series` | 5-second-bucket sparkline over the last 5 minutes |
+| `sources` | Per-source stats with sparklines |
+| `normalized` | ClickHouse parse-status breakdown: `total`, `full`, `partial`, `raw_only`, `templates`, `normalized_pct` |
+| `history` | Recent approval/rejection activity |

@@ -55,10 +55,9 @@ if "%MODE%"=="container" (
     echo  Setup Complete! Aletheia services are running:
     echo ==================================================
     echo  Frontend Web App:  http://localhost:8080
-    echo  Studio API Server: http://localhost:8081
     echo  Grafana Dashboard: http://localhost:3000
-    echo  MinIO Storage:     http://localhost:9001
     echo  ClickHouse HTTP:   http://localhost:8123
+    echo  ^(Studio API is reachable via the Frontend Web App proxy^)
     echo ==================================================
     echo  To stop: !COMPOSE_CMD! -f deploy\docker-compose.yml down
     echo.
