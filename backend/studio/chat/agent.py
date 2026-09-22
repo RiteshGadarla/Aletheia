@@ -23,10 +23,11 @@ from .guard import GuardError, MAX_LIMIT, validate_sql
 
 log = logging.getLogger("studio.chat")
 
-# Lyra makes several sequential calls, so it prefers a fast non-thinking model unless
-# llm.chat_model overrides it. If the API rejects the name, it falls back to the Gemma variant.
-FAST_DEFAULT = {"gemini": "gemini-3.5-flash-lite"}
-FALLBACK = {"gemini": "gemma-4-26b-a4b-it"}
+# Lyra makes several sequential calls per question. llm.chat_model can point it at a different
+# model than the rest of the Studio; unset, it uses whatever provider/model Settings has (default
+# gemini-3.5-flash-lite — see core/settings.py). Gemma is not used here: it was too slow (30-56s
+# per call) and too unreliable (~50% failure rate, docs/llm-provider-notes.md) for a chat agent
+# that makes several calls per turn.
 
 MAX_STEPS, MAX_HISTORY, MAX_ROWS_TO_LLM, MAX_CELL = 5, 20, 30, 120
 
@@ -127,6 +128,9 @@ def chat_stream_events(messages: list[dict[str, str]]):
     if (cfg.provider or "none") == "none":
         yield {"type": "done", "available": False, "answer": "No AI provider is configured. Set one in Settings so I can help.", "blocks": []}
         return
+    override = str(st.settings.get("llm.chat_model") or "").strip()
+    if override:
+        cfg = dataclasses.replace(cfg, model=override, max_output_tokens=min(cfg.max_output_tokens, 4096))
 
     try:
         provider = build_provider(cfg)
@@ -151,15 +155,6 @@ def chat_stream_events(messages: list[dict[str, str]]):
             st.usage.check(cfg.requests_per_hour)
             act = provider.complete_json(SYSTEM, f"Conversation:\n{transcript}\n{scratch}\nNext action JSON:", ACTION_SCHEMA)
             st.usage.record(origin_tag(cfg), getattr(provider, "last_usage", None), ok=True)
-        except LLMError as exc:
-            fb = FALLBACK.get(cfg.provider, "")
-            if exc.status in (400, 404) and fb and cfg.model != fb:
-                log.warning("lyra: model %s rejected (HTTP %s); falling back to %s", cfg.model, exc.status, fb)
-                cfg = dataclasses.replace(cfg, model=fb)
-                provider = build_provider(cfg)
-                continue
-            st.usage.record(origin_tag(cfg), None, ok=False)
-            return {"available": False, "answer": "Lyra could not reach the AI provider. Try again shortly.", "blocks": blocks}
         except RateLimited as exc:
             yield {"type": "done", "available": True, "answer": str(exc), "blocks": blocks}
             return
@@ -193,7 +188,7 @@ def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
     cfg = st.settings.llm_config()
     if (cfg.provider or "none") == "none":
         return {"available": False, "answer": "No AI provider is configured. Set one in Settings so I can help.", "blocks": []}
-    override = str(st.settings.get("llm.chat_model") or "").strip() or FAST_DEFAULT.get(cfg.provider, "")
+    override = str(st.settings.get("llm.chat_model") or "").strip()
     if override:
         cfg = dataclasses.replace(cfg, model=override, max_output_tokens=min(cfg.max_output_tokens, 4096))
     try:

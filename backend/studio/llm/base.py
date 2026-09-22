@@ -8,6 +8,7 @@ import time
 from typing import Any, Callable, Protocol
 
 import httpx
+from google.genai import errors as genai_errors
 
 from ..core.models import ConnTest
 
@@ -56,7 +57,15 @@ def with_retry(call: Callable[[int], Any], *, what: str, secrets: list[str],
     for attempt in range(1, attempts + 1):
         try:
             return call(attempt)
-        except httpx.HTTPStatusError as exc:
+        except genai_errors.APIError as exc:                 # google-genai SDK (Gemini)
+            status = exc.code
+            last = exc
+            if status not in RETRY_STATUS:
+                body = redact(str(exc.message or exc)[:400], secrets)
+                raise LLMError(f"{what}: HTTP {status}: {body}", attempts=attempt,
+                               status=status) from exc
+            log.warning("%s: HTTP %s on attempt %d/%d", what, status, attempt, attempts)
+        except httpx.HTTPStatusError as exc:                  # OpenAI-compatible providers
             status = exc.response.status_code
             last = exc
             if status not in RETRY_STATUS:
@@ -70,6 +79,9 @@ def with_retry(call: Callable[[int], Any], *, what: str, secrets: list[str],
         if attempt < attempts:
             delay = BASE_BACKOFF_S * (2 ** (attempt - 1))
             sleep(delay + random.uniform(0, delay * 0.25))
-    status = getattr(getattr(last, "response", None), "status_code", None)
+    if isinstance(last, genai_errors.APIError):
+        status = last.code
+    else:
+        status = getattr(getattr(last, "response", None), "status_code", None)
     raise LLMError(f"{what}: giving up after {attempts} attempts ({type(last).__name__})",
                    attempts=attempts, status=status) from last
