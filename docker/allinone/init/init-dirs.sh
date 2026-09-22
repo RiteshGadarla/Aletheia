@@ -3,7 +3,7 @@
 set -euo pipefail
 echo "[init-dirs] preparing /data"
 
-for d in postgres clickhouse redpanda minio loki prometheus grafana vector tls run logs bench demo packs; do
+for d in postgres clickhouse redpanda loki prometheus grafana vector tls run logs bench demo packs; do
   mkdir -p "/data/$d"
 done
 mkdir -p /data/logs/grafana /data/clickhouse/tmp /data/clickhouse/user_files /data/clickhouse/format_schemas

@@ -1,0 +1,9 @@
+# Test-only dependencies. Deliberately kept out of requirements.txt so they are never installed
+# into the venv that ships in the all-in-one image: nothing served at run time imports pytest,
+# and backend/studio/tests is excluded from the build context by .dockerignore.
+#
+#   pip install -r backend/studio/requirements-dev.txt
+#
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.25.0

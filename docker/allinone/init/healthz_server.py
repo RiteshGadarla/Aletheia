@@ -31,7 +31,6 @@ CHECKS: list[tuple[str, str, str]] = [
     ("postgres",   "tcp",  "127.0.0.1:5432"),
     ("clickhouse", "http", "http://127.0.0.1:8123/ping"),
     ("redpanda",   "tcp",  "127.0.0.1:9092"),
-    ("minio",      "http", "http://127.0.0.1:9100/minio/health/live"),
     ("loki",       "http", "http://127.0.0.1:3100/ready"),
     ("prometheus", "http", "http://127.0.0.1:9090/-/healthy"),
     ("studio",     "http", "http://127.0.0.1:8081/healthz"),

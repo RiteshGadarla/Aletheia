@@ -38,7 +38,12 @@ from .llm.factory import build_provider
 log = logging.getLogger("studio.main")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEMO_SCRIPT = REPO_ROOT / "demo" / "scenarios.py"
+# In a checkout parents[2] is the repo root; in the all-in-one image studio lives at
+# /app/studio so it resolves to "/". These overrides let the image point at the real
+# install locations instead (same pattern as ALETHEIA_SERVE_PY in api/samples.py).
+DEMO_SCRIPT = Path(os.environ.get("ALETHEIA_DEMO_SCRIPT", str(REPO_ROOT / "demo" / "scenarios.py")))
+VERIFY_PACKS = Path(os.environ.get(
+    "ALETHEIA_VERIFY_PACKS", str(REPO_ROOT / "backend" / "packs" / "verify_packs.py")))
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -92,7 +97,10 @@ def healthz() -> dict[str, Any]:
 
 
 def _engine_bin() -> str | None:
-    for cand in (os.environ.get("ALETHEIA_BIN"), str(REPO_ROOT / "bin" / "aletheia"), "aletheia"):
+    # ALETHEIA_ENGINE_BIN is the name the all-in-one image sets; without it /healthz
+    # reported engine_cli "absent" even though the CLI was present on PATH.
+    for cand in (os.environ.get("ALETHEIA_BIN"), os.environ.get("ALETHEIA_ENGINE_BIN"),
+                 str(REPO_ROOT / "bin" / "aletheia"), "aletheia"):
         if not cand:
             continue
         p = Path(cand)
@@ -184,7 +192,7 @@ def _demo(args: list[str], timeout: int = 600) -> tuple[int, str]:
     env.setdefault("ALETHEIA_CH_USER", CH_USER)
     env.setdefault("ALETHEIA_CH_PASSWORD", CH_PASS)
     env.setdefault("ALETHEIA_CH_DB", CH_DB)
-    env.setdefault("ALETHEIA_PACKS_DIR", str(REPO_ROOT / "backend" / "packs"))
+    env.setdefault("ALETHEIA_PACKS_DIR", str(REPO_ROOT / "backend" / "packs"))  # overridden by the image
     p = subprocess.run([sys.executable, str(DEMO_SCRIPT), *args],
                        capture_output=True, text=True, timeout=timeout, env=env)
     return p.returncode, (p.stdout + p.stderr).strip()
@@ -195,7 +203,7 @@ SCENARIOS: list[dict[str, Any]] = [
     {"id": "start", "number": 0, "title": "One-command start", "action_label": "—",
      "proves": "the whole stack comes up from one command",
      "expected": "container reports healthy; the UI opens",
-     "link": None, "cli": "docker run -d --name aletheia -p 8080:8080 ...",
+     "link": None, "cli": "docker run -d --name aletheia -p 6156:6156 ...",
      "requirements": ["k"], "runnable": False},
     {"id": "traffic", "number": 1, "title": "Start traffic", "action_label": "Start traffic",
      "proves": "every source lands in one OCSF shape",
@@ -207,7 +215,7 @@ SCENARIOS: list[dict[str, Any]] = [
      "proves": "traceability down to the byte",
      "expected": "clicking src_endpoint.ip highlights the exact bytes it came from",
      "link": {"label": "Open lineage", "href": "/lineage"},
-     "cli": "open http://localhost:8080/lineage",
+     "cli": "open http://localhost:6156/lineage",
      "requirements": ["d"], "runnable": True},
     {"id": "verify", "number": 3, "title": "Verify integrity", "action_label": "Run verify",
      "proves": "stored evidence still matches what arrived",
@@ -288,7 +296,7 @@ def reset_demo() -> dict[str, Any]:
 @api.get("/packs/verify")
 def verify_packs() -> dict[str, Any]:
     """Byte-exact reconstruction over every golden sample. Needs no services."""
-    script = REPO_ROOT / "backend" / "packs" / "verify_packs.py"
+    script = VERIFY_PACKS
     if not script.is_file():
         raise HTTPException(status_code=503, detail="verifier not installed")
     p = subprocess.run([sys.executable, str(script)], capture_output=True, text=True, timeout=300)

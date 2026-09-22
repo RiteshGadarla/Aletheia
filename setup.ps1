@@ -165,7 +165,7 @@ if ($Mode -eq "Native") {
         python -m venv .venv
     }
     & .\.venv\Scripts\python.exe -m pip install --upgrade pip
-    & .\.venv\Scripts\pip.exe install -r backend/studio/requirements.txt
+    & .\.venv\Scripts\pip.exe install -r backend/studio/requirements-dev.txt
 
     Write-Host ""
     Write-Host "Step 2: Installing Frontend Dependencies..." -ForegroundColor Yellow

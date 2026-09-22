@@ -4,6 +4,8 @@ personal/
 .env
 *.env
 !*.env.example
+# Pinned upstream component versions, not a secret; the *.env rule above caught it by accident.
+!docker/versions.env
 deploy/secrets/*
 !deploy/secrets/*.example
 

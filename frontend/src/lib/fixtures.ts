@@ -475,9 +475,9 @@ export const SCENARIOS: DemoScenario[] = [
   {
     id: 'scn0', number: 0, title: 'One-command start', action_label: 'Check health',
     proves: 'The whole framework is one container the evaluator can start with a single command.',
-    expected: 'Container reports healthy; the UI opens on port 8080 and Grafana on 3000.',
+    expected: 'Container reports healthy; the UI opens on port 6156 and Grafana on 3000.',
     link: { label: 'Container health', href: '/dashboard/demo' },
-    cli: 'docker run -d --name aletheia -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp docker.io/<namespace>/aletheia:1.0.0',
+    cli: 'docker run -d --name aletheia -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp docker.io/<namespace>/aletheia:1.0.0',
     requirements: ['k'], runnable: true,
   },
   {

@@ -1,0 +1,62 @@
+# Build context for docker/allinone/Dockerfile. The context is the repo root, so anything not
+# listed here is uploaded to the daemon and may end up in a layer.
+#
+# Two jobs: keep the image minimal, and make it impossible for a local secret or a host-built
+# virtualenv to be copied in. backend/.env holds a real API key; backend/studio/.venv is 131 MB
+# of host-architecture wheels that COPY backend/studio would otherwise bake straight into
+# /app/studio. No blanket *.log rule here: the 33 golden parser samples under backend/packs are
+# .log files and are the evidence the reconstruction proof runs against.
+
+# --- version control and tooling
+.git
+.gitignore
+.github
+.vscode
+.claude
+**/.pytest_cache
+
+# --- secrets and local configuration (never in an image we hand to a judge)
+.env
+**/.env
+!**/*.env.example
+deploy/secrets/*
+!deploy/secrets/*.example
+**/.chat_sessions.json
+**/.studio_secret
+
+# --- host-built artefacts: rebuilt inside the builder stages, never copied from the host
+**/.venv
+**/venv
+**/node_modules
+frontend/dist
+bin/
+**/__pycache__
+**/*.py[cod]
+**/*.test
+.gocache
+
+# --- local development state and run logs (explicit paths, never a *.log glob)
+.dev-logs
+.demo-traffic.log
+.defense-traffic.log
+.llm-traffic.log
+data/
+/data
+
+# --- test code that nothing at run time imports
+# Only the Python unit tests. backend/packs/tests is NOT excluded and must never be: those 33
+# .log files are the golden samples that `aletheia test-pack` reconstructs byte for byte, which
+# is the project's central claim and is re-checked inside the shipped image.
+backend/studio/tests
+backend/studio/requirements-dev.txt
+backend/pytest.ini
+backend/engine/testdata
+
+# --- not part of the product, or not copied by the Dockerfile
+personal
+docs
+scripts
+setup.bat
+setup.ps1
+*.tar
+*.tar.gz

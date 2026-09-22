@@ -2,7 +2,7 @@
 # INVARIANT (spec §6.1, CONTRACTS §3): the Kafka message VALUE is the exact raw bytes.
 # Nothing is parsed, trimmed, re-encoded or wrapped. All metadata travels in Kafka HEADERS.
 
-data_dir = "/var/lib/vector"
+data_dir = "${ALETHEIA_VECTOR_DATA_DIR:-/var/lib/vector}"
 
 [api]
 enabled = true
@@ -14,7 +14,7 @@ address = "0.0.0.0:8686"
 type = "file"
 
 [enrichment_tables.sources.file]
-path = "/etc/vector/sources.csv"
+path = "${ALETHEIA_VECTOR_ETC:-/etc/vector}/sources.csv"
 encoding = { type = "csv" }
 
 [enrichment_tables.sources.schema]
@@ -61,9 +61,9 @@ decoding.codec = "bytes"
 framing.method = "octet_counting"
 framing.octet_counting.max_length = 102400
 tls.enabled = true
-tls.crt_file = "/etc/vector/tls/server.crt"
-tls.key_file = "/etc/vector/tls/server.key"
-tls.ca_file = "/etc/vector/tls/ca.crt"
+tls.crt_file = "${ALETHEIA_TLS_DIR:-/etc/vector/tls}/server.crt"
+tls.key_file = "${ALETHEIA_TLS_DIR:-/etc/vector/tls}/server.key"
+tls.ca_file = "${ALETHEIA_TLS_DIR:-/etc/vector/tls}/ca.crt"
 tls.verify_certificate = false   # set true for mutual TLS where devices support it
 
 # Internal input for the demo replayers / corpus loaders (spec §13.2).

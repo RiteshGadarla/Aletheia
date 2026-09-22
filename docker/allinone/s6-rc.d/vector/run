@@ -5,6 +5,12 @@ exec 2>&1
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:9092 120
 /opt/aletheia/init/wait-for.sh http http://127.0.0.1:3100/ready 120
 export VECTOR_CONFIG_DIR=/etc/aletheia/vector
+# ingest.toml defaults to the Compose layout; redirect it at the all-in-one one. Without
+# ALETHEIA_VECTOR_DATA_DIR every disk buffer fails to build its ledger with EACCES, because
+# /var/lib/vector is not writable by the aletheia user.
+export ALETHEIA_VECTOR_DATA_DIR=/data/vector
+export ALETHEIA_VECTOR_ETC=/etc/aletheia/vector
+export ALETHEIA_TLS_DIR=/data/tls
 export ALETHEIA_BUS_BROKERS=127.0.0.1:9092
 export ALETHEIA_LOKI_ENDPOINT=http://127.0.0.1:3100
 exec s6-setuidgid aletheia /usr/local/bin/vector \

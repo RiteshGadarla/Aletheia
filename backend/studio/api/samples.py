@@ -15,7 +15,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
-SERVE = Path(__file__).resolve().parents[3] / "sources" / "generators" / "servers" / "serve.py"
+# Repo layout by default; ALETHEIA_SERVE_PY overrides it for the all-in-one image, where
+# the generators are installed at /opt/aletheia/sources rather than beside the backend.
+SERVE = Path(os.environ.get(
+    "ALETHEIA_SERVE_PY",
+    str(Path(__file__).resolve().parents[3] / "sources" / "generators" / "servers" / "serve.py"),
+))
 HOST = os.environ.get("ALETHEIA_SAMPLES_HOST", "127.0.0.1")
 UDP_TARGET = os.environ.get("ALETHEIA_SAMPLES_UDP_TARGET", "127.0.0.1:5514")
 

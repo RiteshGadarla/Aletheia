@@ -14,12 +14,16 @@ ARG VECTOR_VERSION=0.44.0
 ARG REDPANDA_VERSION=v24.3.6
 ARG CLICKHOUSE_VERSION=24.8.14.39
 ARG POSTGRES_VERSION=16.6
-ARG MINIO_VERSION=RELEASE.2024-12-18T13-15-44Z
-ARG MINIO_MC_VERSION=RELEASE.2024-11-21T17-21-54Z
 ARG LOKI_VERSION=3.3.2
 ARG GRAFANA_VERSION=11.4.0
 ARG PROMETHEUS_VERSION=v3.1.0
 ARG S6_OVERLAY_VERSION=3.2.0.2
+
+# BuildKit cache mounts below (npm, pip, apt) live outside the image: nothing they hold ends up
+# in a layer, so they make rebuilds faster AND the image slightly smaller than the previous
+# `rm -rf /var/lib/apt/lists/*` approach. `rm -f docker-clean` is required because Debian images
+# ship an apt hook that deletes downloaded .debs, which would empty the cache on every run.
+# Each stage uses its own cache id so the three apt steps still run in parallel.
 
 # ---------------------------------------------------------------- builders
 
@@ -41,17 +45,22 @@ FROM node:${NODE_VERSION}-${DEBIAN_SUITE} AS ui-build
 WORKDIR /app
 ENV npm_config_fund=false npm_config_audit=false
 COPY frontend/package.json frontend/package-lock.jso[n] ./
-RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+RUN --mount=type=cache,id=aletheia-npm,target=/root/.npm \
+    npm ci --no-audit --no-fund || npm install --no-audit --no-fund
 COPY frontend ./
 ARG ALETHEIA_VERSION=dev
 ENV VITE_ALETHEIA_VERSION=${ALETHEIA_VERSION}
 RUN npm run build
 
 FROM python:${PYTHON_VERSION}-slim-${DEBIAN_SUITE} AS py-build
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential librdkafka-dev \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=aletheia-apt-py,target=/var/cache/apt \
+    --mount=type=cache,id=aletheia-aptlib-py,target=/var/lib/apt \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends build-essential librdkafka-dev
 COPY backend/studio/requirements.txt /tmp/requirements.txt
-RUN python -m venv /venv && /venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt
+RUN --mount=type=cache,id=aletheia-pip,target=/root/.cache/pip \
+    python -m venv /venv && \
+    /venv/bin/pip install --retries 10 --timeout 120 -r /tmp/requirements.txt
 
 # s6-overlay: process supervision, dependency-ordered start, clean signal forwarding.
 FROM debian:${DEBIAN_SUITE}-slim AS s6
@@ -59,8 +68,10 @@ ARG S6_OVERLAY_VERSION
 ARG TARGETARCH
 # ca-certificates is not optional here: debian-slim ships no CA bundle, so curl fails the s6
 # download with "error setting certificate file" (exit 77) before it ever reaches the network.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,id=aletheia-apt-s6,target=/var/cache/apt \
+    --mount=type=cache,id=aletheia-aptlib-s6,target=/var/lib/apt \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
       amd64) S6_ARCH=x86_64 ;; \
@@ -79,22 +90,19 @@ FROM timberio/vector:${VECTOR_VERSION}-debian            AS up-vector
 FROM redpandadata/redpanda:${REDPANDA_VERSION}           AS up-redpanda
 FROM clickhouse/clickhouse-server:${CLICKHOUSE_VERSION}  AS up-clickhouse
 FROM postgres:${POSTGRES_VERSION}-bookworm               AS up-postgres
-FROM quay.io/minio/minio:${MINIO_VERSION}                        AS up-minio
-FROM quay.io/minio/mc:${MINIO_MC_VERSION}                        AS up-mc
 FROM grafana/loki:${LOKI_VERSION}                        AS up-loki
 FROM grafana/grafana:${GRAFANA_VERSION}-ubuntu           AS up-grafana
 FROM prom/prometheus:${PROMETHEUS_VERSION}               AS up-prometheus
 
 # ---------------------------------------------------------------- final
 
-FROM debian:${DEBIAN_SUITE}-slim
+FROM python:${PYTHON_VERSION}-slim-${DEBIAN_SUITE}
 
 ARG ALETHEIA_VERSION=dev
 ARG VECTOR_VERSION
 ARG REDPANDA_VERSION
 ARG CLICKHOUSE_VERSION
 ARG POSTGRES_VERSION
-ARG MINIO_VERSION
 ARG LOKI_VERSION
 ARG GRAFANA_VERSION
 ARG PROMETHEUS_VERSION
@@ -104,17 +112,19 @@ LABEL org.opencontainers.image.title="Aletheia" \
       org.opencontainers.image.version="${ALETHEIA_VERSION}" \
       org.opencontainers.image.source="https://github.com/Ritesh2006M/aletheia" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      io.aletheia.components="vector=${VECTOR_VERSION} redpanda=${REDPANDA_VERSION} clickhouse=${CLICKHOUSE_VERSION} postgres=${POSTGRES_VERSION} minio=${MINIO_VERSION} loki=${LOKI_VERSION} grafana=${GRAFANA_VERSION} prometheus=${PROMETHEUS_VERSION}" \
+      io.aletheia.components="vector=${VECTOR_VERSION} redpanda=${REDPANDA_VERSION} clickhouse=${CLICKHOUSE_VERSION} postgres=${POSTGRES_VERSION} loki=${LOKI_VERSION} grafana=${GRAFANA_VERSION} prometheus=${PROMETHEUS_VERSION}" \
       io.aletheia.ai-weights="none"
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN --mount=type=cache,id=aletheia-apt-final,target=/var/cache/apt \
+    --mount=type=cache,id=aletheia-aptlib-final,target=/var/lib/apt \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates nginx openssl procps netcat-openbsd wget curl jq xz-utils tzdata locales \
       libicu72 libssl3 liblz4-1 libzstd1 libxml2 libxslt1.1 libldap-2.5-0 libnuma1 libatomic1 \
       libpq5 \
-      python3-minimal libpython3-stdlib \
-    && rm -rf /var/lib/apt/lists/* \
-    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8
+    && localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 \
+    && rm -rf /usr/share/doc /usr/share/man /usr/share/info /usr/share/lintian /usr/share/linda
 ENV LANG=en_US.UTF-8
 
 # --- s6-overlay as PID 1
@@ -125,10 +135,9 @@ COPY --from=up-vector     /usr/bin/vector            /usr/local/bin/vector
 COPY --from=up-vector     /usr/share/vector          /usr/share/vector
 COPY --from=up-redpanda   /opt/redpanda              /opt/redpanda
 COPY --from=up-clickhouse /usr/bin/clickhouse        /usr/local/bin/clickhouse
+COPY --from=up-clickhouse /etc/clickhouse-server    /etc/aletheia/clickhouse
 COPY --from=up-postgres   /usr/lib/postgresql        /usr/lib/postgresql
 COPY --from=up-postgres   /usr/share/postgresql      /usr/share/postgresql
-COPY --from=up-minio      /usr/bin/minio             /usr/local/bin/minio
-COPY --from=up-mc         /usr/bin/mc                /usr/local/bin/mc
 COPY --from=up-loki       /usr/bin/loki              /usr/local/bin/loki
 COPY --from=up-grafana    /usr/share/grafana         /usr/share/grafana
 COPY --from=up-prometheus /bin/prometheus            /usr/local/bin/prometheus
@@ -162,6 +171,7 @@ COPY sources         /opt/aletheia/sources
 
 # --- configuration (component configs live in the image, state never does)
 COPY deploy/clickhouse/init.sql          /opt/aletheia/sql/clickhouse-init.sql
+COPY deploy/clickhouse/config.d/         /etc/aletheia/clickhouse/config.d/
 COPY deploy/postgres/init.sql            /opt/aletheia/sql/postgres-init.sql
 COPY deploy/vector/ingest.toml           /etc/aletheia/vector/ingest.toml
 COPY deploy/vector/sinks.toml            /etc/aletheia/vector/sinks.toml
@@ -195,7 +205,7 @@ RUN set -eux; \
     groupadd -r aletheia; \
     useradd -r -g aletheia -d /data -s /usr/sbin/nologin aletheia; \
     useradd -r -g aletheia -d /data/postgres -s /usr/sbin/nologin pgrun; \
-    for d in postgres clickhouse redpanda minio loki prometheus grafana vector tls run logs bench demo; do \
+    for d in postgres clickhouse redpanda loki prometheus grafana vector tls run logs bench demo; do \
       mkdir -p "/data/$d"; \
     done; \
     chown -R aletheia:aletheia /data /opt/aletheia /app /usr/share/aletheia; \
@@ -209,32 +219,35 @@ ENV GF_ANALYTICS_REPORTING_ENABLED=false \
     GF_NEWS_NEWS_FEED_ENABLED=false \
     GF_USAGE_STATS_ENABLED=false \
     GF_PLUGINS_PLUGIN_ADMIN_ENABLED=false \
-    MINIO_UPDATE=off \
     DO_NOT_TRACK=1 \
     CHECKPOINT_DISABLE=1 \
     NEXT_TELEMETRY_DISABLED=1 \
     RPK_ADDITIONAL_START_FLAGS="--set redpanda.enable_usage_stats=false"
 
 # --- runtime defaults (spec §13.3). No API key is ever baked in.
-ENV PATH=/venv/bin:/usr/local/bin:/usr/bin:/bin \
+ENV PATH=/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin \
     ALETHEIA_VERSION=${ALETHEIA_VERSION} \
-    ALETHEIA_HOME=/data \
+    ALETHEIA_UI_PORT=6156 \
     ALETHEIA_PACKS_DIR=/opt/aletheia/packs \
     ALETHEIA_OCSF_DIR=/app/ocsf \
     ALETHEIA_ENGINE_BIN=/usr/local/bin/aletheia \
+    ALETHEIA_BIN=/usr/local/bin/aletheia \
     ALETHEIA_DEMO_AUTOSTART=true \
     ALETHEIA_DEMO_RATE=200 \
+    ALETHEIA_DEMO_SAMPLES=asa,fortigate,cef \
+    ALETHEIA_SERVE_PY=/opt/aletheia/sources/generators/servers/serve.py \
+    ALETHEIA_DEMO_SCRIPT=/app/demo/scenarios.py \
+    ALETHEIA_VERIFY_PACKS=/opt/aletheia/packs/verify_packs.py \
+    ALETHEIA_LOKI_URL=http://127.0.0.1:3100 \
     ALETHEIA_WORKERS=2 \
     ALETHEIA_ADMIN_PASSWORD=aletheia \
-    ALETHEIA_SEED=26156 \
     ALETHEIA_BUS_BROKERS=127.0.0.1:9092 \
     ALETHEIA_CLICKHOUSE_ADDR=127.0.0.1:9000 \
     ALETHEIA_CLICKHOUSE_HTTP=http://127.0.0.1:8123 \
     ALETHEIA_POSTGRES_DSN=postgres://aletheia:aletheia@127.0.0.1:5432/aletheia?sslmode=disable \
-    ALETHEIA_S3_ENDPOINT=http://127.0.0.1:9100 \
-    ALETHEIA_S3_BUCKET=aletheia \
-    ALETHEIA_S3_ACCESS_KEY=aletheia \
-    ALETHEIA_S3_SECRET_KEY=aletheia-demo-secret \
+    ALETHEIA_PG_DSN=postgres://aletheia:aletheia@127.0.0.1:5432/aletheia?sslmode=disable \
+    ALETHEIA_CLICKHOUSE_USER=aletheia \
+    ALETHEIA_CLICKHOUSE_PASSWORD=aletheia \
     ALETHEIA_LLM_PROVIDER=none \
     ALETHEIA_LLM_MODEL= \
     ALETHEIA_LLM_BASE_URL= \
@@ -250,8 +263,8 @@ ENV PATH=/venv/bin:/usr/local/bin:/usr/bin:/bin \
 
 VOLUME ["/data"]
 
-# 8080 UI  3000 Grafana  5514 syslog udp/tcp  5515 octet-counted  6514 syslog TLS  8123 ClickHouse HTTP
-EXPOSE 8080 3000 5514/udp 5514/tcp 5515/tcp 6514/tcp 8123
+# 6156 UI  3000 Grafana  5514 syslog udp/tcp  5515 octet-counted  6514 syslog TLS  8123 ClickHouse HTTP
+EXPOSE 6156 3000 5514/udp 5514/tcp 5515/tcp 6514/tcp 8123
 
 HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=10 \
   CMD /usr/local/bin/healthcheck.sh

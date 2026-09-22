@@ -1,0 +1,19 @@
+# All-in-one override. The deploy/ copy points at /var/lib/grafana/dashboards, which is where the
+# Compose stack mounts them; in this image they are baked in at /etc/aletheia/grafana/dashboards.
+# Without this override Grafana starts, provisions its three datasources, and then logs
+# "Cannot read directory /var/lib/grafana/dashboards" every 30 seconds while both Aletheia
+# dashboards are silently missing -- the datasources.yml override beside this file already
+# existed, which is why the datasources worked and the dashboards did not.
+apiVersion: 1
+
+providers:
+  - name: aletheia
+    orgId: 1
+    folder: Aletheia
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /etc/aletheia/grafana/dashboards
+      foldersFromFilesStructure: false

@@ -20,6 +20,7 @@ import logging
 import shutil
 import subprocess
 import tempfile
+import os
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,11 @@ def _write_samples_dir(samples: list[str], root: Path) -> Path:
 
 # The engine loads envelope templates from _envelopes.yaml beside the pack. Without it the
 # proposed pack cannot be spliced and every sample "fails" for the wrong reason.
-_REPO_ENVELOPES = Path(__file__).resolve().parents[3] / "backend" / "packs" / "_envelopes.yaml"
+# ALETHEIA_PACKS_DIR is where the image actually installs the packs; parents[3] resolves to
+# "/" there, so the gate silently fell back to a bare envelope and failed valid proposals.
+_PACKS_DIR = Path(os.environ.get("ALETHEIA_PACKS_DIR",
+                                 str(Path(__file__).resolve().parents[3] / "backend" / "packs")))
+_REPO_ENVELOPES = _PACKS_DIR / "_envelopes.yaml"
 
 
 def _write_envelopes(root: Path) -> None:

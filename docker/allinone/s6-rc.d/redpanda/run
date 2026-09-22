@@ -1,5 +1,7 @@
 #!/command/with-contenv bash
 # Redpanda: raw bytes are replicated to disk before any parsing starts.
+# No --check=false here: redpanda removed that flag, and passing it aborts start-up with
+# "unrecognised option" before the broker ever binds 9092.
 set -eu
 exec 2>&1
 exec s6-setuidgid aletheia /opt/redpanda/bin/redpanda \
@@ -7,5 +9,4 @@ exec s6-setuidgid aletheia /opt/redpanda/bin/redpanda \
   --smp "${ALETHEIA_RP_CORES:-1}" \
   --memory "${ALETHEIA_RP_MEMORY:-1G}" \
   --overprovisioned \
-  --check=false \
   --default-log-level=warn

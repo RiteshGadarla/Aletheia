@@ -167,7 +167,12 @@ class PostgresRepo:
 
 
 def build_repo(dsn: str | None = None) -> Repo:
-    dsn = dsn if dsn is not None else os.environ.get("ALETHEIA_PG_DSN") or os.environ.get("DATABASE_URL")
+    # ALETHEIA_POSTGRES_DSN is the name the Go engine and the all-in-one image use
+    # (backend/engine/config/config.go accepts both); without it here the Studio silently
+    # ran in-memory while the worker used Postgres.
+    dsn = dsn if dsn is not None else (os.environ.get("ALETHEIA_PG_DSN")
+                                       or os.environ.get("ALETHEIA_POSTGRES_DSN")
+                                       or os.environ.get("DATABASE_URL"))
     if not dsn:
         log.warning("no ALETHEIA_PG_DSN/DATABASE_URL: settings and pack registry are in-memory only")
         return MemoryRepo()

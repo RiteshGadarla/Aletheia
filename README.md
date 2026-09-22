@@ -30,7 +30,7 @@ sealed into a per-minute **Merkle chain**, so tampering with stored data is dete
 3. Anything that does not match is still stored verbatim and queued for onboarding. Nothing is ever dropped.
 
 ```
-devices ──▶ Vector ──▶ Redpanda(raw) ──▶ Worker ──▶ ClickHouse / Loki / Parquet / HEC / CEF
+devices ──▶ Vector ──▶ Redpanda(raw) ──▶ Worker ──▶ ClickHouse / Loki / HEC / CEF
                                             │           evidence stamp → envelope → match
                                             │           → reconstruct+verify → OCSF
                                             └──▶ quarantine ──▶ Onboarding Studio ──▶ gated parser pack
@@ -54,7 +54,7 @@ Docker is used **only for the four datastores**. The engine, Studio and frontend
 make setup        # venv, npm install, local LLM config
 make doctor       # what is installed, what each target needs
 make check        # packs + engine + studio + frontend, with nothing running
-make services     # ClickHouse, PostgreSQL, Redpanda, MinIO in Docker
+make services     # ClickHouse, PostgreSQL, Redpanda in Docker
 make run          # services + engine/Studio/frontend natively
 ```
 
@@ -62,7 +62,7 @@ make run          # services + engine/Studio/frontend natively
 |---|---|
 | Frontend | <http://localhost:5173> |
 | Studio API | <http://localhost:8081> |
-| ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 · MinIO :9001 |
+| ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 |
 
 Go is not required up front — `make install-go` drops Go 1.23 into `~/.local/go` without root.
 
@@ -97,17 +97,17 @@ TOTAL                     25       30      30      0
 docker pull docker.io/<namespace>/aletheia:1.0.0
 
 docker run -d --name aletheia \
-  -p 8080:8080 -p 3000:3000 \
+  -p 6156:6156 -p 3000:3000 \
   -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 
 Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
-**<http://localhost:8080>**.
+**<http://localhost:6156>**.
 
 | Port | Service |
 |---|---|
-| 8080 | Aletheia UI — Demo Console, lineage viewer, Onboarding Studio, replay diff, Settings |
+| 6156 | Aletheia UI — Demo Console, lineage viewer, Onboarding Studio, replay diff, Settings |
 | 3000 | Grafana — dashboards over ClickHouse, Loki and Prometheus |
 | 5514 UDP/TCP | Syslog input — send your own logs |
 | 6514 | Syslog over TLS (optional) |
@@ -115,7 +115,7 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 
 ## 5. Guided evaluation
 
-Open the **Demo Console** at <http://localhost:8080/demo> and run the scenarios in order. Each card
+Open the **Demo Console** at <http://localhost:6156/demo> and run the scenarios in order. Each card
 states what is being proven and what success looks like, and shows the equivalent CLI command.
 
 | # | Scenario | Proves |
@@ -170,7 +170,7 @@ sha256sum aletheia-1.0.0.tar        # compare against the value published below
 sha256sum aletheia-1.0.0.tar
 docker load -i aletheia-1.0.0.tar
 docker run -d --name aletheia -e ALETHEIA_AIRGAP=true \
-  -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 
@@ -192,12 +192,11 @@ demo. Use `-v aletheia-data:/data` to persist across restarts.
 | `ALETHEIA_DEMO_RATE` | `200` | Demo events per second |
 | `ALETHEIA_WORKERS` | `2` | Worker processes in the container |
 | `ALETHEIA_ADMIN_PASSWORD` | documented demo value | UI and Grafana admin password |
-| `ALETHEIA_SEED` | fixed | Generator seed, so every run is identical |
 | `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud AI providers |
 | `ALETHEIA_SECRET` | generated at first start | Key material for secrets stored via the UI |
 
 Sinks: ClickHouse (system of record), Grafana Loki, Kafka topic `normalized`, Splunk HEC,
-CEF re-emit over syslog, and periodic Parquet export to MinIO.
+and CEF re-emit over syslog.
 
 ## 10. AI assistant (optional)
 
@@ -217,7 +216,7 @@ Three modes:
 ### Configuring it from the UI (recommended)
 
 **No key is baked into the image.** Start the container, open
-**Settings** at <http://localhost:8080/settings>, pick a provider, enter the model and key, and press
+**Settings** at <http://localhost:6156/settings>, pick a provider, enter the model and key, and press
 **Test connection**. Settings are stored encrypted (AES-GCM) in PostgreSQL and take effect
 immediately — no restart. The UI only ever displays the last four characters of a stored key.
 
@@ -227,7 +226,7 @@ immediately — no restart. The UI only ever displays the last four characters o
 cp deploy/secrets/aletheia.env.example deploy/secrets/aletheia.env
 # edit it, then:
 docker run -d --name aletheia --env-file deploy/secrets/aletheia.env \
-  -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 
@@ -265,7 +264,7 @@ OLLAMA_HOST=0.0.0.0 ollama serve          # Linux only
 docker run -d --name aletheia \
   --add-host=host.docker.internal:host-gateway \
   -e ALETHEIA_LLM_PROVIDER=local -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
-  -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 
@@ -326,7 +325,7 @@ Honest scope and known limitations are in
 | Symptom | Cause / fix |
 |---|---|
 | Container never becomes `healthy` | Almost always memory. Give Docker 8 GB. Check `docker logs aletheia`. |
-| Port already in use | Change the host side of the mapping, e.g. `-p 18080:8080`. |
+| Port already in use | Change the host side of the mapping, e.g. `-p 16156:6156`. |
 | Apple Silicon warnings | The image is multi-arch; make sure you pulled the `arm64` variant. |
 | Container cannot reach Ollama on Linux | Needs `--add-host=host.docker.internal:host-gateway`, and Ollama must listen beyond `127.0.0.1` (`OLLAMA_HOST=0.0.0.0`). Restrict with the host firewall. |
 | "AI suggestion unavailable" | Expected fallback. Heuristic proposals still work. Check Settings → Test connection. |
@@ -343,8 +342,8 @@ Honest scope and known limitations are in
 | d. Traceability | `event_uid`, `raw_sha256`, pack version, **byte-level lineage** |
 | e. Plug-and-play onboarding | Parser packs, Onboarding Studio, hot reload with no restart |
 | f. Unified visibility | One schema across all sources in ClickHouse, Grafana and Loki |
-| g. SIEM / data lake integration | Kafka topic, Splunk HEC, CEF re-emit, Loki, Parquet on MinIO |
-| h. AI/ML ready | Typed columns, Parquet partitioned by class and date |
+| g. SIEM / data lake integration | Kafka topic `normalized`, Splunk HEC, CEF re-emit over syslog, Loki |
+| h. AI/ML ready | Typed OCSF columns in ClickHouse, queryable over HTTP on :8123 |
 | i. Reduced parser effort | Automatic template derivation, slot typing, mapping proposals |
 | j. Air-gapped | `docker save`/`docker load`, nothing fetched at run time, telemetry off, AI optional |
 | k. Containerized | All-in-one image (amd64 + arm64); per-component images with Compose or Helm |

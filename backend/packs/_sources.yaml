@@ -92,3 +92,14 @@ sources:
     listener: udp:5514
     timezone: UTC
     enabled: true
+
+  # All-in-one image: every producer is on loopback, so deploy/vector/sources.csv resolves all
+  # traffic to demo-local. Registered here so it carries a declared timezone instead of the
+  # synthetic UTC entry. No vendor is claimed: one loopback source genuinely carries several.
+  - source_id: demo-local
+    vendor: Aletheia
+    product: Demo
+    device_type: mixed
+    listener: udp:5514
+    timezone: UTC
+    enabled: true

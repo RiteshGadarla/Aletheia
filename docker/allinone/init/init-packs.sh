@@ -6,15 +6,31 @@ export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=aletheia PGDATABASE=aletheia
 
 # Demo source registry. Peers match the replayers; unknown peers stay `unknown:<ip>`.
 psql -v ON_ERROR_STOP=1 <<'SQL' >/dev/null
+-- vendor/product must equal the pack's `applies_to` exactly or the vendor-scoped bucket is
+-- never hit (see backend/packs/_sources.yaml). pfSense, OpenVPN and Squid were spelled
+-- differently here than in their packs and silently fell through to the wildcard.
 INSERT INTO sources (source_id, peers, listener, vendor, product, device_type, timezone) VALUES
-  ('fw01',    ARRAY['192.0.2.10'], 'udp:5514', 'Netgate',  'pfSense',   'firewall',  'UTC'),
-  ('ids01',   ARRAY['192.0.2.11'], 'udp:5514', 'OISF',     'Suricata',  'ids',       'UTC'),
-  ('vpn01',   ARRAY['192.0.2.12'], 'udp:5514', 'OpenVPN',  'OpenVPN',   'vpn',       'UTC'),
-  ('proxy01', ARRAY['192.0.2.13'], 'udp:5514', 'Squid',    'Squid',     'proxy',     'UTC'),
-  ('asa01',   ARRAY['192.0.2.14'], 'udp:5514', 'Cisco',    'ASA',       'firewall',  'UTC'),
-  ('fgt01',   ARRAY['192.0.2.15'], 'udp:5514', 'Fortinet', 'FortiGate', 'firewall',  'UTC'),
-  ('cef01',   ARRAY['192.0.2.16'], 'udp:5514', 'Generic',  'CEF',       'waf',       'UTC'),
-  ('leef01',  ARRAY['192.0.2.17'], 'udp:5514', 'Generic',  'LEEF',      'waf',       'UTC')
+  ('fw01',    ARRAY['192.0.2.10'], 'udp:5514', 'Netgate',     'pfSense/OPNsense filterlog', 'firewall', 'UTC'),
+  ('ids01',   ARRAY['192.0.2.11'], 'udp:5514', 'OISF',        'Suricata',  'ids',       'UTC'),
+  ('vpn01',   ARRAY['192.0.2.12'], 'udp:5514', 'OpenVPN Inc', 'OpenVPN',   'vpn',       'UTC'),
+  ('proxy01', ARRAY['192.0.2.13'], 'udp:5514', 'Squid Cache', 'Squid',     'proxy',     'UTC'),
+  ('asa01',   ARRAY['192.0.2.14'], 'udp:5514', 'Cisco',       'ASA',       'firewall',  'UTC'),
+  ('fgt01',   ARRAY['192.0.2.15'], 'udp:5514', 'Fortinet',    'FortiGate', 'firewall',  'UTC'),
+  ('cef01',   ARRAY['192.0.2.16'], 'udp:5514', 'Generic',     'CEF',       'waf',       'UTC'),
+  ('leef01',  ARRAY['192.0.2.17'], 'udp:5514', 'Generic',     'LEEF',      'waf',       'UTC'),
+  -- All-in-one: every producer is on loopback, so deploy/vector/sources.csv resolves them all
+  -- to demo-local. Unregistered it would get a synthetic entry and reach only the wildcard
+  -- bucket; registered it at least carries a declared timezone. Mixed vendors on one loopback
+  -- source is inherent to this layout, so no vendor is claimed here.
+  ('demo-local', ARRAY['127.0.0.1'], 'udp:5514', 'Aletheia', 'Demo', 'mixed', 'UTC'),
+  -- Demo Console connector presets (backend/studio/api/samples.py).
+  ('asa-fw',       ARRAY['127.0.0.1'], 'tcp:9101',  'Cisco',       'ASA',          'firewall', 'UTC'),
+  ('fortigate',    ARRAY['127.0.0.1'], 'http:9102', 'Fortinet',    'FortiGate',    'firewall', 'UTC'),
+  ('web-proxy',    ARRAY['127.0.0.1'], 'loki:9103', 'Squid Cache', 'Squid',        'proxy',    'UTC'),
+  ('vpn-gw',       ARRAY['127.0.0.1'], 'ws:9104',   'OpenVPN Inc', 'OpenVPN',      'vpn',      'UTC'),
+  ('waf-cef',      ARRAY['127.0.0.1'], 'udp:5514',  'Generic',     'CEF',          'waf',      'UTC'),
+  ('llm-cluster',  ARRAY['127.0.0.1'], 'tcp:9111',  'AI-Cluster',  'LLM-Trainer',  'compute',  'UTC'),
+  ('defense-net',  ARRAY['127.0.0.1'], 'tcp:9110',  'Generic',     'CEF',          'defense',  'UTC')
 ON CONFLICT (source_id) DO NOTHING;
 SQL
 

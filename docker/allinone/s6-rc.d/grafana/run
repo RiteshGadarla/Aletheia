@@ -6,6 +6,9 @@ exec 2>&1
 export GF_SECURITY_ADMIN_USER=admin
 export GF_SECURITY_ADMIN_PASSWORD="${ALETHEIA_ADMIN_PASSWORD:-aletheia}"
 export GF_PATHS_DATA=/data/grafana
+# grafana.ini's default_home_dashboard_path is the Compose path (/var/lib/grafana/...),
+# which does not exist here; without this the evaluator gets Grafana's welcome page.
+export GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/aletheia/grafana/dashboards/aletheia-pipeline.json
 export GF_PATHS_LOGS=/data/logs/grafana
 export GF_PATHS_PLUGINS=/data/grafana/plugins
 export GF_PATHS_PROVISIONING=/etc/aletheia/grafana/provisioning

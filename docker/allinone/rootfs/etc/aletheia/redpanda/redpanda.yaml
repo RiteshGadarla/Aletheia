@@ -62,6 +62,9 @@ rpk:
   coredump_dir: /data/redpanda/coredump
   overprovisioned: true
 
-pandaproxy: {}
-
-schema_registry: {}
+# No pandaproxy and no schema registry. An empty `schema_registry: {}` does not mean "off", it
+# means "on with defaults" -- and the default schema registry port is 8081, the same port the
+# Onboarding Studio binds. Redpanda starts first, wins the port, and the Studio then fails with
+# EADDRINUSE forever while every health probe gets a Seastar 404 that looks like a routing bug.
+# Nothing in Aletheia speaks either protocol: the worker and sealer use the Kafka API via
+# franz-go, Vector uses its kafka sink, and the Studio uses confluent-kafka -- all on 9092.

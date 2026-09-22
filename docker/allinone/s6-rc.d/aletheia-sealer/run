@@ -2,5 +2,7 @@
 set -eu
 exec 2>&1
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:5432 120
-export ALETHEIA_METRICS_ADDR=127.0.0.1:9109
+# 9120, not 9109: the worker run script assigns 9107+i, so with the default ALETHEIA_WORKERS=2
+# worker #2 already owns 9109. Whichever lost the race silently served no /metrics at all.
+export ALETHEIA_METRICS_ADDR=127.0.0.1:9120
 exec s6-setuidgid aletheia /usr/local/bin/worker --role sealer

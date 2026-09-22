@@ -92,7 +92,7 @@ if "%MODE%"=="native" (
 
     echo Upgrading pip and installing backend requirements...
     .venv\Scripts\python.exe -m pip install --upgrade pip
-    .venv\Scripts\pip.exe install -r backend\studio\requirements.txt
+    .venv\Scripts\pip.exe install -r backend\studio\requirements-dev.txt
 
     echo Installing frontend dependencies...
     cd frontend

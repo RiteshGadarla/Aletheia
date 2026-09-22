@@ -378,7 +378,7 @@ function approvalOf(proposalId: string): ApprovalState {
 function demoOutput(id: string): { ok: boolean; output: string } {
   switch (id) {
     case 'scn0':
-      return { ok: true, output: 'CONTAINER  STATUS\naletheia   Up 4 minutes (healthy)\nUI http://localhost:8080   Grafana http://localhost:3000' };
+      return { ok: true, output: 'CONTAINER  STATUS\naletheia   Up 4 minutes (healthy)\nUI http://localhost:6156   Grafana http://localhost:3000' };
     case 'scn1':
       state.trafficStarted = true;
       return { ok: true, output: 'generators started (seed 26156)\n  fw01 ASA   fgt01 FortiGate   cef01 CEF   proxy01 Squid\n  pf01 filterlog   vpn01 OpenVPN   ids01 Suricata   win01 winlog\nrate 500 eps' };

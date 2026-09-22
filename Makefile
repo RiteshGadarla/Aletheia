@@ -88,7 +88,7 @@ venv: $(VENV)/.stamp
 $(VENV)/.stamp:
 	python3 -m venv $(VENV)
 	$(PIP) install --upgrade pip >/dev/null
-	$(PIP) install -r $(ROOT)/backend/studio/requirements.txt
+	$(PIP) install -r $(ROOT)/backend/studio/requirements-dev.txt
 	@touch $@
 
 node-deps: $(FRONTEND)/node_modules
