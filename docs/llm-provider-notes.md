@@ -1,6 +1,30 @@
 # LLM provider notes — measured, not assumed
 
-Provider `gemini`, model **`gemma-4-31b-it`** (display name "Gemma 4 31B IT").
+## Default model change
+
+The default `llm.model` is now **`gemini-3.5-flash-lite`**, replacing `gemma-4-31b-it`.
+`gemma-4-31b-it` remains fully supported and is documented below, but its latency (~34-50 s
+per call) and unreliability (~50% failure rate on the free tier, see "Model reliability" below)
+make it unsuitable as the default — especially for Lyra, which makes several sequential calls
+per user question.
+
+`gemini-3.5-flash-lite` is fast, reliable, and sufficient for both onboarding OCSF mapping
+proposals and Lyra's tool-using chat loop.
+
+## Lyra and `llm.chat_model`
+
+Lyra (the data assistant at `/dashboard/lyra`) defaults to whatever `llm.model` is configured,
+but the setting `llm.chat_model` can override it for Lyra specifically. This exists because
+onboarding proposals (one request per cluster, latency-tolerant) can benefit from a large
+thinking model, while Lyra needs several fast round-trips per turn.
+
+If `llm.chat_model` is empty (the default), Lyra uses the main model.
+
+---
+
+## Gemma 4 31B IT — measured behaviour
+
+Provider `gemini`, model **`gemma-4-31b-it`**.
 Resolved from `GET /v1beta/models` on 2026-09-19. The other Gemma on the API is
 `gemma-4-26b-a4b-it`. Both: 262144-token input limit, methods `generateContent`, `countTokens`.
 
@@ -59,9 +83,9 @@ Six identical JSON-mode calls per model, same key, same window:
 | `gemma-4-26b-a4b-it` | **6/6** | 200 x6 |
 
 `gemma-4-26b-a4b-it` is the sparse/MoE variant (~4 B active parameters), so it is cheaper to serve
-and visibly less contended. `gemma-4-31b-it` remains the configured default because it was the
-model asked for; **if the assistant is flaky during a demo, switch to `gemma-4-26b-a4b-it` on the
-Settings page** — no restart, no rebuild.
+and visibly less contended. The default model is now `gemini-3.5-flash-lite` (see "Default model
+change" above); `gemma-4-31b-it` can still be used for onboarding proposals if desired — **switch
+models on the Settings page** — no restart, no rebuild.
 
 ## Operational conclusion for the demo
 
@@ -75,4 +99,5 @@ Practical advice:
   with a pre-captured suggestion, or with the fallback message, which is itself an honest
   demonstration of the design.
 - For a more reliable cloud model, switch provider/model on the Settings page — no rebuild needed.
-- For guaranteed offline behaviour, use `provider=ollama` with a local model.
+- For guaranteed offline behaviour, use `provider=local` with a local model
+  (`ollama` is accepted as a legacy alias for `local`; the base URL is what distinguishes servers).

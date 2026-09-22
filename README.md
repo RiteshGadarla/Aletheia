@@ -60,7 +60,8 @@ make run          # services + engine/Studio/frontend natively
 
 | | |
 |---|---|
-| Frontend | <http://localhost:5173> |
+| Product landing page | <http://localhost:5173> |
+| Dashboard (Overview, Events, Lyra, Sources, Export, Demo, Settings) | <http://localhost:5173/dashboard> |
 | Studio API | <http://localhost:8081> |
 | ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 · MinIO :9001 |
 
@@ -107,7 +108,7 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 
 | Port | Service |
 |---|---|
-| 8080 | Aletheia UI — Demo Console, lineage viewer, Onboarding Studio, replay diff, Settings |
+| 8080 | Aletheia UI — product landing, Overview dashboard, Events explorer, Lyra chat assistant, Sources & onboarding, Export & Supply, Demo Console, Settings |
 | 3000 | Grafana — dashboards over ClickHouse, Loki and Prometheus |
 | 5514 UDP/TCP | Syslog input — send your own logs |
 | 6514 | Syslog over TLS (optional) |
@@ -196,10 +197,27 @@ demo. Use `-v aletheia-data:/data` to persist across restarts.
 | `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud AI providers |
 | `ALETHEIA_SECRET` | generated at first start | Key material for secrets stored via the UI |
 
+## 10. Lyra — data assistant
+
+Lyra is a guarded, tool-using chat assistant built into the dashboard at `/dashboard/lyra`.
+It answers ad-hoc questions about ingested events, sources and parser packs by running
+read-only SQL against ClickHouse.
+
+| | |
+|---|---|
+| **Guard** | Every SQL query passes a strict allow-list of tables (`events`, `templates`), columns, functions and keywords. `SELECT *` is refused. `readonly=1` and server-side resource caps are enforced. |
+| **Tools** | `run_sql`, `list_sources`, `list_packs`, `final` — the model emits one JSON action per step, up to 5 steps per turn. |
+| **Provider** | Uses the configured LLM provider (Settings page). A separate `llm.chat_model` setting can point Lyra at a faster model than the onboarding assistant. Default: `gemini-3.5-flash-lite`. |
+| **Sessions** | Chat history is persisted and can be exported as PDF, Markdown, JSON or plain text. |
+| **Streaming** | Real-time step-by-step execution events via SSE (`POST /api/v1/chat/stream`). |
+
+Lyra requires an AI provider — with `provider=none` it shows a prompt to configure one.
+It never writes, deletes or changes settings; every SQL query and its result are audit-logged.
+
 Sinks: ClickHouse (system of record), Grafana Loki, Kafka topic `normalized`, Splunk HEC,
 CEF re-emit over syslog, and periodic Parquet export to MinIO.
 
-## 10. AI assistant (optional)
+## 11. AI assistant (optional)
 
 Aletheia works **fully without any AI.** The Onboarding Studio always runs its heuristics first.
 An AI model is an optional second opinion during onboarding only — **it never touches a live event**,
@@ -217,7 +235,7 @@ Three modes:
 ### Configuring it from the UI (recommended)
 
 **No key is baked into the image.** Start the container, open
-**Settings** at <http://localhost:8080/settings>, pick a provider, enter the model and key, and press
+**Settings** at <http://localhost:8080/dashboard/settings>, pick a provider, enter the model and key, and press
 **Test connection**. Settings are stored encrypted (AES-GCM) in PostgreSQL and take effect
 immediately — no restart. The UI only ever displays the last four characters of a stored key.
 
@@ -243,7 +261,7 @@ Precedence is **UI setting > environment variable > default**.
 
 | Provider | Model | Notes |
 |---|---|---|
-| `gemini` | **`gemma-4-31b-it`** | Default for this build. The only cloud option. Verified against the live API. |
+| `gemini` | **`gemini-3.5-flash-lite`** (default) | Fast, reliable cloud model used for both onboarding proposals and Lyra. `gemma-4-31b-it` is also supported but slower (~34-50 s/call) and less reliable (~50% success rate on free tier). |
 | `local` | any instruction-following model, e.g. `qwen2.5-coder:7b` | Ollama, vLLM, llama.cpp or LM Studio — they share one API, so the base URL is what picks the server. Air-gap friendly; a 4-bit 7–8B model runs on CPU in ~5–8 GB RAM. |
 
 Provider quirks we measured and handle (retries, thinking-part filtering, JSON-schema mode) are
@@ -269,7 +287,7 @@ docker run -d --name aletheia \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 
-## 11. Production mode and building from source
+## 12. Production mode and building from source
 
 ```bash
 docker compose -f deploy/docker-compose.yml up -d      # multi-image, workers scale by replicas
@@ -281,16 +299,22 @@ Repository layout is described in [`docs/technical-specification.md`](docs/techn
 ```
 backend/engine    Go — the deterministic hot path and the CLI
 backend/studio    Python FastAPI — clustering, derivation, gate, replay diff, LLM adapters
+  studio/chat     Lyra chat agent, SQL guard, session store
+  studio/api      REST endpoints: chat, stats, sources, samples, export, settings
 backend/packs     parser packs + golden tests
 backend/ocsf      pinned OCSF subset and validator
-frontend          React — lineage viewer, Studio, Demo Console, Settings
+frontend          React + Vite + TypeScript
+  pages           HomePage (landing), OverviewPage (dashboard), EventsPage, LyraPage,
+                  SourcesPage (unified onboarding), ExportPage, DemoPage, SettingsPage
+  components      Layout, Insights (posture gauge, donut, ranked bars, timeline, findings),
+                  LineageModal, Icons, Bits
 deploy            compose, Vector, Redpanda, ClickHouse, Postgres, Grafana, Prometheus, offline
 docker            all-in-one evaluation image (s6-overlay) and per-component images
 sources           seeded log generators and corpora
 bench             benchmark harness (spec §17 methodology)
 ```
 
-## 12. Image details
+## 13. Image details
 
 | | |
 |---|---|
@@ -302,7 +326,7 @@ bench             benchmark harness (spec §17 methodology)
 
 Pinned upstream component versions are listed in [`docker/allinone/Dockerfile`](docker/allinone/Dockerfile).
 
-## 13. Benchmarks and limitations
+## 14. Benchmarks and limitations
 
 Measured results with machine specifications: [`docs/benchmarks.md`](docs/benchmarks.md).
 Every figure there is measured by the harness in [`bench/`](bench/) — no estimated numbers.
@@ -321,7 +345,7 @@ Honest scope and known limitations are in
   not captured from real devices.
 - UDP syslog can lose packets on the network before they reach Aletheia; prefer TCP or TLS.
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|

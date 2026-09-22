@@ -260,13 +260,20 @@ From this one parse:
                     -> RECONSTRUCTION GATE -> REPLAY DIFF
                     -> human approval -> new pack version to registry
 
+ LYRA               guarded, tool-using chat assistant; runs read-only SQL over
+                    ClickHouse to answer ad-hoc questions about ingested events,
+                    sources and parser packs; SQL guardrail, session persistence,
+                    export (PDF/Markdown/JSON/text)
+
  REPLAY ENGINE      the same Go engine in batch mode; re-runs events through any pack
                     version for diffs and reprocessing
 
  VERIFY TOOL        CLI/API that recomputes hashes and Merkle roots from storage to prove
                     integrity for any source and time range
 
- UI                 Lineage viewer, Studio screens, replay diff viewer; Grafana dashboards
+ UI                 Product landing, Overview dashboard (posture, insights, findings),
+                    Events explorer, Lyra chat, Sources & onboarding, Export & Supply,
+                    Demo Console, Settings; Grafana dashboards
 ```
 
 ### 5.3 Bus topics
@@ -400,8 +407,18 @@ Detailed in Sections 8.6 to 8.12. The optional AI assistant it can call is speci
 - Output: pass/fail per batch, and the exact events and batches that fail.
 
 ### 6.14 User interface
-- **Lineage viewer:** Shows a normalized event next to its reconstructed raw line; hovering or clicking an OCSF field highlights the exact bytes it came from.
-- **Studio screens:** Quarantine clusters, proposed template with slots coloured by type, proposed mappings with confidence, gate results, replay diff, approve/reject.
+
+| Path | Page | Purpose |
+|---|---|---|
+| `/` | Product landing | Introduction, feature highlights, entry point to the dashboard |
+| `/dashboard` | Overview | Real-time KPIs, posture gauge (0-100), severity distribution, auto-generated findings, per-source heatmap, timeline, storage comparison, Merkle batch stats |
+| `/dashboard/events` | Events explorer | Searchable OCSF event table with lineage modal — shows normalized event next to reconstructed raw line; clicking an OCSF field highlights the exact bytes it came from |
+| `/dashboard/lyra` | Lyra | Guarded chat assistant — runs read-only SQL against ClickHouse; tools: `run_sql`, `list_sources`, `list_packs`, `final`; SQL guardrail (allow-listed tables/columns/functions, `readonly=1`, max 200 rows); session persistence and export (PDF/Markdown/JSON/text) |
+| `/dashboard/sources` | Sources & onboarding | Unified onboarding flow: connect sources, collect samples, review quarantine clusters, view proposed templates with slots coloured by type, proposed mappings with confidence, gate results, replay diff, approve/reject |
+| `/dashboard/export` | Export & Supply | Reports (PDF/JSON/CSV/Markdown/HTML), log export (JSON/JSONL/CSV/TSV/text/CEF/LEEF/XML), live supply stream (TCP) |
+| `/dashboard/demo` | Demo Console | Guided evaluation scenarios with sample log servers, live traffic controls |
+| `/dashboard/settings` | Settings | LLM provider/model/key configuration, masking mode, air-gap toggle, connection test, usage counter |
+
 - **Grafana dashboards:** Events per source and class, parse status breakdown, verified rate, quarantine rate, throughput and lag.
 
 ---
@@ -817,20 +834,16 @@ Three operating modes:
 | `ALETHEIA_LLM_PROVIDER` | Protocol used | Default base URL | API key |
 |---|---|---|---|
 | `none` | none | none | no |
-| `openai` | OpenAI Chat Completions | `https://api.openai.com/v1` | yes |
-| `groq` | OpenAI-compatible | `https://api.groq.com/openai/v1` | yes |
-| `gemini` | Gemini's OpenAI-compatible endpoint | `https://generativelanguage.googleapis.com/v1beta/openai/` | yes |
-| `anthropic` | Anthropic Messages API (native adapter) | `https://api.anthropic.com/v1` | yes |
-| `ollama` | OpenAI-compatible (`/v1`) served by Ollama | `http://host.docker.internal:11434/v1` | no |
-| `openai_compatible` | OpenAI-compatible | must be set (`ALETHEIA_LLM_BASE_URL`) | optional |
+| `gemini` | Gemini native API (`generativelanguage.googleapis.com`) | `https://generativelanguage.googleapis.com/v1beta` | yes |
+| `local` | OpenAI-compatible (`/v1`) | `http://localhost:11434/v1` (Ollama default) | no |
 
-`openai_compatible` covers vLLM, the llama.cpp server, LM Studio, OpenRouter and other vendors that expose the same API. Default URLs can always be overridden with `ALETHEIA_LLM_BASE_URL`. The **model name is always the operator's choice** (`ALETHEIA_LLM_MODEL`); Aletheia does not hard-code vendor model names because they change often. The README lists the models tested at release time.
+`local` covers Ollama, vLLM, the llama.cpp server, LM Studio and any other server that exposes an OpenAI-compatible chat completions API. `ollama` is accepted as a legacy alias for `local`. Default URLs can always be overridden with `ALETHEIA_LLM_BASE_URL`. The **model name is always the operator's choice** (`ALETHEIA_LLM_MODEL`); Aletheia does not hard-code vendor model names because they change often. The README lists the models tested at release time. The default model is `gemini-3.5-flash-lite`.
 
 #### 8.12.3 Adapter design
 - One interface in the Studio: `complete_json(system_prompt, user_prompt, json_schema) -> dict`.
 - Two implementations cover every provider:
-  - **OpenAICompatibleProvider**: OpenAI, Groq, Gemini (compatibility endpoint), Ollama, vLLM, llama.cpp, LM Studio and similar.
-  - **AnthropicProvider**: Anthropic's native Messages API.
+  - **GeminiProvider**: Gemini's native `generateContent` API with `response_schema` for structured output.
+  - **OpenAICompatibleProvider**: Ollama, vLLM, llama.cpp, LM Studio and similar.
 - Both use plain HTTPS calls (`httpx`), not vendor SDKs, so the image carries no vendor dependencies and adding a vendor is configuration, not code.
 - Adding a new protocol means writing one small adapter class that implements the same interface.
 
@@ -878,9 +891,10 @@ The Studio Settings page shows the active provider, base URL, model and masking 
 Settings changed in the UI take effect immediately; environment variables provide the startup defaults.
 
 #### 8.12.9 Limits, cost and provenance
-- Timeout per request (default 30 s), bounded maximum output tokens, at most one request per cluster plus one retry, and a per-hour request cap.
+- Timeout per request (default 120 s), bounded maximum output tokens (default 8192), at most one request per cluster plus one retry, and a per-hour request cap (default 60).
 - A usage counter (requests, tokens where reported) is shown in Settings.
 - Every proposal records its origin: `heuristic` or `ai:<provider>/<model>`. The audit log records which provider and model contributed to each approved pack version (never the key).
+- **Lyra limits:** up to 5 tool-call steps per turn, 20 messages of history, 200 result rows, 30 rows sent to the model, 120-char cell truncation.
 
 #### 8.12.10 Running a local model with Ollama (the operator's own machine)
 **Option A: Ollama on the host.**
@@ -921,7 +935,7 @@ docker run -d --name aletheia --network aletheia-net \
 #### 8.12.11 Using a cloud vendor
 ```bash
 # aletheia.env  (keep this file private)
-ALETHEIA_LLM_PROVIDER=groq            # or openai, gemini, anthropic, openai_compatible
+ALETHEIA_LLM_PROVIDER=gemini
 ALETHEIA_LLM_API_KEY=<your key>
 ALETHEIA_LLM_MODEL=<model name from the vendor>
 ALETHEIA_LLM_SEND_SAMPLES=masked
@@ -1206,9 +1220,9 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 | `ALETHEIA_WORKERS` | `2` | Number of worker processes inside the container |
 | `ALETHEIA_ADMIN_PASSWORD` | documented demo value | UI and Grafana admin password |
 | `ALETHEIA_SEED` | fixed | Random seed for generators, so every run produces the same demo |
-| `ALETHEIA_LLM_PROVIDER` | `none` | `none`, `openai`, `gemini`, `groq`, `anthropic`, `ollama`, `openai_compatible` |
-| `ALETHEIA_LLM_MODEL` | empty | Model name at the chosen provider |
-| `ALETHEIA_LLM_BASE_URL` | provider default | Endpoint override; required for `openai_compatible` |
+| `ALETHEIA_LLM_PROVIDER` | `gemini` | `none`, `gemini`, `local` (`ollama` accepted as legacy alias) |
+| `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` | Model name at the chosen provider |
+| `ALETHEIA_LLM_BASE_URL` | provider default | Endpoint override; e.g. `http://vllm-host:8000/v1` |
 | `ALETHEIA_LLM_API_KEY` / `ALETHEIA_LLM_API_KEY_FILE` | empty | Cloud API key, directly or from a mounted file |
 | `ALETHEIA_LLM_SEND_SAMPLES` | `masked` | `masked`, `none`, or `raw` (self-hosted only) |
 | `ALETHEIA_AIRGAP` | `false` | When `true`, cloud AI providers are refused |
@@ -1441,15 +1455,29 @@ aletheia/
 │   ├── registry/                   # pack loading, hot reload
 │   └── sink/                       # ClickHouse batcher, normalized publisher
 ├── studio/                         # Python FastAPI
+│   ├── chat/                       # Lyra chat agent, SQL guard, session store
+│   │   ├── agent.py                # tool-using chat loop (run_sql, list_sources, list_packs, final)
+│   │   ├── guard.py                # SQL guardrail (allow-listed tables/columns/functions)
+│   │   └── store.py                # chat session persistence and export (PDF/Markdown/JSON/text)
+│   ├── api/                        # REST endpoints
+│   │   ├── chat.py                 # chat and session management endpoints
+│   │   ├── stats.py                # dashboard overview, KPIs, insights, ClickHouse aggregates
+│   │   ├── sources.py              # source management and onboarding
+│   │   ├── samples.py              # demo sample servers
+│   │   ├── export.py               # report and log export
+│   │   ├── auth.py                 # authentication
+│   │   ├── schemas.py              # Pydantic models
+│   │   └── state.py                # shared application state
 │   ├── cluster/                    # Drain3 integration, pre-masking
 │   ├── derive/                     # exact template derivation, structural templating
 │   ├── slottype/                   # typing heuristics, synonym tables
 │   ├── propose/                    # OCSF mapping proposals
-│   ├── llm/                        # provider adapters (OpenAI-compatible, Anthropic), masking,
+│   ├── llm/                        # provider adapters (Gemini native, OpenAI-compatible), masking,
 │   │                               # schema validation, air-gap guard, settings and connection test
 │   ├── gate/                       # reconstruction gate (calls engine test-pack)
 │   ├── replay/                     # replay diff orchestration and reports
-│   └── api/                        # registry and approval endpoints
+│   ├── core/                       # settings store, crypto, database
+│   └── ingest/                     # source connectors and pipeline
 ├── packs/                          # parser packs + tests/ (samples and expected outputs)
 ├── ocsf/                           # pinned OCSF schema subset and validator
 ├── sources/
@@ -1460,7 +1488,13 @@ aletheia/
 │   └── samples/
 ├── demo/                           # scenario engine behind the Demo Console
 ├── bench/                          # load replay, measurement scripts
-└── ui/                             # React: lineage viewer, Studio, replay diff
+└── ui/                             # React + Vite + TypeScript
+    ├── pages/                      # HomePage (landing), OverviewPage (dashboard), EventsPage,
+    │                               # LyraPage, SourcesPage (onboarding), ExportPage, DemoPage,
+    │                               # SettingsPage, LineagePage
+    ├── components/                 # Layout, Insights (posture gauge, donut, ranked bars, timeline,
+    │                               # findings), LineageModal, OcsfTree, Icons, Bits, Pagination
+    └── lib/                        # api client, types, mocks, settings, theme, notify
 ```
 
 ---

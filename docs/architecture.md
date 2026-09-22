@@ -56,7 +56,9 @@ The reconstruction is hashed and compared with the SHA-256 taken at arrival. Equ
 
 Supporting services: **Merkle sealer** (closes batches, chains roots), **parser registry**
 (Git + PostgreSQL, hot reload via the `control` topic), **Onboarding Studio** (Python),
-**replay engine**, **verify tool**, **UI**.
+**replay engine**, **verify tool**, **Lyra** (guarded chat assistant, read-only SQL over
+ClickHouse), **UI** (product landing, Overview dashboard, Events explorer, Lyra, Sources
+& onboarding, Export & Supply, Demo Console, Settings).
 
 ### The universal schema
 
@@ -105,6 +107,9 @@ quarantine ─▶ Drain3 cluster ─▶ derive byte-exact template ─▶ type s
            ─▶ RECONSTRUCTION GATE ─▶ REPLAY DIFF ─▶ human approval ─▶ new pack version ─▶ hot reload
 ```
 
+The entire onboarding workflow — connecting a source, collecting samples, reviewing proposals,
+approving packs — lives on a single **Sources** page (`/dashboard/sources`).
+
 - **Reconstruction gate** — a proposed template is rejected unless it rebuilds **100 %** of its
   sample lines byte-exactly, every slot validates, existing golden tests still pass, and no two
   ambiguous slots are adjacent.
@@ -114,9 +119,27 @@ quarantine ─▶ Drain3 cluster ─▶ derive byte-exact template ─▶ type s
 - **Hot reload** — workers compile the new index in the background and swap an atomic pointer.
   No restart, no downtime, no dropped events.
 - **AI is optional and never trusted.** No model weights ship in the image. An operator may point
-  Aletheia at a cloud vendor key or a self-hosted model; suggestions are constrained to an
-  allow-list of OCSF paths, pass the same gate, and **can never approve**. No LLM ever touches a
-  live event.
+  Aletheia at a Gemini API key or a self-hosted local model (Ollama, vLLM, llama.cpp, LM Studio);
+  suggestions are constrained to an allow-list of OCSF paths, pass the same gate, and **can never
+  approve**. No LLM ever touches a live event. Only three providers: `none`, `gemini`, `local`.
+
+### Lyra — data assistant
+
+- A guarded, tool-using chat assistant at `/dashboard/lyra` that answers ad-hoc questions about
+  ingested events by running read-only SQL against ClickHouse.
+- The model emits one JSON action per step from a fixed enum (`run_sql`, `list_sources`,
+  `list_packs`, `final`); SQL passes a strict allow-list guard (`readonly=1`, allow-listed
+  tables/columns/functions, `SELECT *` refused, max 200 rows).
+- Chat sessions are persisted, searchable and exportable (PDF, Markdown, JSON, text).
+- Uses the configured LLM provider; a separate `llm.chat_model` setting can point it at a
+  faster model (default: `gemini-3.5-flash-lite`).
+
+### Overview dashboard
+
+- Real-time posture score, severity distribution, auto-generated plain-language findings.
+- Deep ClickHouse aggregates: top source/destination IPs, port scanners, denied traffic,
+  protocol mix, OCSF class distribution, timeline, storage comparison, Merkle batch stats.
+- Per-source sparklines, heatmap, trend detection and spike alerts.
 
 ### Scale
 
@@ -154,3 +177,16 @@ bundled component at build time.
 Not a SIEM — it prepares data for one. Not an "AI log parser" — AI is an optional onboarding helper
 whose output must rebuild the original byte for byte. Not a new schema — it adopts OCSF and adds a
 small provenance block.
+
+### UI structure
+
+| Path | Page | Purpose |
+|---|---|---|
+| `/` | Product landing | Introduction, feature highlights, entry point to the dashboard |
+| `/dashboard` | Overview | Real-time KPIs, posture gauge, severity distribution, insights, timeline, heatmap |
+| `/dashboard/events` | Events explorer | Searchable OCSF event table with lineage modal |
+| `/dashboard/lyra` | Lyra | Guarded chat assistant over ClickHouse |
+| `/dashboard/sources` | Sources & onboarding | Connect sources, collect samples, review proposals, approve packs |
+| `/dashboard/export` | Export & Supply | Reports (PDF/JSON/CSV/MD/HTML), log export, live supply stream |
+| `/dashboard/demo` | Demo Console | Guided evaluation scenarios with sample servers |
+| `/dashboard/settings` | Settings | LLM provider, air-gap mode, connection test |
