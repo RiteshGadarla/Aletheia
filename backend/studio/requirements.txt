@@ -2,7 +2,9 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 httpx==0.28.1
 websockets==17.1
-pydantic==2.10.4
+google-genai==2.24.0
+# google-genai needs pydantic>=2.12.5; bumped from 2.10.4 (full suite passes unchanged at 2.13.5).
+pydantic==2.13.5
 PyYAML==6.0.2
 drain3==0.9.11
 psycopg[binary]==3.2.3
@@ -11,3 +13,4 @@ jsonschema==4.23.0
 confluent-kafka==2.6.1
 pytest==8.3.4
 pytest-asyncio==0.25.0
+reportlab==5.0.1

@@ -4,6 +4,7 @@ import { DemoPage } from './pages/DemoPage';
 import { EventsPage } from './pages/EventsPage';
 import { ExportPage } from './pages/ExportPage';
 import { HomePage } from './pages/HomePage';
+import { LyraPage } from './pages/LyraPage';
 import { LineagePage } from './pages/LineagePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { OverviewPage } from './pages/OverviewPage';
@@ -21,6 +22,7 @@ export default function App() {
         <Route path="events" element={<EventsPage />} />
         <Route path="lineage" element={<LineagePage />} />
         <Route path="lineage/:eventUid" element={<LineagePage />} />
+        <Route path="lyra" element={<LyraPage />} />
         <Route path="sources" element={<SourcesPage />} />
         <Route path="export" element={<ExportPage />} />
         <Route path="studio" element={<Navigate to="/dashboard/sources" replace />} />

@@ -207,5 +207,5 @@
 [data-theme="dark"] { --sev-info: #3987e5; }
 
 /* Demo card categories (categorical blue, aqua, violet; critical uses the status red). */
-:root { --cat-net: #2a78d6; --cat-web: #1baf7a; --cat-access: #4a3aa7; --cat-crit: #d03b3b; }
-[data-theme="dark"] { --cat-net: #3987e5; --cat-web: #199e70; --cat-access: #9085e9; }
+:root { --cat-net: #2a78d6; --cat-web: #1baf7a; --cat-access: #4a3aa7; --cat-crit: #d03b3b; --cat-ai: #7c3aed; }
+[data-theme="dark"] { --cat-net: #3987e5; --cat-web: #199e70; --cat-access: #9085e9; --cat-ai: #a78bfa; }

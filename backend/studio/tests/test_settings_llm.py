@@ -47,7 +47,7 @@ class StubProvider:
 # ------------------------------------------------------------------ precedence (§9)
 def test_default_is_used_when_nothing_else_says_otherwise(state) -> None:
     cfg = state.settings.llm_config()
-    assert cfg.provider == "gemini" and cfg.model == "gemma-4-31b-it"
+    assert cfg.provider == "gemini" and cfg.model == "gemini-3.5-flash-lite"
     assert cfg.source["provider"] == "default"
     assert cfg.base_url == DEFAULT_BASE_URLS["gemini"]
 
@@ -71,14 +71,15 @@ def test_db_beats_env(state, monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.source["provider"] == "db"
 
 
-def test_key_file_is_read_when_no_env_key_is_set(state, tmp_path, monkeypatch) -> None:
-    """ALETHEIA_LLM_API_KEY_FILE is the env-side key source Docker secrets use."""
+def test_api_key_ignores_environment_and_key_file(state, tmp_path, monkeypatch) -> None:
+    """API key must come strictly from frontend input (DB settings) and ignore env vars."""
     key_file = tmp_path / "key"
     key_file.write_text(FAKE_API_KEY + "\n", encoding="utf-8")
+    monkeypatch.setenv("ALETHEIA_LLM_API_KEY", FAKE_API_KEY)
     monkeypatch.setenv("ALETHEIA_LLM_API_KEY_FILE", str(key_file))
     cfg = state.settings.llm_config()
-    assert cfg.api_key == FAKE_API_KEY
-    assert cfg.source["api_key"] == "env"
+    assert cfg.api_key == ""
+    assert cfg.source["api_key"] == "default"
 
 
 def test_sealed_db_key_round_trips(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -97,8 +98,9 @@ def test_sealed_db_key_round_trips(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_public_view_exposes_last4_and_nothing_more(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ALETHEIA_LLM_API_KEY", FAKE_API_KEY)
+    monkeypatch.setenv("ALETHEIA_SECRET", SECRET)
     store = SettingsStore(secret=SECRET)
+    store.set("llm.api_key", FAKE_API_KEY)
     pub = store.llm_config().public()
     assert "api_key" not in pub
     assert pub["api_key_set"] is True
@@ -125,9 +127,9 @@ def test_ollama_is_a_legacy_alias_for_local_and_not_a_ui_option() -> None:
 def test_origin_tag_never_contains_the_key() -> None:
     from studio.core.settings import LLMConfig
 
-    cfg = LLMConfig(provider="gemini", model="gemma-4-31b-it", api_key=FAKE_API_KEY)
+    cfg = LLMConfig(provider="gemini", model="gemini-3.5-flash-lite", api_key=FAKE_API_KEY)
     tag = origin_tag(cfg)
-    assert tag == "ai:gemini/gemma-4-31b-it"
+    assert tag == "ai:gemini/gemini-3.5-flash-lite"
     assert FAKE_API_KEY not in tag
     assert origin_tag(LLMConfig(provider="none")) == "heuristic"
 
@@ -164,7 +166,7 @@ def test_airgap_always_allows_provider_none() -> None:
 def test_build_provider_refuses_cloud_under_airgap() -> None:
     from studio.core.settings import LLMConfig
 
-    cfg = LLMConfig(provider="gemini", model="gemma-4-31b-it", api_key=FAKE_API_KEY,
+    cfg = LLMConfig(provider="gemini", model="gemini-3.5-flash-lite", api_key=FAKE_API_KEY,
                     base_url=DEFAULT_BASE_URLS["gemini"], airgap=True)
     with pytest.raises(airgap.AirgapViolation):
         build_provider(cfg)
@@ -184,7 +186,7 @@ def test_build_provider_reports_missing_config_as_unavailable() -> None:
     with pytest.raises(LLMUnavailable):
         build_provider(LLMConfig(provider="gemini", model=""))
     with pytest.raises(LLMUnavailable):
-        build_provider(LLMConfig(provider="gemini", model="gemma-4-31b-it", api_key=""))
+        build_provider(LLMConfig(provider="gemini", model="gemini-3.5-flash-lite", api_key=""))
     with pytest.raises(LLMUnavailable):
         build_provider(LLMConfig(provider="openai", model="gpt-4"))
 
@@ -217,7 +219,7 @@ def test_saved_key_is_never_echoed_back(client: Any, monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("ALETHEIA_SECRET", SECRET)
 
     put = client.put("/api/v1/settings/llm", json={
-        "provider": "gemini", "model": "gemma-4-31b-it", "base_url": "",
+        "provider": "gemini", "model": "gemini-3.5-flash-lite", "base_url": "",
         "send_samples": "masked", "api_key": FAKE_API_KEY})
     assert put.status_code == 200, put.text
     _assert_no_key(put)
@@ -241,7 +243,7 @@ def test_saved_key_is_never_echoed_back(client: Any, monkeypatch: pytest.MonkeyP
 def test_omitted_key_keeps_the_stored_one_and_empty_clears_it(
         client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ALETHEIA_SECRET", SECRET)
-    base = {"provider": "gemini", "model": "gemma-4-31b-it", "base_url": "",
+    base = {"provider": "gemini", "model": "gemini-3.5-flash-lite", "base_url": "",
             "send_samples": "masked"}
     client.put("/api/v1/settings/llm", json={**base, "api_key": FAKE_API_KEY})
 

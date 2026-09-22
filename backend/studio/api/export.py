@@ -22,10 +22,10 @@ class SupplyConfigUpdate(BaseModel):
 
 @router.get("/export/report")
 def export_report(
-    format: str = Query("json", description="Report format: json, csv, markdown, html"),
+    format: str = Query("pdf", description="Report format: pdf, html, markdown, csv, json"),
     source_id: str = Query("", description="Filter metrics for a specific source ID"),
     window_s: int = Query(300, ge=5, le=86400, description="Stats window in seconds"),
-    categories: str = Query("", description="Comma-separated categories: kpis,sources,severity,normalized,usage,history"),
+    categories: str = Query("", description="Comma-separated categories: kpis,sources,severity,normalized,usage,history,insights,traffic,storage"),
 ) -> Response:
     """Generate and download a comprehensive system operational report."""
     st = get_state()

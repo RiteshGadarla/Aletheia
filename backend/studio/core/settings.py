@@ -18,9 +18,10 @@ log = logging.getLogger("studio.settings")
 # setting key -> (env var, default, encrypted)
 SPEC: dict[str, tuple[str | None, Any, bool]] = {
     "llm.provider":          ("ALETHEIA_LLM_PROVIDER", "gemini", False),
-    "llm.model":             ("ALETHEIA_LLM_MODEL", "gemma-4-31b-it", False),
+    "llm.model":             ("ALETHEIA_LLM_MODEL", "gemini-3.5-flash-lite", False),
+    "llm.chat_model":        ("ALETHEIA_LLM_CHAT_MODEL", "", False),   # Lyra only; "" = provider default
     "llm.base_url":          ("ALETHEIA_LLM_BASE_URL", "", False),
-    "llm.api_key":           ("ALETHEIA_LLM_API_KEY", "", True),
+    "llm.api_key":           (None, "", True),   # Taken from frontend input / DB settings only
     "llm.send_samples":      ("ALETHEIA_LLM_SEND_SAMPLES", "masked", False),
     "llm.timeout_s":         ("ALETHEIA_LLM_TIMEOUT_S", 120, False),
     "llm.max_output_tokens": ("ALETHEIA_LLM_MAX_OUTPUT_TOKENS", 8192, False),
@@ -126,10 +127,6 @@ class SettingsStore:
             env_val = os.environ.get(env_name)
             if env_val not in (None, ""):
                 return env_val, "env"
-        if key == "llm.api_key":
-            file_key = _key_from_file()
-            if file_key:
-                return file_key, "env"
         return default, "default"
 
     def get(self, key: str) -> Any:

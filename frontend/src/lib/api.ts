@@ -7,7 +7,8 @@ import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
   Overview, QuarantineCluster, RawLine, SampleList, SampleServer, ReplayDiff, SourceInfo, SourceList, SourceProposal,
-  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate,
+  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate, ChatMessage, ChatReply,
+  ChatSessionSummary, ChatSession, ChatExportFormat,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -114,6 +115,8 @@ export const api = {
   /* demo sample servers */
   listSamples: (): Promise<SampleList> => http('/demo/samples'),
   startSample: (id: string): Promise<SampleServer> => http(`/demo/samples/${id}/start`, { method: 'POST' }),
+  sampleLogs: (id: string, after = -1): Promise<{ items: { cursor: number; ts: number; severity: string; line: string }[]; next: number }> =>
+    http(`/demo/samples/${id}/logs?after=${after}`),
   stopSample: (id: string): Promise<SampleServer> => http(`/demo/samples/${id}/stop`, { method: 'POST' }),
   controlSample: (id: string, b: { rate?: number; risk?: number; clear_risk?: boolean; paused?: boolean; drift?: boolean }): Promise<SampleServer> =>
     http(`/demo/samples/${id}/control`, { method: 'POST', body: JSON.stringify(b) }),
@@ -173,6 +176,81 @@ export const api = {
 
   getSupplyStatus: (): Promise<SupplyStatus> =>
     USE_MOCKS ? mockApi.getSupplyStatus() : http('/export/supply/status'),
+
+  chat: (messages: ChatMessage[], sessionId?: string, title?: string): Promise<ChatReply> =>
+    USE_MOCKS
+      ? Promise.resolve({ available: false, answer: 'Lyra needs the live backend.', blocks: [] })
+      : http('/chat', { method: 'POST', body: JSON.stringify({ messages, session_id: sessionId, title }) }),
+
+  chatStream: async (
+    messages: ChatMessage[],
+    sessionId: string | undefined,
+    onStep: (step: string) => void,
+    onDone: (reply: ChatReply) => void,
+    onError: (err: unknown) => void,
+  ) => {
+    if (USE_MOCKS) {
+      onDone({ available: false, answer: 'Lyra needs the live backend.', blocks: [] });
+      return;
+    }
+    try {
+      const res = await fetch(`${BASE}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, session_id: sessionId }),
+      });
+      if (!res.ok || !res.body) {
+        throw new Error(`Stream HTTP error ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const part of parts) {
+          const trimmed = part.trim();
+          if (trimmed.startsWith('data: ')) {
+            try {
+              const evt = JSON.parse(trimmed.slice(6));
+              if (evt.type === 'step' && evt.step) {
+                onStep(evt.step);
+              } else if (evt.type === 'done') {
+                onDone(evt);
+              }
+            } catch {
+              // silent ignore invalid chunk
+            }
+          }
+        }
+      }
+    } catch (err) {
+      try {
+        const reply = await api.chat(messages, sessionId);
+        onDone(reply);
+      } catch (fallbackErr) {
+        onError(fallbackErr);
+      }
+    }
+  },
+
+  listChatSessions: (): Promise<{ sessions: ChatSessionSummary[] }> =>
+    USE_MOCKS ? Promise.resolve({ sessions: [] }) : http('/chat/sessions'),
+
+  getChatSession: (sessionId: string): Promise<ChatSession> =>
+    USE_MOCKS ? Promise.resolve({ id: sessionId, title: 'Mock Chat', created_at: '', updated_at: '', messages: [] }) : http(`/chat/sessions/${encodeURIComponent(sessionId)}`),
+
+  deleteChatSession: (sessionId: string): Promise<{ ok: boolean }> =>
+    USE_MOCKS ? Promise.resolve({ ok: true }) : http(`/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+
+  clearChatSessions: (): Promise<{ ok: boolean }> =>
+    USE_MOCKS ? Promise.resolve({ ok: true }) : http('/chat/sessions', { method: 'DELETE' }),
+
+  exportChatUrl: (sessionId?: string, format: ChatExportFormat = 'pdf'): string =>
+    `${BASE}/chat/export${qs({ session_id: sessionId, format })}`,
 
   configureSupply: (b: SupplyConfigUpdate): Promise<SupplyStatus> =>
     USE_MOCKS ? mockApi.configureSupply(b) : http('/export/supply/configure', { method: 'POST', body: JSON.stringify(b) }),

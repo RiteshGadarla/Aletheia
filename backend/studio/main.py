@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .api import export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
+from .api import chat as chat_api, export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -931,6 +931,20 @@ async def reset_settings() -> dict[str, Any]:
         st.settings.unset("llm.api_key")
 
     st.usage.reset()
+
+    # 8. Reset Log Supply Stream server & Chat Session history
+    if hasattr(st, "supply_server") and st.supply_server:
+        try:
+            st.supply_server.stop()
+        except Exception:                                           # noqa: BLE001
+            pass
+
+    if hasattr(st, "chat_store") and st.chat_store:
+        try:
+            st.chat_store.clear_all()
+        except Exception:                                           # noqa: BLE001
+            pass
+
     st.connectors.start_all()
     return _settings_payload()
 
@@ -939,4 +953,5 @@ api.include_router(sources_api.router)
 api.include_router(stats_api.router)
 api.include_router(samples_api.router)
 api.include_router(export_api.router)
+api.include_router(chat_api.router)
 app.include_router(api)

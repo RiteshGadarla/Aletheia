@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { USE_MOCKS, api } from '../lib/api';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../lib/theme';
-import { useAsync } from '../lib/useAsync';
 import { ErrorBoundary } from './ErrorBoundary';
 import { NotifyProvider, useNotify } from '../lib/notify';
 import {
   IconClose, IconDemo, IconEvents, IconExport, IconHome, IconInfo, IconLock, IconMenu, IconMoon,
-  IconSettings, IconSources, IconSun,
+  IconLyra, IconSettings, IconSources, IconSun,
 } from './Icons';
 
 
 const NAV = [
   { to: '/dashboard', label: 'Overview', desc: 'Live stats', Icon: IconHome, end: true },
   { to: '/dashboard/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: false },
+  { to: '/dashboard/lyra', label: 'Lyra', desc: 'Ask your data', Icon: IconLyra, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
   { to: '/dashboard/export', label: 'Export & Supply', desc: 'Reports, logs & stream', Icon: IconExport, end: false },
   { to: '/dashboard/demo', label: 'Demo', desc: 'Sample servers', Icon: IconDemo, end: false },
@@ -22,53 +22,45 @@ const NAV = [
 ];
 
 
-/** Pack self-check plus event count: enough to tell at a glance that the stack is alive. */
+/** Pack self-check: enough to tell at a glance that the engine stack is alive. */
 function Health() {
-  const packs = useAsync(() => api.verifyPacks(), []);
-  const events = useAsync(() => api.listEvents({ limit: 1 }), []);
+  const [state, setState] = useState<'pending' | 'up' | 'down'>('pending');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const state = packs.loading || events.loading ? 'pending'
-    : packs.error || events.error ? 'down'
-      : packs.data?.ok ? 'up' : 'down';
+  const checkHealth = async () => {
+    try {
+      const packs = await api.verifyPacks();
+      if (packs.ok) {
+        setState('up');
+        setErrorMsg(null);
+      } else {
+        setState('down');
+        setErrorMsg('Pack verification failed');
+      }
+    } catch (err: any) {
+      setState('down');
+      setErrorMsg(err?.message ?? 'API unreachable');
+    }
+  };
+
+  useEffect(() => {
+    void checkHealth();
+    const interval = setInterval(() => { void checkHealth(); }, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   const label = state === 'pending' ? 'Checking…'
     : state === 'down' ? 'API unreachable'
       : 'Engine healthy';
 
-  const meta = state === 'up' && events.data
-    ? `${events.data.total.toLocaleString()} ev`
-    : state === 'up' ? '' : '';
-
   return (
     <div
       className={`health ${state}`}
-      title={state === 'up'
-        ? `packs verify: ${packs.data?.reconstructed}/${packs.data?.samples} reconstructed, ${packs.data?.failures} failures`
-        : (packs.error ?? events.error ?? 'checking the Studio API')}
+      title={state === 'up' ? 'Engine healthy and operational' : (errorMsg ?? 'checking the Studio API')}
     >
       <span className="dot" />
       <span className="label truncate">{label}</span>
-      {meta && <span className="meta">{meta}</span>}
     </div>
-  );
-}
-
-function SupplyIndicator() {
-  const navigate = useNavigate();
-  const supply = useAsync(() => api.getSupplyStatus(), []);
-  const active = supply.data?.active;
-  const port = supply.data?.port ?? 9099;
-
-  return (
-    <button
-      type="button"
-      className={`sidebar-supply-pill ${active ? 'active' : ''}`}
-      onClick={() => navigate('/dashboard/export?tab=supply')}
-      title={active ? `Supply Stream ACTIVE on port ${port} (${supply.data?.clients_count ?? 0} clients)` : 'Supply Stream Inactive — Click to configure'}
-    >
-      <span className={`pulse-dot ${active ? 'active' : ''}`} />
-      <span className="truncate">Supply: {active ? `ON (:${port})` : 'OFF'}</span>
-    </button>
   );
 }
 
@@ -151,7 +143,6 @@ function LayoutInner() {
         </nav>
 
         <div className="sidebar-foot stack-sm" style={{ gap: 6 }}>
-          <SupplyIndicator />
           {settings?.airgap && (
             <div className="sidebar-airgap-pill" title="Strict Offline Mode Active: External cloud API calls are refused. Zero data egress.">
               <IconLock size={13} />

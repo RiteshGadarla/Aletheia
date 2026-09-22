@@ -87,6 +87,33 @@ def test_onboarding_approve_reject_retry(client: Any) -> None:
     assert client.get("/api/v1/sources/other/raw").json()["count"] > 0    # still raw-only
 
 
+def test_proposal_persists_and_reconstructs_after_restart(client: Any) -> None:
+    client.post("/api/v1/ingest/restart-src", content="\n".join(_lines("app", 150)))
+    _flush(client)
+    prop = client.post("/api/v1/sources/restart-src/propose").json()
+    assert prop["clusters"]
+
+    # 1. Simulate server restart (in-memory proposals cache cleared)
+    onboarding.clear_proposals()
+
+    # Proposal should still be returned (reloaded from repo settings)
+    rev1 = client.get("/api/v1/sources/restart-src/review").json()
+    assert rev1["proposal"] is not None
+    assert len(rev1["proposal"]["clusters"]) == len(prop["clusters"])
+
+    # Approve the source
+    client.post("/api/v1/sources/restart-src/decision", json={"action": "approve", "approver": "ritesh"})
+
+    # 2. Simulate server restart and remove stored proposal setting to test pack reconstruction
+    onboarding.clear_proposals()
+    get_state().repo.settings_delete("onboarding.proposal.restart-src")
+
+    # Proposal should be reconstructed from approved packs
+    rev2 = client.get("/api/v1/sources/restart-src/review").json()
+    assert rev2["proposal"] is not None
+    assert rev2["proposal"]["clusters"][0]["mapping"]["class_name"]
+
+
 @pytest.mark.asyncio
 async def test_tcp_connector_reads_generator_stream() -> None:
     from studio.ingest.connectors import Runner
