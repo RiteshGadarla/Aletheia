@@ -95,12 +95,12 @@ TOTAL                     25       30      30      0
 ### One image, one command
 
 ```bash
-docker pull docker.io/<namespace>/aletheia:1.0.0
+docker pull docker.io/ritesh2006/aletheia:1.0.0
 
 docker run -d --name aletheia \
   -p 6156:6156 -p 3000:3000 \
   -p 5514:5514/udp -p 5514:5514/tcp \
-  docker.io/<namespace>/aletheia:1.0.0
+  docker.io/ritesh2006/aletheia:1.0.0
 ```
 
 Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
@@ -161,8 +161,8 @@ All accept `--json` and print a single JSON object.
 
 ```bash
 # on a connected machine
-docker pull docker.io/<namespace>/aletheia:1.0.0
-docker save -o aletheia-1.0.0.tar docker.io/<namespace>/aletheia:1.0.0
+docker pull docker.io/ritesh2006/aletheia:1.0.0
+docker save -o aletheia-1.0.0.tar docker.io/ritesh2006/aletheia:1.0.0
 sha256sum aletheia-1.0.0.tar        # compare against the value published below
 
 # transfer via the organization's approved media process
@@ -172,7 +172,7 @@ sha256sum aletheia-1.0.0.tar
 docker load -i aletheia-1.0.0.tar
 docker run -d --name aletheia -e ALETHEIA_AIRGAP=true \
   -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
-  docker.io/<namespace>/aletheia:1.0.0
+  docker.io/ritesh2006/aletheia:1.0.0
 ```
 
 Nothing is downloaded at start or at run time — no packages, no models, no fonts, no update checks.
@@ -245,7 +245,7 @@ cp deploy/secrets/aletheia.env.example deploy/secrets/aletheia.env
 # edit it, then:
 docker run -d --name aletheia --env-file deploy/secrets/aletheia.env \
   -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
-  docker.io/<namespace>/aletheia:1.0.0
+  docker.io/ritesh2006/aletheia:1.0.0
 ```
 
 A mounted secret file is preferred over `-e`, which leaves the key visible in `docker inspect`:
@@ -283,7 +283,7 @@ docker run -d --name aletheia \
   --add-host=host.docker.internal:host-gateway \
   -e ALETHEIA_LLM_PROVIDER=local -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
   -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
-  docker.io/<namespace>/aletheia:1.0.0
+  docker.io/ritesh2006/aletheia:1.0.0
 ```
 
 ## 12. Production mode and building from source
@@ -317,7 +317,7 @@ bench             benchmark harness (spec §17 methodology)
 
 | | |
 |---|---|
-| Tag | `docker.io/<namespace>/aletheia:1.0.0` |
+| Tag | `docker.io/ritesh2006/aletheia:1.0.0` |
 | Digest | *published at release* |
 | Architectures | `linux/amd64`, `linux/arm64` |
 | Size | *measured at release* |

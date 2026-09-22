@@ -144,7 +144,7 @@ def chat_stream_events(messages: list[dict[str, str]]):
         yield {"type": "done", "available": False, "answer": "Ask me something.", "blocks": []}
         return
 
-    yield {"type": "step", "step": "Inspecting schema & conversation context…"}
+    yield {"type": "step", "step": "Thinking…"}
 
     transcript = "\n".join(f"{m['role'].upper()}: {m['content'][:1500]}" for m in convo)
     blocks: list[dict[str, Any]] = []

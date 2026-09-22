@@ -285,7 +285,7 @@ export const isCloudProvider = (p: Provider): boolean => CLOUD_PROVIDERS.include
 export const PROVIDER_DEFAULTS: Record<Provider, { model: string; base_url: string }> = {
   none: { model: '', base_url: '' },
   gemini: { model: 'gemma-4-31b-it', base_url: 'https://generativelanguage.googleapis.com/v1beta' },
-  local: { model: 'smollm:135m', base_url: 'http://localhost:11434/v1' },
+  local: { model: 'llama3.2:1b', base_url: 'http://localhost:11434/api/chat' },
 };
 
 /* ---------- Pack verification (GET /packs/verify) ---------- */
