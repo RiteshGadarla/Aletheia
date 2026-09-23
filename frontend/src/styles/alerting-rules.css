@@ -440,11 +440,20 @@ button.alr-group-btn:focus-visible {
 .alr-caret {
   flex: none;
   color: var(--text-faint);
-  transition: transform var(--t-fast);
 }
 
-[aria-expanded="true"]>.alr-caret {
-  transform: rotate(90deg);
+/* Modal title/subtitle for the rule-detail popup (opened from a row, not expanded inline). */
+.alr-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.alr-modal-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--text-muted);
 }
 
 .alr-folder-ico {
@@ -493,10 +502,6 @@ button.alr-group-btn:focus-visible {
   border-top: 1px solid var(--border-soft);
 }
 
-.alr-rule.open {
-  background: var(--surface-inset);
-}
-
 .alr-rule.flash {
   background: var(--accent-soft);
 }
@@ -513,10 +518,6 @@ button.alr-group-btn:focus-visible {
 
 .alr-row:hover {
   background: var(--surface-hover);
-}
-
-.alr-rule.open>.alr-row:hover {
-  background: transparent;
 }
 
 button.alr-main {
@@ -640,15 +641,8 @@ button.alr-main>.alr-caret {
 
 /* ---------------------------------------------------------------- expanded details */
 
+/* Popup content: one compact column, sized to the (non-wide) modal, not the row list. */
 .alr-detail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
-  gap: var(--s4) var(--s5);
-  padding: var(--s1) var(--s5) var(--s4) calc(var(--s4) + 22px);
-}
-
-.alr-detail-main,
-.alr-detail-side {
   display: flex;
   flex-direction: column;
   gap: var(--s3);
@@ -747,7 +741,7 @@ button.alr-main>.alr-caret {
 
 .alr-facts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: var(--s2) var(--s3);
   margin: 0;
   padding: var(--s3);
@@ -921,10 +915,6 @@ button.alr-note-in:focus-visible {
   .alr-cond {
     display: none;
   }
-
-  .alr-detail {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 @container (max-width: 520px) {
@@ -950,10 +940,6 @@ button.alr-note-in:focus-visible {
   .alr-acts>button.ghost.icon {
     width: 28px;
     min-height: 28px;
-  }
-
-  .alr-detail {
-    padding: var(--s1) var(--s3) var(--s4) var(--s4);
   }
 
   .alr-summary {

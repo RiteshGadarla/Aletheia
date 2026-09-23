@@ -276,13 +276,18 @@ function StatTiles({ counts, value, onPick }: {
   );
 }
 
-function RuleDetail({ r, id, status, onEdit }: { r: AlertRule; id: string; status: AlertingStatus | null; onEdit: () => void }) {
+// Rule details open as a popup (not an inline expand) so the list stays a fixed-height scan.
+function RuleDetail({ r, status, onEdit, onClose }: {
+  r: AlertRule; status: AlertingStatus | null; onEdit: () => void; onClose: () => void;
+}) {
   const view = grafanaRuleUrl(status, r.id);
   const logs = r.datasource === 'loki' ? grafanaLogsUrl(status) : null;
   const labels = { severity: r.severity, ...r.labels };
   return (
-    <div className="alr-detail" id={id}>
-      <div className="alr-detail-main">
+    <Modal onClose={onClose}
+      title={<span className="alr-modal-title"><StatePill state={r.state} title={r.last_error} />{r.name}</span>}
+      subtitle={<span className="alr-modal-sub"><Badge kind={SEV_KIND[r.severity] ?? 'plain'}>{r.severity}</Badge>{r.group || 'aletheia'} · every {r.interval}</span>}>
+      <div className="alr-detail">
         {r.last_error && (
           <div className="alr-err" role="note">
             <IconAlert size={15} />
@@ -302,8 +307,6 @@ function RuleDetail({ r, id, status, onEdit }: { r: AlertRule; id: string; statu
             {r.description && <p><span className="alr-k">Description</span>{r.description}</p>}
           </div>
         )}
-      </div>
-      <div className="alr-detail-side">
         <dl className="alr-facts">
           <div><dt>Last value</dt><dd className="mono">{fmtValue(r.last_value)}</dd></div>
           <div><dt>Evaluated</dt><dd title={r.last_eval ?? undefined}>{r.enabled ? ago(r.last_eval) : 'paused'}</dd></div>
@@ -319,22 +322,21 @@ function RuleDetail({ r, id, status, onEdit }: { r: AlertRule; id: string; statu
           {logs && <a className="btn btn-sm" href={logs} target="_blank" rel="noopener noreferrer"><IconExternal size={13} />Explore logs</a>}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
-function RuleRow({ r, open, flash, busy, status, onToggle, onEdit, onPause, onDelete }: {
-  r: AlertRule; open: boolean; flash: boolean; busy: boolean; status: AlertingStatus | null;
-  onToggle: () => void; onEdit: () => void; onPause: () => void; onDelete: () => void;
+function RuleRow({ r, flash, busy, onOpen, onEdit, onPause, onDelete }: {
+  r: AlertRule; flash: boolean; busy: boolean;
+  onOpen: () => void; onEdit: () => void; onPause: () => void; onDelete: () => void;
 }) {
-  const detailId = `alr-d-${r.id}`;
   const syncWarn = r.sync.state === 'error' || r.sync.state === 'pending';
   return (
-    <li id={`alr-rule-${r.id}`} className={`alr-rule s-${r.state}${open ? ' open' : ''}${flash ? ' flash' : ''}`}>
-      {/* The whole row toggles for mouse users; the main button carries the keyboard and ARIA state. */}
-      <div className="alr-row" onClick={onToggle}>
-        <button type="button" className="alr-main" aria-expanded={open} aria-controls={detailId}
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+    <li id={`alr-rule-${r.id}`} className={`alr-rule s-${r.state}${flash ? ' flash' : ''}`}>
+      {/* The whole row opens the details popup; the main button carries keyboard focus. */}
+      <div className="alr-row" onClick={onOpen}>
+        <button type="button" className="alr-main" aria-haspopup="dialog"
+          onClick={(e) => { e.stopPropagation(); onOpen(); }}>
           <IconCaret size={14} className="alr-caret" />
           <span className="alr-name-wrap">
             <span className="alr-name">
@@ -363,7 +365,6 @@ function RuleRow({ r, open, flash, busy, status, onToggle, onEdit, onPause, onDe
           <button type="button" className="ghost icon alr-del" aria-label={`Delete ${r.name}`} title="Delete" onClick={onDelete}><IconTrash size={15} /></button>
         </span>
       </div>
-      {open && <RuleDetail r={r} id={detailId} status={status} onEdit={onEdit} />}
     </li>
   );
 }
@@ -434,7 +435,7 @@ export function AlertRulesPage() {
   const { toast } = useNotify();
   const [q, setQ] = useState('');
   const [bucket, setBucket] = useState<Bucket | ''>('');
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [shut, setShut] = useState<Set<string>>(() => new Set());
   const [flash, setFlash] = useState<string | null>(null);
   const [editing, setEditing] = useState<AlertRule | 'new' | null>(null);
@@ -479,7 +480,7 @@ export function AlertRulesPage() {
     if (bucket && bucketOf(r.state) !== bucket) setBucket('');
     if (q) setQ('');
     setShut((s) => { const n = new Set(s); n.delete(r.group || 'aletheia'); return n; });
-    setOpen((s) => new Set(s).add(id));
+    setDetailId(id);
     setFlash(id);
   };
   useEffect(() => {
@@ -576,8 +577,8 @@ export function AlertRulesPage() {
                 {!collapsed && (
                   <ul className="alr-rules" id={gid}>
                     {g.shown.map((r) => (
-                      <RuleRow key={r.id} r={r} status={status} open={open.has(r.id)} flash={flash === r.id} busy={busyId === r.id}
-                        onToggle={() => setOpen((s) => flip(s, r.id))} onEdit={() => setEditing(r)}
+                      <RuleRow key={r.id} r={r} flash={flash === r.id} busy={busyId === r.id}
+                        onOpen={() => setDetailId(r.id)} onEdit={() => setEditing(r)}
                         onPause={() => void togglePause(r)} onDelete={() => { setRmErr(null); setRemoving(r); }} />
                     ))}
                   </ul>
@@ -590,6 +591,11 @@ export function AlertRulesPage() {
         <RecentNotifications version={version} known={known} onJump={jumpTo} />
       </div>
 
+      {detailId && rules.find((r) => r.id === detailId) && (
+        <RuleDetail r={rules.find((r) => r.id === detailId)!} status={status}
+          onClose={() => setDetailId(null)}
+          onEdit={() => { setEditing(rules.find((r) => r.id === detailId)!); setDetailId(null); }} />
+      )}
       {editing && (
         <RuleDialog key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
