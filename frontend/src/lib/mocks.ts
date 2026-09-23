@@ -441,6 +441,17 @@ function seedRule(id: string, r: Partial<AlertRule> & Pick<AlertRule, 'name' | '
   };
 }
 
+/** A past browser delivery, `minAgo` minutes old, so the notification feed is not empty on first load. */
+function seedNote(id: number, minAgo: number, status: AlertNotification['status'], source: AlertNotification['source'],
+  ruleId: string | null, ruleName: string, severity: string, summary: string, value: number | null): AlertNotification {
+  const at = isoAgo(minAgo * 60_000);
+  return {
+    id, received_at: at, status, source, rule_id: ruleId, rule_name: ruleName, severity, summary, description: '',
+    labels: { alertname: ruleName, severity }, value, contact_point_id: 'browser', contact_point_name: 'Browser',
+    starts_at: at, ends_at: status === 'resolved' ? at : null, link: null,
+  };
+}
+
 const alerting = {
   rules: [
     seedRule('aletheia-reconstruct-mismatch', {
@@ -467,18 +478,68 @@ const alerting = {
       summary: '{{ $values }} lines in 5m matched no template',
       description: 'Stored verbatim, nothing lost, but a source may have changed format.',
     }),
+    seedRule('secops-auth-failures', {
+      name: 'Auth failure burst', group: 'security', datasource: 'loki', severity: 'warning', for: '1m', interval: '30s',
+      query: 'sum by (source) (count_over_time({class_uid="3002", status="failure"}[5m]))',
+      condition: { op: 'gt', threshold: 50 }, last_value: 12, labels: { team: 'secops' },
+      summary: '{{ $labels.source }} saw {{ $values.B }} failed logins in 5m',
+      description: 'Possible password spraying. Check the source IPs on the Events page.',
+    }),
+    seedRule('secops-denied-egress', {
+      name: 'Denied egress to rare ports', group: 'security', datasource: 'clickhouse', severity: 'info', interval: '5m',
+      query: "SELECT count() FROM aletheia.events\nWHERE disposition = 'Blocked' AND dst_port NOT IN (80, 443, 53)\n  AND event_time > now() - INTERVAL 5 MINUTE",
+      condition: { op: 'gt', threshold: 25 }, state: 'error', last_value: null,
+      last_error: 'code: 47, Unknown expression identifier `disposition` in scope SELECT count() FROM aletheia.events',
+      summary: '{{ $values.A }} blocked connections to uncommon ports',
+    }),
+    seedRule('pipeline-ingest-stalled', {
+      name: 'Ingest stalled', group: 'pipeline', datasource: 'prometheus', severity: 'critical', for: '3m',
+      query: 'sum(rate(aletheia_lines_ingested_total[2m]))', condition: { op: 'lt', threshold: 1 },
+      enabled: false, state: 'paused', last_value: null, last_eval: null, sync: { state: 'pending' },
+      summary: 'No lines ingested for 3 minutes',
+    }),
+    seedRule('pipeline-dlq-growth', {
+      name: 'Dead-letter queue growing', group: 'pipeline', datasource: 'prometheus', severity: 'warning', for: '10m',
+      query: 'sum(delta(aletheia_dlq_messages[10m]))', condition: { op: 'gt', threshold: 0 },
+      state: 'nodata', last_value: null, no_data_state: 'NoData',
+      summary: 'Dead-letter queue grew by {{ $values.B }} in 10m',
+    }),
   ] as AlertRule[],
   points: [{
     id: 'browser', name: 'Browser', type: 'browser', settings: {}, secure_fields: [],
     disable_resolve_message: false, builtin: true, created_at: isoAgo(86_400_000), updated_at: isoAgo(86_400_000), sync: SYNCED(),
+  }, {
+    id: 'secops-slack', name: 'SecOps Slack', type: 'slack', settings: { recipient: '#secops-alerts' }, secure_fields: ['url'],
+    disable_resolve_message: false, builtin: false, created_at: isoAgo(43_200_000), updated_at: isoAgo(7_200_000), sync: SYNCED(),
+  }, {
+    id: 'oncall-email', name: 'On-call email', type: 'email', settings: { addresses: 'soc@example.com;oncall@example.com;lead@example.com', single_email: true },
+    secure_fields: [], disable_resolve_message: true, builtin: false, created_at: isoAgo(43_200_000), updated_at: isoAgo(43_200_000), sync: SYNCED(),
+  }, {
+    id: 'ticket-webhook', name: 'Ticketing webhook', type: 'webhook', settings: { url: 'https://tickets.example.com/hooks/aletheia', http_method: 'POST' },
+    secure_fields: [], disable_resolve_message: false, builtin: false, created_at: isoAgo(21_600_000), updated_at: isoAgo(21_600_000),
+    sync: { state: 'error', error: 'Grafana rejected the receiver: connection refused', at: isoAgo(600_000) },
   }] as ContactPoint[],
   policy: {
     receiver: 'browser', group_by: ['alertname'], group_wait: '30s', group_interval: '5m', repeat_interval: '4h',
-    routes: [{ id: 'route-critical', receiver: 'browser', matchers: [{ label: 'severity', op: '=', value: 'critical' }], continue: false, routes: [] }],
+    // Two levels deep, with continue and an inheriting receiver, so the tree and routing preview have something to show.
+    routes: [
+      { id: 'route-critical', receiver: 'browser', matchers: [{ label: 'severity', op: '=', value: 'critical' }], continue: true, routes: [
+        { id: 'route-critical-secops', receiver: 'secops-slack', matchers: [{ label: 'team', op: '=', value: 'secops' }], continue: false, group_wait: '10s', routes: [
+          { id: 'route-raw-only', receiver: '', matchers: [{ label: 'alertname', op: '=~', value: 'Raw.*' }], continue: false, repeat_interval: '1h', routes: [] },
+        ] },
+      ] },
+      { id: 'route-secops', receiver: 'oncall-email', matchers: [{ label: 'team', op: '=', value: 'secops' }], continue: false, group_by: ['alertname', 'team'], routes: [] },
+      { id: 'route-warning', receiver: '', matchers: [{ label: 'severity', op: '=~', value: 'warning|info' }], continue: false, repeat_interval: '12h', routes: [] },
+    ],
   } as NotificationPolicy,
   policySync: SYNCED(),
-  notes: [] as AlertNotification[],
-  nextNote: 1,
+  notes: [
+    seedNote(1, 95, 'firing', 'local', 'aletheia-format-drift', 'Format drift', 'warning', 'Quarantine rate above baseline, likely a firmware or config change', 0.07),
+    seedNote(2, 52, 'resolved', 'local', 'aletheia-format-drift', 'Format drift', 'warning', 'Quarantine rate back to baseline', 0),
+    seedNote(3, 40, 'firing', 'test', null, 'TestAlert', 'info', 'Test notification from Studio', null),
+    seedNote(4, 6, 'firing', 'grafana', 'aletheia-raw-only-spike', 'Raw-only lines spike', 'critical', '184 lines in 5m matched no template', 184),
+  ] as AlertNotification[],
+  nextNote: 5,
   lastSync: isoAgo(40_000),
 };
 
@@ -531,7 +592,7 @@ function mergePoint(prev: ContactPoint | null, b: ContactPointInput): Pick<Conta
 }
 
 function routeReceivers(routes: PolicyRoute[], out: Set<string>): Set<string> {
-  for (const r of routes) { out.add(r.receiver); routeReceivers(r.routes, out); }
+  for (const r of routes) { if (r.receiver) out.add(r.receiver); routeReceivers(r.routes, out); }  // "" inherits
   return out;
 }
 

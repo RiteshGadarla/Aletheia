@@ -222,3 +222,48 @@ export const IconBell = (p: P) => (
     <path d="M10.3 20.5a1.9 1.9 0 003.4 0" />
   </Svg>
 );
+
+/* Alerting integrations and routing. */
+export const IconMonitor = (p: P) => (
+  <Svg {...p}><rect x="3" y="4" width="18" height="12.5" rx="2" /><path d="M8.5 20.5h7M12 16.5v4" /></Svg>
+);
+
+export const IconLink = (p: P) => (
+  <Svg {...p}>
+    <path d="M10 13.5a4.5 4.5 0 006.4.4l2.6-2.6a4.5 4.5 0 00-6.4-6.4l-1.4 1.4" />
+    <path d="M14 10.5a4.5 4.5 0 00-6.4-.4L5 12.7a4.5 4.5 0 006.4 6.4l1.4-1.4" />
+  </Svg>
+);
+
+export const IconMail = (p: P) => (
+  <Svg {...p}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3.5 6.5l8.5 6.5 8.5-6.5" /></Svg>
+);
+
+export const IconHash = (p: P) => (
+  <Svg {...p}><path d="M5 9h15M4 15h15M10 3.5L8 20.5M16 3.5l-2 17" /></Svg>
+);
+
+export const IconSend = (p: P) => (
+  <Svg {...p}><path d="M21 3L10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5z" /></Svg>
+);
+
+export const IconPencil = (p: P) => (
+  <Svg {...p}><path d="M16.5 3.5a2.1 2.1 0 013 3L8 18l-4 1 1-4z" /><path d="M14.5 5.5l3 3" /></Svg>
+);
+
+export const IconArrowUp = (p: P) => <Svg {...p}><path d="M12 19V5M6 11l6-6 6 6" /></Svg>;
+export const IconArrowDown = (p: P) => <Svg {...p}><path d="M12 5v14M6 13l6 6 6-6" /></Svg>;
+export const IconArrowRight = (p: P) => <Svg {...p}><path d="M5 12h14M13 6l6 6-6 6" /></Svg>;
+
+/** "Add nested": an elbow into a child, with a plus. */
+export const IconNested = (p: P) => (
+  <Svg {...p}><path d="M4 4v7a4 4 0 004 4h12M16 11l4 4-4 4M16 3v6M13 6h6" /></Svg>
+);
+
+/** A branching route, for policy routing. */
+export const IconRoute = (p: P) => (
+  <Svg {...p}>
+    <circle cx="6" cy="6" r="2.4" /><circle cx="6" cy="18" r="2.4" /><circle cx="18" cy="6" r="2.4" />
+    <path d="M6 8.4v7.2M18 8.4a8 8 0 01-8 7.6H8.4" />
+  </Svg>
+);

@@ -1,0 +1,876 @@
+/* Contact points and notification policies (alerting). Tokens only; see tokens.css.
+   Imported by ContactPointsPage and NotificationPoliciesPage. */
+
+/* ---------------------------------------------------------------- integration tiles */
+
+.alr-int {
+  --int: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  color: var(--int);
+  background: color-mix(in srgb, var(--int) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--int) 28%, var(--surface));
+}
+
+.alr-int.alr-tile-sm {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+}
+
+.alr-int-browser { --int: var(--accent); }
+.alr-int-webhook { --int: var(--t-num); }
+.alr-int-email { --int: var(--t-ts); }
+.alr-int-slack { --int: var(--t-text); }
+.alr-int-missing { --int: var(--bad); }
+
+/* ---------------------------------------------------------------- permission callout */
+
+.alr-perm {
+  --tone: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--tone);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+}
+
+.alr-tone-ok { --tone: var(--ok); }
+.alr-tone-bad { --tone: var(--bad); }
+.alr-tone-info { --tone: var(--accent); }
+
+.alr-perm-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-pill);
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, var(--surface));
+}
+
+.alr-perm-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+
+.alr-perm-text > b {
+  color: var(--text);
+  font-weight: var(--fw-semi);
+}
+
+.alr-perm > .badge,
+.alr-perm > button {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- contact point rows */
+
+.alr-cp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.alr-cp {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 150px 72px auto;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--border-soft);
+  transition: background var(--t-fast);
+}
+
+.alr-cp:first-child {
+  border-top: 0;
+}
+
+.alr-cp:hover {
+  background: var(--surface-hover);
+}
+
+.alr-cp-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+.alr-cp-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+  min-width: 0;
+}
+
+/* The name is the row's primary action (edit), styled as text. */
+.alr-namebtn {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  color: var(--text);
+  max-width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.alr-namebtn:hover:not(:disabled) {
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.alr-cp-target {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.alr-cp-kind {
+  flex: none;
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.alr-cp-kind::after {
+  content: '·';
+  margin-left: var(--s2);
+  color: var(--text-faint);
+}
+
+.alr-cp-dest {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alr-cp-dest.mono {
+  font-size: var(--fs-xs);
+}
+
+/* Usage and sync sit in fixed columns on desktop so rows line up; they share one line on phones. */
+.alr-cp-meta {
+  display: contents;
+}
+
+.alr-cp-use {
+  justify-self: end;
+}
+
+.alr-cp-sync {
+  justify-self: start;
+}
+
+.alr-tag {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  padding: 0 var(--s1);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+
+.alr-usage {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--s-1) var(--s2);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+a.alr-usage:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+}
+
+.alr-usage.none {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-faint);
+}
+
+/* ---------------------------------------------------------------- compact icon actions */
+
+.alr-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  flex: none;
+}
+
+.alr-actions button.icon {
+  width: 30px;
+  min-height: 30px;
+  color: var(--text-muted);
+}
+
+.alr-actions button.alr-danger:hover:not(:disabled) {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.alr-tipwrap {
+  display: inline-flex;
+}
+
+.alr-actions svg {
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- type picker (dialog) */
+
+.alr-typepick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2);
+}
+
+.alr-typecard {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  min-height: 56px;
+  text-align: left;
+  white-space: normal;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.alr-typecard:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.alr-typecard.on,
+.alr-typecard.on:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.alr-typecard-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: var(--lh-tight);
+}
+
+.alr-typecard-text > b {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--text);
+}
+
+.alr-typecard-text > span {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-normal);
+  color: var(--text-muted);
+}
+
+@media (max-width: 760px) {
+  .alr-cp {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--s2) var(--s3);
+    padding: var(--s3) var(--s4);
+  }
+
+  .alr-cp-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2);
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .alr-cp > .alr-int {
+    align-self: start;
+  }
+
+  .alr-cp-dest {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .alr-perm {
+    flex-wrap: wrap;
+  }
+
+  .alr-perm-text {
+    flex-basis: calc(100% - 48px);
+  }
+
+  .alr-perm > button {
+    margin-left: 44px;
+  }
+}
+
+@media (max-width: 420px) {
+  .alr-typepick {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ================================================================ notification policies */
+
+/* A select with the chosen integration's icon inside it. */
+.alr-select-ic {
+  position: relative;
+  display: block;
+}
+
+.alr-select-ic > .alr-int {
+  position: absolute;
+  left: var(--s2);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.alr-select-ic > select {
+  padding-left: calc(var(--s2) + 22px + var(--s2));
+}
+
+/* ---------------------------------------------------------------- default policy card */
+
+.alr-defaults > .panel-body {
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+}
+
+.alr-defaults-a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--s4);
+  align-items: start;
+}
+
+.alr-defaults-b {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s4);
+}
+
+.alr-defaults .field > .help {
+  font-size: var(--fs-xs);
+}
+
+/* ---------------------------------------------------------------- layout: tree + preview */
+
+.alr-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: var(--s5);
+  align-items: start;
+}
+
+.alr-test {
+  position: sticky;
+  top: var(--s4);
+}
+
+/* Let long subtitles drop below the title instead of squeezing it. */
+.alr-test > header .panel-title,
+.alr-tree-panel > header .panel-title,
+.alr-defaults > header .panel-title {
+  flex-wrap: wrap;
+  column-gap: var(--s2);
+  row-gap: 0;
+}
+
+/* ---------------------------------------------------------------- tree */
+
+.alr-tree {
+  --indent: 32px;       /* how far each level steps in */
+  --rail: 16px;         /* x of the connector line, from the parent's left edge */
+  --elbow: 26px;        /* y of the connector, from the top of a child card */
+  --line: var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.alr-kids {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--indent);
+}
+
+.alr-branch {
+  position: relative;
+  padding-top: var(--s3);
+  min-width: 0;
+}
+
+/* Vertical rail through every sibling but the last... */
+.alr-branch::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--rail) - var(--indent));
+  top: 0;
+  bottom: 0;
+  border-left: 2px solid var(--line);
+}
+
+.alr-branch:last-child::before {
+  display: none;
+}
+
+/* ...and a rounded elbow into each child card. */
+.alr-branch::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--rail) - var(--indent));
+  top: 0;
+  width: calc(var(--indent) - var(--rail));
+  height: calc(var(--s3) + var(--elbow));
+  border-left: 2px solid var(--line);
+  border-bottom: 2px solid var(--line);
+  border-bottom-left-radius: var(--r-md);
+}
+
+.alr-branch.on-path::after {
+  border-color: var(--accent);
+}
+
+.alr-tree-empty {
+  margin: var(--s3) 0 0 var(--indent);
+}
+
+.alr-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  min-width: 0;
+  transition: border-color var(--t-med), box-shadow var(--t-med), background var(--t-med);
+}
+
+.alr-node.root {
+  background: var(--surface-2);
+}
+
+.alr-node.is-matched {
+  border-color: var(--accent-border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.alr-node.is-delivers {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+.alr-node-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.alr-node-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s2);
+  min-width: 0;
+  min-height: 30px;
+}
+
+.alr-node-title {
+  font-weight: var(--fw-semi);
+  color: var(--text);
+}
+
+.alr-all {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.alr-node-head > .alr-actions {
+  margin-top: calc(var(--s1) * -1);
+  margin-right: calc(var(--s1) * -1);
+}
+
+/* Matcher chip: label, operator, value. */
+.alr-mchip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s1);
+  max-width: 100%;
+  padding: 1px var(--s2);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.alr-mchip .k {
+  color: var(--accent);
+}
+
+.alr-mchip .op {
+  color: var(--text-muted);
+}
+
+.alr-mchip.hit {
+  border-color: var(--ok-border);
+  background: var(--ok-soft);
+}
+
+.alr-mchip.hit .k {
+  color: var(--ok);
+}
+
+.alr-mchip.miss {
+  border-color: var(--bad-border);
+  border-style: dashed;
+  background: var(--bad-soft);
+}
+
+.alr-mchip.miss .k,
+.alr-mchip.miss .v {
+  color: var(--bad);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.alr-continue {
+  padding: 0 var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--warn-border);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.alr-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: 0 var(--s2);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  white-space: nowrap;
+}
+
+.alr-state.deliver {
+  background: var(--ok);
+  color: var(--text-inverse);
+}
+
+.alr-state.skip {
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+
+.alr-state.pass {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+
+/* Destination: → icon name, muted when inherited. */
+.alr-dest {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-faint);
+}
+
+.alr-dest-name {
+  font-weight: var(--fw-semi);
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alr-dest.inherited .alr-dest-name {
+  font-weight: var(--fw-normal);
+  color: var(--text-muted);
+}
+
+.alr-dest.inherited .alr-int {
+  opacity: 0.7;
+}
+
+.alr-dest-inh {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* Timing chips: set on this node in normal text, inherited ones muted. */
+.alr-timings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s3);
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+.alr-tm .k {
+  color: var(--text-faint);
+}
+
+.alr-tm .v {
+  font-family: var(--font-mono);
+}
+
+.alr-tm.own .k {
+  color: var(--text-muted);
+}
+
+.alr-tm.own .v {
+  color: var(--text);
+  font-weight: var(--fw-semi);
+}
+
+/* ---------------------------------------------------------------- routing preview */
+
+.alr-labelrows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.alr-labelrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.alr-labelrow input {
+  min-height: 32px;
+  padding: var(--s1) var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+.alr-eq {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.alr-test-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.alr-test-tools > .alr-fill {
+  flex: 1;
+  width: auto;
+  min-width: 140px;
+  min-height: 30px;
+  padding: var(--s1) var(--s2);
+  font-size: var(--fs-sm);
+}
+
+.alr-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--border-soft);
+}
+
+.alr-result-h {
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.alr-deliveries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.alr-delivery {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--ok-border);
+  border-radius: var(--r-md);
+  background: var(--ok-soft);
+}
+
+.alr-delivery-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.alr-hops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.alr-hop + .alr-hop::before {
+  content: '›';
+  margin-right: var(--s1);
+  color: var(--text-faint);
+}
+
+.alr-delivery-t {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- save bar */
+
+.alr-savebar {
+  position: sticky;
+  bottom: var(--s4);
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--warn-border);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: alr-rise var(--t-med);
+}
+
+.alr-savebar > svg {
+  flex: none;
+  color: var(--warn);
+}
+
+.alr-savebar-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 200px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.alr-savebar-text > b {
+  color: var(--text);
+}
+
+.alr-savebar-err {
+  color: var(--bad);
+}
+
+@keyframes alr-rise {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alr-savebar { animation: none; }
+}
+
+@media (max-width: 1180px) {
+  .alr-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alr-test {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .alr-defaults-a,
+  .alr-defaults-b {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alr-defaults > .panel-body {
+    padding: var(--s4);
+  }
+
+  .alr-tree {
+    --indent: 16px;
+    --rail: 6px;
+  }
+
+  .alr-node {
+    padding: var(--s2) var(--s2) var(--s2) var(--s3);
+  }
+
+  .alr-node-head {
+    flex-direction: column;
+  }
+
+  .alr-node-head > .alr-actions {
+    order: 2;
+    margin: 0 0 0 calc(var(--s1) * -1);
+  }
+
+  .alr-savebar {
+    bottom: var(--s2);
+  }
+}

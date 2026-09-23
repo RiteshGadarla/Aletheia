@@ -1,9 +1,10 @@
 // Alerting helpers shared by the alerting pages, the sidebar badge and the Grafana deep links
 // (CONTRACTS section 13). One cached /alerting/status snapshot feeds every consumer.
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import type { ReactNode, SVGProps } from 'react';
 import { IconExternal } from '../components/Icons';
 import { api, errMessage } from './api';
-import type { AlertingStatus, AlertOp, AlertRule } from './types';
+import type { AlertingStatus, AlertOp, AlertRule, NotificationPolicy, PolicyRoute } from './types';
 
 /* ---------------------------------------------------------------- status store */
 
@@ -48,6 +49,14 @@ export function grafanaEventUrl(s: AlertingStatus | null, eventUid: string): str
 }
 
 export const grafanaAlertingUrl = (s: AlertingStatus): string => `${trimSlash(s.grafana.public_url)}/alerting/list`;
+
+/** The rule's page in Grafana; null when Grafana is not configured. */
+export const grafanaRuleUrl = (s: AlertingStatus | null, id: string): string | null =>
+  s?.grafana.url ? `${trimSlash(s.grafana.public_url)}/alerting/grafana/${encodeURIComponent(id)}/view` : null;
+
+/** The Loki logs dashboard (CONTRACTS 13.5), for exploring what a Loki rule counts. */
+export const grafanaLogsUrl = (s: AlertingStatus | null): string | null =>
+  s?.grafana.url ? `${trimSlash(s.grafana.public_url)}/d/aletheia-logs/aletheia-logs` : null;
 
 /** Small "Open in Grafana" link for one event; renders nothing when status is unavailable. */
 export function GrafanaEventLink({ eventUid, label = 'Grafana', className = 'btn ghost sm' }: {
@@ -120,3 +129,72 @@ export function newId(): string {
 
 export const fmtValue = (v: number | null | undefined): string =>
   v === null || v === undefined ? '—' : Number.isInteger(v) ? v.toLocaleString() : v.toPrecision(4).replace(/\.?0+$/, '');
+
+const OP_WORDS: Record<AlertOp, string> = { gt: '>', gte: '≥', lt: '<', lte: '≤', eq: '=', ne: '≠' };
+
+/** "Fires when last() of the query is > 100 for 5m, checked every 1m." as rich text. */
+export function conditionSentence(r: Pick<AlertRule, 'reducer' | 'condition' | 'for' | 'interval'>): ReactNode {
+  const pend = r.for && !/^0+[a-z]*$/i.test(r.for);
+  return (
+    <>
+      Fires {pend ? 'when' : 'as soon as'} <b>{r.reducer}()</b> of the query is{' '}
+      <b>{OP_WORDS[r.condition.op]} {fmtValue(r.condition.threshold)}</b>
+      {pend && <> for <b>{r.for}</b></>}, checked every <b>{r.interval || '1m'}</b>.
+    </>
+  );
+}
+
+const TPL = /\{\{-?\s*([^}]*?)\s*-?\}\}/g;
+
+/** Friendly name for one Grafana template expression: `$values.B` -> value, `$labels.source` -> source. */
+function tplName(expr: string): string {
+  const m = /\$labels\.([\w]+)/.exec(expr);
+  if (m) return m[1];
+  if (/\$values?\b/.test(expr)) return 'value';
+  const last = /([\w]+)\s*$/.exec(expr);
+  return last ? last[1] : '…';
+}
+
+/** Summary text with `{{ ... }}` rendered as quiet inline tokens (the raw template is in the title). */
+export function TemplateText({ text }: { text: string }) {
+  const out: ReactNode[] = [];
+  let at = 0;
+  for (const m of text.matchAll(TPL)) {
+    const i = m.index ?? 0;
+    if (i > at) out.push(<Fragment key={`t${at}`}>{text.slice(at, i)}</Fragment>);
+    out.push(
+      <span key={`v${i}`} className="al-tpl" title={`${m[0]}: filled in when the alert fires`}>‹{tplName(m[1])}›</span>,
+    );
+    at = i + m[0].length;
+  }
+  if (at < text.length) out.push(<Fragment key={`t${at}`}>{text.slice(at)}</Fragment>);
+  return <>{out}</>;
+}
+
+/** Number of routes in the policy tree, nested ones included (the root is not counted). */
+export function countRoutes(p: NotificationPolicy | PolicyRoute): number {
+  return p.routes.reduce((n, r) => n + 1 + countRoutes(r), 0);
+}
+
+/* ---------------------------------------------------------------- icons local to alerting */
+
+type IP = SVGProps<SVGSVGElement> & { size?: number };
+
+function Svg({ size = 16, children, ...rest }: IP) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false" {...rest}>
+      {children}
+    </svg>
+  );
+}
+
+export const IconEdit = (p: IP) => <Svg {...p}><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></Svg>;
+export const IconPause = (p: IP) => <Svg {...p}><path d="M9 5v14M15 5v14" /></Svg>;
+export const IconPlay = (p: IP) => <Svg {...p}><path d="M7 5l12 7-12 7z" /></Svg>;
+export const IconSend = (p: IP) => <Svg {...p}><path d="M21 3L10 14" /><path d="M21 3l-7 18-4-7-7-4z" /></Svg>;
+export const IconRoute = (p: IP) => (
+  <Svg {...p}><circle cx="6" cy="5" r="2" /><circle cx="18" cy="12" r="2" /><circle cx="6" cy="19" r="2" /><path d="M6 7v10M6 12h10" /></Svg>
+);
+export const IconFolder = (p: IP) => <Svg {...p}><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></Svg>;
+export const IconBolt = (p: IP) => <Svg {...p}><path d="M13 3L5 13h6l-1 8 8-10h-6z" /></Svg>;

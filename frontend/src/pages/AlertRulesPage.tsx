@@ -1,16 +1,24 @@
-// Alert rules: list with live state, create/edit with a server-side preview, pause and delete.
-import { useMemo, useState } from 'react';
-import { Badge, EmptyState, ErrorState, Panel, Spinner } from '../components/Bits';
+// Alert rules: state tiles, rules grouped by Grafana rule group with inline details, a live
+// notification feed, and create/edit with a server-side preview.
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { Badge, CopyButton, EmptyState, ErrorState, Panel, Spinner } from '../components/Bits';
 import type { BadgeKind } from '../components/Bits';
-import { IconBell, IconPlus, IconSearch, IconTrash } from '../components/Icons';
+import {
+  IconAlert, IconBell, IconCaret, IconCheck, IconExternal, IconInbox, IconPlus, IconSearch, IconTrash,
+} from '../components/Icons';
 import { Modal } from '../components/Modal';
 import { useAlertingVersion } from './AlertingPage';
 import { api, errMessage } from '../lib/api';
-import { ago, conditionText, fmtValue, isDuration, OP_SYMBOL, refreshAlertingStatus } from '../lib/alerting';
+import {
+  ago, conditionSentence, conditionText, fmtValue, grafanaLogsUrl, grafanaRuleUrl, IconBolt, IconEdit, IconFolder,
+  IconPause, IconPlay, isDuration, OP_SYMBOL, refreshAlertingStatus, TemplateText, useAlertingStatus,
+} from '../lib/alerting';
 import { useNotify } from '../lib/notify';
 import { usePoll } from '../lib/useAsync';
 import type {
-  AlertDatasource, AlertNoData, AlertOp, AlertPreview, AlertReducer, AlertRule, AlertRuleInput, AlertSeverity,
+  AlertDatasource, AlertingStatus, AlertNoData, AlertOp, AlertPreview, AlertReducer, AlertRule, AlertRuleInput, AlertSeverity,
   AlertState, Sync,
 } from '../lib/types';
 
@@ -170,6 +178,9 @@ function RuleDialog({ rule, onClose, onSaved }: { rule: AlertRule | null; onClos
               {preview === 'busy' ? 'Evaluating…' : 'Preview'}
             </button>
           </div>
+          {Number.isFinite(threshold) && d.threshold.trim() !== '' && (
+            <p className="alr-sentence">{conditionSentence({ reducer: d.reducer, condition: { op: d.op, threshold }, for: d.for, interval: d.interval })}</p>
+          )}
           {preview && preview !== 'busy' && (
             <div className={`al-preview ${preview.error ? 'bad' : preview.firing ? 'warn' : 'ok'}`} role="status">
               {preview.error ? <><b>Query failed.</b> <span className="mono">{preview.error}</span></> : (
@@ -230,13 +241,202 @@ function RuleDialog({ rule, onClose, onSaved }: { rule: AlertRule | null; onClos
   );
 }
 
+// ------------------------------------------------------------------ list pieces
+type Bucket = 'firing' | 'pending' | 'normal' | 'problem' | 'paused';
+
+const BUCKETS: { key: Bucket; label: string; sub: string; states: AlertState[] }[] = [
+  { key: 'firing', label: 'Firing', sub: 'sending notifications', states: ['firing'] },
+  { key: 'pending', label: 'Pending', sub: 'inside the pending period', states: ['pending'] },
+  { key: 'normal', label: 'Normal', sub: 'condition not met', states: ['normal'] },
+  { key: 'problem', label: 'Error / No data', sub: 'query failed or empty', states: ['error', 'nodata'] },
+  { key: 'paused', label: 'Paused', sub: 'not evaluated', states: ['paused'] },
+];
+const bucketOf = (s: AlertState): Bucket => BUCKETS.find((b) => b.states.includes(s))?.key ?? 'normal';
+
+const DS_SHORT: Record<AlertDatasource, string> = { loki: 'Loki · LogQL', prometheus: 'Prometheus · PromQL', clickhouse: 'ClickHouse · SQL' };
+const NODATA_TEXT: Record<AlertNoData, string> = {
+  OK: 'No data counts as normal.', NoData: 'No data shows the "No data" state.', Alerting: 'No data fires the alert.',
+};
+
+function StatTiles({ counts, value, onPick }: {
+  counts: Record<Bucket, number>; value: Bucket | ''; onPick: (b: Bucket | '') => void;
+}) {
+  return (
+    <div className="alr-tiles" role="group" aria-label="Filter rules by state">
+      {BUCKETS.map((b) => (
+        <button key={b.key} type="button" className={`alr-tile t-${b.key}${counts[b.key] > 0 ? ' hot' : ''}`}
+          aria-pressed={value === b.key} onClick={() => onPick(value === b.key ? '' : b.key)}
+          title={value === b.key ? 'Show all rules' : `Show only ${b.label.toLowerCase()} rules`}>
+          <span className="alr-tile-l"><i aria-hidden="true" />{b.label}</span>
+          <span className="alr-tile-n">{counts[b.key]}</span>
+          <span className="alr-tile-d">{b.sub}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RuleDetail({ r, id, status, onEdit }: { r: AlertRule; id: string; status: AlertingStatus | null; onEdit: () => void }) {
+  const view = grafanaRuleUrl(status, r.id);
+  const logs = r.datasource === 'loki' ? grafanaLogsUrl(status) : null;
+  const labels = { severity: r.severity, ...r.labels };
+  return (
+    <div className="alr-detail" id={id}>
+      <div className="alr-detail-main">
+        {r.last_error && (
+          <div className="alr-err" role="note">
+            <IconAlert size={15} />
+            <div><b>Last evaluation failed</b><code>{r.last_error}</code></div>
+          </div>
+        )}
+        <div className="alr-q-head">
+          <span className="alr-k">Query</span>
+          <span className="alr-ds">{DS_SHORT[r.datasource]}</span>
+          <CopyButton text={r.query} label="Copy query" />
+        </div>
+        <pre className="alr-code">{r.query}</pre>
+        <p className="alr-sentence">{conditionSentence(r)} {NODATA_TEXT[r.no_data_state]}</p>
+        {(r.summary || r.description) && (
+          <div className="alr-text">
+            {r.summary && <p><span className="alr-k">Summary</span><TemplateText text={r.summary} /></p>}
+            {r.description && <p><span className="alr-k">Description</span>{r.description}</p>}
+          </div>
+        )}
+      </div>
+      <div className="alr-detail-side">
+        <dl className="alr-facts">
+          <div><dt>Last value</dt><dd className="mono">{fmtValue(r.last_value)}</dd></div>
+          <div><dt>Evaluated</dt><dd title={r.last_eval ?? undefined}>{r.enabled ? ago(r.last_eval) : 'paused'}</dd></div>
+          <div><dt>Sync</dt><dd><SyncBadge sync={r.sync} />{r.sync.error && <span className="alr-sync-err">{r.sync.error}</span>}</dd></div>
+          <div><dt>Updated</dt><dd title={r.updated_at}>{ago(r.updated_at)}</dd></div>
+        </dl>
+        <div className="alr-labels" aria-label="Labels">
+          {Object.entries(labels).map(([k, v]) => <span key={k} className="alr-label"><span>{k}</span>={v}</span>)}
+        </div>
+        <div className="alr-links">
+          <button type="button" className="btn-sm" onClick={onEdit}><IconEdit size={13} />Edit rule</button>
+          {view && <a className="btn btn-sm" href={view} target="_blank" rel="noopener noreferrer"><IconExternal size={13} />View in Grafana</a>}
+          {logs && <a className="btn btn-sm" href={logs} target="_blank" rel="noopener noreferrer"><IconExternal size={13} />Explore logs</a>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RuleRow({ r, open, flash, busy, status, onToggle, onEdit, onPause, onDelete }: {
+  r: AlertRule; open: boolean; flash: boolean; busy: boolean; status: AlertingStatus | null;
+  onToggle: () => void; onEdit: () => void; onPause: () => void; onDelete: () => void;
+}) {
+  const detailId = `alr-d-${r.id}`;
+  const syncWarn = r.sync.state === 'error' || r.sync.state === 'pending';
+  return (
+    <li id={`alr-rule-${r.id}`} className={`alr-rule s-${r.state}${open ? ' open' : ''}${flash ? ' flash' : ''}`}>
+      {/* The whole row toggles for mouse users; the main button carries the keyboard and ARIA state. */}
+      <div className="alr-row" onClick={onToggle}>
+        <button type="button" className="alr-main" aria-expanded={open} aria-controls={detailId}
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}>
+          <IconCaret size={14} className="alr-caret" />
+          <span className="alr-name-wrap">
+            <span className="alr-name">
+              <span className="alr-name-t">{r.name}</span>
+              <Badge kind={SEV_KIND[r.severity] ?? 'plain'}>{r.severity}</Badge>
+              {syncWarn && <Badge kind={r.sync.state === 'error' ? 'bad' : 'warn'} title={r.sync.error}>sync {r.sync.state}</Badge>}
+            </span>
+            {r.summary && <span className="alr-summary"><TemplateText text={r.summary} /></span>}
+          </span>
+        </button>
+        <span className="alr-state"><StatePill state={r.state} title={r.last_error} /></span>
+        <span className="alr-cond" title={r.query}>
+          <code>{conditionText(r)}</code>
+          <span className="alr-sub">{r.datasource} · every {r.interval}</span>
+        </span>
+        <span className="alr-val">
+          <span className="mono">{fmtValue(r.last_value)}</span>
+          <span className="alr-sub" title={r.last_eval ?? undefined}>{r.enabled ? ago(r.last_eval) : 'paused'}</span>
+        </span>
+        <span className="alr-acts" onClick={(e) => e.stopPropagation()}>
+          <button type="button" className="ghost icon" aria-label={`Edit ${r.name}`} title="Edit" onClick={onEdit}><IconEdit size={15} /></button>
+          <button type="button" className="ghost icon" disabled={busy} aria-label={`${r.enabled ? 'Pause' : 'Resume'} ${r.name}`}
+            title={r.enabled ? 'Pause evaluation' : 'Resume evaluation'} onClick={onPause}>
+            {r.enabled ? <IconPause size={15} /> : <IconPlay size={15} />}
+          </button>
+          <button type="button" className="ghost icon alr-del" aria-label={`Delete ${r.name}`} title="Delete" onClick={onDelete}><IconTrash size={15} /></button>
+        </span>
+      </div>
+      {open && <RuleDetail r={r} id={detailId} status={status} onEdit={onEdit} />}
+    </li>
+  );
+}
+
+const NOTE_META: Record<'firing' | 'resolved' | 'test', { label: string; icon: ReactNode }> = {
+  firing: { label: 'Firing', icon: <IconBell size={14} /> },
+  resolved: { label: 'Resolved', icon: <IconCheck size={14} /> },
+  test: { label: 'Test', icon: <IconBolt size={14} /> },
+};
+
+function RecentNotifications({ version, known, onJump }: { version: number; known: Set<string>; onJump: (id: string) => void }) {
+  const feed = usePoll(() => api.alertNotifications(undefined, 20), 10000, [version]);
+  const items = useMemo(() => [...(feed.data?.items ?? [])].reverse(), [feed.data]);
+  return (
+    <Panel flush className="alr-feed-panel" title="Recent notifications"
+      subtitle={feed.data ? `${items.length ? `last ${items.length}` : 'none yet'} · live` : undefined}>
+      {feed.error && !feed.data && <div className="panel-pad"><ErrorState error={feed.error} what="notifications" /></div>}
+      {feed.loading && !feed.data && <div className="panel-pad"><Spinner label="Loading" /></div>}
+      {feed.data && items.length === 0 && (
+        <div className="alr-feed-empty">
+          <IconInbox size={20} />
+          <p>No notifications yet. Alerts routed to a browser contact point show up here.</p>
+          <Link to="../contact-points">Send a test from Contact points</Link>
+        </div>
+      )}
+      {items.length > 0 && (
+        <ol className="alr-feed">
+          {items.map((n) => {
+            const kind = n.source === 'test' ? 'test' : n.status;
+            const m = NOTE_META[kind];
+            const jump = n.rule_id && known.has(n.rule_id) ? n.rule_id : null;
+            const body = (
+              <>
+                <span className="alr-note-ico" aria-hidden="true">{m.icon}</span>
+                <span className="alr-note-body">
+                  <span className="alr-note-top">
+                    <span className="alr-note-name">{n.rule_name}</span>
+                    {n.severity && <Badge kind={SEV_KIND[n.severity as AlertSeverity] ?? 'plain'}>{n.severity}</Badge>}
+                  </span>
+                  {n.summary && <span className="alr-note-sum"><TemplateText text={n.summary} /></span>}
+                  <span className="alr-note-meta">
+                    <span className="alr-note-st">{m.label}</span>
+                    <span>to {n.contact_point_name}</span>
+                    <time dateTime={n.received_at} title={n.received_at}>{ago(n.received_at)}</time>
+                  </span>
+                </span>
+              </>
+            );
+            return (
+              <li key={n.id} className={`alr-note n-${kind}`}>
+                {jump
+                  ? <button type="button" className="alr-note-in" onClick={() => onJump(jump)} title="Show this rule">{body}</button>
+                  : <div className="alr-note-in">{body}</div>}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Panel>
+  );
+}
+
 // ------------------------------------------------------------------ page
 export function AlertRulesPage() {
   const version = useAlertingVersion();
   const list = usePoll(() => api.listAlertRules(), 10000, [version]);
+  const { status } = useAlertingStatus();
   const { toast } = useNotify();
   const [q, setQ] = useState('');
-  const [stateF, setStateF] = useState<AlertState | ''>('');
+  const [bucket, setBucket] = useState<Bucket | ''>('');
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [shut, setShut] = useState<Set<string>>(() => new Set());
+  const [flash, setFlash] = useState<string | null>(null);
   const [editing, setEditing] = useState<AlertRule | 'new' | null>(null);
   const [removing, setRemoving] = useState<AlertRule | null>(null);
   const [rmErr, setRmErr] = useState<string | null>(null);
@@ -244,20 +444,52 @@ export function AlertRulesPage() {
 
   const rules = list.data?.rules ?? [];
   const counts = useMemo(() => {
-    const c: Partial<Record<AlertState, number>> = {};
-    for (const r of rules) c[r.state] = (c[r.state] ?? 0) + 1;
+    const c: Record<Bucket, number> = { firing: 0, pending: 0, normal: 0, problem: 0, paused: 0 };
+    for (const r of rules) c[bucketOf(r.state)] += 1;
     return c;
   }, [rules]);
-  const shown = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return rules
-      .filter((r) => !stateF || r.state === stateF)
-      .filter((r) => !needle || [r.name, r.group, r.query, r.summary, r.severity, r.datasource, ...Object.entries(r.labels).flat()]
-        .some((s) => s.toLowerCase().includes(needle)))
-      .sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) || a.name.localeCompare(b.name));
-  }, [rules, q, stateF]);
+  const known = useMemo(() => new Set(rules.map((r) => r.id)), [rules]);
 
+  const groups = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const match = (r: AlertRule) => (!bucket || bucketOf(r.state) === bucket)
+      && (!needle || [r.name, r.group, r.query, r.summary, r.severity, r.datasource, ...Object.entries(r.labels).flat()]
+        .some((s) => s.toLowerCase().includes(needle)));
+    const by = new Map<string, AlertRule[]>();
+    for (const r of rules) by.set(r.group || 'aletheia', [...(by.get(r.group || 'aletheia') ?? []), r]);
+    return [...by.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([name, all]) => ({
+      name, total: all.length,
+      firing: all.filter((r) => r.state === 'firing').length,
+      pending: all.filter((r) => r.state === 'pending').length,
+      intervals: [...new Set(all.map((r) => r.interval))],
+      shown: all.filter(match)
+        .sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state) || a.name.localeCompare(b.name)),
+    })).filter((g) => g.shown.length > 0);
+  }, [rules, q, bucket]);
+  const shownCount = groups.reduce((n, g) => n + g.shown.length, 0);
+
+  const flip = (set: Set<string>, k: string) => { const n = new Set(set); if (n.has(k)) n.delete(k); else n.add(k); return n; };
   const changed = () => { list.reload(); void refreshAlertingStatus(); };
+  const clear = () => { setQ(''); setBucket(''); };
+
+  // From the notification feed: reveal the rule wherever filters or a collapsed group hid it.
+  const jumpTo = (id: string) => {
+    const r = rules.find((x) => x.id === id);
+    if (!r) return;
+    if (bucket && bucketOf(r.state) !== bucket) setBucket('');
+    if (q) setQ('');
+    setShut((s) => { const n = new Set(s); n.delete(r.group || 'aletheia'); return n; });
+    setOpen((s) => new Set(s).add(id));
+    setFlash(id);
+  };
+  useEffect(() => {
+    if (!flash) return;
+    const el = document.getElementById(`alr-rule-${flash}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.querySelector<HTMLButtonElement>('.alr-main')?.focus({ preventScroll: true });
+    const t = window.setTimeout(() => setFlash(null), 1800);
+    return () => window.clearTimeout(t);
+  }, [flash]);
 
   const togglePause = async (r: AlertRule) => {
     setBusyId(r.id);
@@ -279,70 +511,84 @@ export function AlertRulesPage() {
     } catch (e) { setRmErr(errMessage(e)); }
   };
 
-  return (
-    <>
-      <Panel flush title="Alert rules" subtitle={list.data ? `${rules.length} rule${rules.length === 1 ? '' : 's'}` : undefined}
-        right={<button type="button" className="primary btn-sm" onClick={() => setEditing('new')}><IconPlus size={13} />New alert rule</button>}>
-        <div className="panel-pad stack-sm">
-          <label className="lineage-search-box al-search">
-            <IconSearch size={14} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, query, label…" aria-label="Search alert rules" />
-          </label>
-          <div className="row-tight" role="group" aria-label="Filter by state">
-            <button type="button" className={`btn-sm ${stateF === '' ? 'primary' : 'ghost'}`} aria-pressed={stateF === ''} onClick={() => setStateF('')}>All {rules.length}</button>
-            {STATE_ORDER.map((s) => (
-              <button key={s} type="button" className={`btn-sm ${stateF === s ? 'primary' : 'ghost'}`} aria-pressed={stateF === s}
-                onClick={() => setStateF(stateF === s ? '' : s)}>{STATE_META[s].label} {counts[s] ?? 0}</button>
-            ))}
-          </div>
-        </div>
+  const activeBucket = BUCKETS.find((b) => b.key === bucket);
 
-        {list.error && <div className="panel-pad"><ErrorState error={list.error} what="alert rules" /></div>}
-        {list.loading && !list.data && <div className="panel-pad"><Spinner label="Loading rules" /></div>}
-        {list.data && rules.length === 0 && (
-          <EmptyState title="No alert rules yet" icon={<IconBell size={22} />}
-            action={<button type="button" className="primary" onClick={() => setEditing('new')}>Create the first rule</button>}>
-            A rule runs a Loki, Prometheus or ClickHouse query on an interval and fires when the result crosses a threshold.
-          </EmptyState>
-        )}
-        {list.data && rules.length > 0 && shown.length === 0 && (
-          <EmptyState title="No rules match" action={<button type="button" onClick={() => { setQ(''); setStateF(''); }}>Clear filters</button>} />
-        )}
-        {shown.length > 0 && (
-          <div className="table-scroll"><table className="data">
-            <thead><tr>
-              <th>State</th><th>Rule</th><th>Severity</th><th>Source</th><th>Condition</th><th>Last value</th><th>Sync</th><th><span className="sr-only">Actions</span></th>
-            </tr></thead>
-            <tbody>
-              {shown.map((r) => (
-                <tr key={r.id} className="clickable" onClick={() => setEditing(r)}>
-                  <td className="nowrap"><StatePill state={r.state} title={r.last_error} /></td>
-                  <td className="wrap">
-                    <b>{r.name}</b>
-                    <div className="hint clamp2" title={r.summary}>{r.group}{r.summary ? ` · ${r.summary}` : ''}</div>
-                    {r.last_error && <div className="hint err">{r.last_error}</div>}
-                  </td>
-                  <td><Badge kind={SEV_KIND[r.severity] ?? 'plain'}>{r.severity}</Badge></td>
-                  <td className="nowrap">{r.datasource}</td>
-                  <td className="mono nowrap" title={r.query}>{conditionText(r)}</td>
-                  <td className="nowrap">
-                    <span className="mono">{fmtValue(r.last_value)}</span>
-                    <div className="hint" title={r.last_eval ?? undefined}>{r.enabled ? ago(r.last_eval) : 'paused'}</div>
-                  </td>
-                  <td><SyncBadge sync={r.sync} /></td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div className="row-tight row-nowrap">
-                      <button type="button" className="ghost" onClick={() => setEditing(r)}>Edit</button>
-                      <button type="button" className="ghost" disabled={busyId === r.id} onClick={() => void togglePause(r)}>{r.enabled ? 'Pause' : 'Resume'}</button>
-                      <button type="button" className="ghost" onClick={() => { setRmErr(null); setRemoving(r); }}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
-        )}
-      </Panel>
+  return (
+    <div className="alr">
+      {list.data && rules.length > 0 && <StatTiles counts={counts} value={bucket} onPick={setBucket} />}
+
+      <div className="alr-layout">
+        <Panel flush className="alr-panel" title="Alert rules"
+          subtitle={list.data ? `${rules.length} rule${rules.length === 1 ? '' : 's'}` : undefined}
+          right={<button type="button" className="primary btn-sm" onClick={() => setEditing('new')}><IconPlus size={13} />New alert rule</button>}>
+          {rules.length > 0 && (
+            <div className="alr-toolbar">
+              <label className="lineage-search-box al-search alr-search">
+                <IconSearch size={14} />
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, query, label…" aria-label="Search alert rules" />
+              </label>
+              {(bucket || q) && (
+                <span className="alr-filter-note">
+                  {shownCount} of {rules.length} shown{activeBucket ? ` · ${activeBucket.label}` : ''}
+                  <button type="button" className="ghost" onClick={clear}>Clear</button>
+                </span>
+              )}
+            </div>
+          )}
+
+          {list.error && <div className="panel-pad"><ErrorState error={list.error} what="alert rules" /></div>}
+          {list.loading && !list.data && <div className="panel-pad"><Spinner label="Loading rules" /></div>}
+          {list.data && rules.length === 0 && (
+            <EmptyState title="No alert rules yet" icon={<IconBell size={22} />}
+              action={<button type="button" className="primary" onClick={() => setEditing('new')}><IconPlus size={14} />Create your first rule</button>}>
+              A rule runs a Loki, Prometheus or ClickHouse query every interval and fires when the result crosses a threshold.
+              Firing alerts are routed to contact points by the notification policies.
+            </EmptyState>
+          )}
+          {list.data && rules.length > 0 && shownCount === 0 && (
+            <EmptyState title="No rules match" icon={<IconSearch size={20} />}
+              action={<div className="btn-row"><button type="button" onClick={clear}>Clear filters</button>
+                <button type="button" className="primary" onClick={() => setEditing('new')}><IconPlus size={14} />New alert rule</button></div>}>
+              {activeBucket ? `No ${activeBucket.label.toLowerCase()} rules` : 'Nothing'}{q.trim() ? ` matching “${q.trim()}”` : ''}.
+            </EmptyState>
+          )}
+
+          {groups.map((g) => {
+            const collapsed = shut.has(g.name);
+            const gid = `alr-g-${g.name.replace(/\W+/g, '-')}`;
+            return (
+              <section key={g.name} className="alr-group" aria-label={`Rule group ${g.name}`}>
+                <h3 className="alr-group-h">
+                  <button type="button" className="alr-group-btn" aria-expanded={!collapsed} aria-controls={gid}
+                    onClick={() => setShut((s) => flip(s, g.name))}>
+                    <IconCaret size={13} className="alr-caret" />
+                    <IconFolder size={14} className="alr-folder-ico" />
+                    <span className="alr-path"><span className="alr-folder">Aletheia /</span> {g.name}</span>
+                    <span className="alr-gmeta">
+                      every {g.intervals.join(', ')} · {g.shown.length === g.total ? g.total : `${g.shown.length} of ${g.total}`} rule{g.total === 1 ? '' : 's'}
+                    </span>
+                    <span className="alr-gcounts">
+                      {g.firing > 0 && <Badge kind="bad">{g.firing} firing</Badge>}
+                      {g.pending > 0 && <Badge kind="warn">{g.pending} pending</Badge>}
+                    </span>
+                  </button>
+                </h3>
+                {!collapsed && (
+                  <ul className="alr-rules" id={gid}>
+                    {g.shown.map((r) => (
+                      <RuleRow key={r.id} r={r} status={status} open={open.has(r.id)} flash={flash === r.id} busy={busyId === r.id}
+                        onToggle={() => setOpen((s) => flip(s, r.id))} onEdit={() => setEditing(r)}
+                        onPause={() => void togglePause(r)} onDelete={() => { setRmErr(null); setRemoving(r); }} />
+                    ))}
+                  </ul>
+                )}
+              </section>
+            );
+          })}
+        </Panel>
+
+        <RecentNotifications version={version} known={known} onJump={jumpTo} />
+      </div>
 
       {editing && (
         <RuleDialog key={editing === 'new' ? 'new' : editing.id} rule={editing === 'new' ? null : editing}
@@ -356,6 +602,6 @@ export function AlertRulesPage() {
           {rmErr && <p className="hint err" role="alert">{rmErr}</p>}
         </Modal>
       )}
-    </>
+    </div>
   );
 }

@@ -1,8 +1,12 @@
 // Contact points: who receives notifications and how. Secrets are write-only (CONTRACTS 13.2).
 import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { Badge, Callout, EmptyState, ErrorState, Panel, Spinner } from '../components/Bits';
-import type { BadgeKind } from '../components/Bits';
-import { IconBell, IconPlus } from '../components/Icons';
+import {
+  IconAlert, IconBell, IconCheck, IconHash, IconInfo, IconLink, IconMail, IconMonitor, IconPencil, IconPlus, IconSend,
+  IconSpinner, IconTrash,
+} from '../components/Icons';
 import { Modal } from '../components/Modal';
 import { SyncBadge } from './AlertRulesPage';
 import { useAlertingVersion } from './AlertingPage';
@@ -10,10 +14,27 @@ import { api, errMessage } from '../lib/api';
 import { refreshAlertingStatus, useAlertingStatus, useNotificationPermission } from '../lib/alerting';
 import type { NotifPermission } from '../lib/alerting';
 import { useNotify } from '../lib/notify';
+import { receiverUsage } from '../lib/routing';
 import { useAsync } from '../lib/useAsync';
 import type { ContactPoint, ContactPointInput, ContactPointType } from '../lib/types';
+import '../styles/alerting-routing.css';
 
-const TYPE_LABEL: Record<ContactPointType, string> = { browser: 'Browser', webhook: 'Webhook', email: 'Email', slack: 'Slack' };
+type IconC = (p: { size?: number }) => ReactNode;
+/** Label, icon and one-line blurb per integration; the policies page shares it. */
+export const INTEGRATION: Record<ContactPointType, { label: string; Icon: IconC; blurb: string }> = {
+  browser: { label: 'Browser', Icon: IconMonitor, blurb: 'In-app toast and OS notification' },
+  webhook: { label: 'Webhook', Icon: IconLink, blurb: 'JSON payload to any HTTP endpoint' },
+  email: { label: 'Email', Icon: IconMail, blurb: 'Through Grafana\'s SMTP settings' },
+  slack: { label: 'Slack', Icon: IconHash, blurb: 'Incoming webhook or bot token' },
+};
+
+/** Tinted tile with the integration's icon; decorative, the label is always shown next to it. */
+export function IntegrationIcon({ type, size = 16 }: { type: ContactPointType | undefined; size?: number }) {
+  const m = type ? INTEGRATION[type] : undefined;
+  const Icon = m?.Icon ?? IconAlert;
+  const kind = type ?? 'missing';
+  return <span className={`alr-int alr-int-${kind}${size < 16 ? ' alr-tile-sm' : ''}`} aria-hidden="true"><Icon size={size} /></span>;
+}
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : v == null ? '' : String(v));
 
@@ -37,27 +58,42 @@ function targetOf(p: ContactPoint): string {
   }
 }
 
-// ------------------------------------------------------------------ permission control
-const PERM: Record<NotifPermission, { kind: BadgeKind; label: string; help: string }> = {
-  granted: { kind: 'ok', label: 'Allowed', help: 'Firing alerts pop up as OS notifications, even when this tab is in the background.' },
-  denied: { kind: 'bad', label: 'Blocked', help: 'Blocked in this browser. Re-allow notifications for this site in the browser\'s site settings; in-app toasts still work.' },
-  default: { kind: 'plain', label: 'Not asked yet', help: 'Allow them to get OS notifications when this tab is in the background. In-app toasts work either way.' },
-  unsupported: { kind: 'plain', label: 'Unsupported', help: 'This browser has no Notification API (or the page is not on a secure origin). In-app toasts still work.' },
+// ------------------------------------------------------------------ permission callout
+type Tone = 'ok' | 'bad' | 'info' | 'plain';
+const PERM: Record<NotifPermission, { tone: Tone; Icon: IconC; title: string; body: ReactNode }> = {
+  granted: {
+    tone: 'ok', Icon: IconCheck, title: 'Browser notifications are on',
+    body: 'Firing alerts sent to a Browser contact point also pop up as OS notifications, even when this tab is in the background.',
+  },
+  denied: {
+    tone: 'bad', Icon: IconAlert, title: 'Browser notifications are blocked',
+    body: <>To fix: click the site icon left of the address bar, set <b>Notifications</b> to <b>Allow</b>, then reload. In-app toasts still work.</>,
+  },
+  default: {
+    tone: 'info', Icon: IconBell, title: 'Get alerts while this tab is in the background',
+    body: 'Allow OS notifications so Browser contact points can reach you outside this tab. In-app toasts work either way.',
+  },
+  unsupported: {
+    tone: 'plain', Icon: IconInfo, title: 'OS notifications are not available here',
+    body: 'This browser has no Notification API, or the page is not on a secure origin (https or localhost). In-app toasts still work.',
+  },
 };
 
 function BrowserNotifications() {
   const { perm, request } = useNotificationPermission();
   const m = PERM[perm];
   return (
-    <Panel title="Browser notifications" subtitle="How the built-in Browser contact point reaches you"
-      right={<Badge kind={m.kind}><span className="dot" />{m.label}</Badge>}>
-      <div className="btn-row">
-        <p className="hint grow al-perm-text">{m.help}</p>
-        {perm === 'default' && (
-          <button type="button" className="primary btn-sm" onClick={() => void request()}><IconBell size={13} />Enable browser notifications</button>
-        )}
+    <div className={`alr-perm alr-tone-${m.tone}`} role="status">
+      <span className="alr-perm-icon" aria-hidden="true"><m.Icon size={16} /></span>
+      <div className="alr-perm-text">
+        <b>{m.title}</b>
+        <span>{m.body}</span>
       </div>
-    </Panel>
+      {perm === 'default' && (
+        <button type="button" className="primary btn-sm" onClick={() => void request()}><IconBell size={13} />Enable</button>
+      )}
+      {perm === 'granted' && <Badge kind="ok"><IconCheck size={12} />Allowed</Badge>}
+    </div>
   );
 }
 
@@ -156,11 +192,17 @@ function PointDialog({ point, receiverUrl, onClose, onSaved }: {
       <form className="stack" onSubmit={(e) => { e.preventDefault(); void save(); }}>
         <label className="field"><span className="lbl">Name</span>
           <input autoFocus={!point} value={d.name} onChange={(e) => set('name', e.target.value)} placeholder="SecOps Slack" /></label>
-        <label className="field"><span className="lbl">Integration</span>
-          <select value={d.type} disabled={point?.builtin} onChange={(e) => set('type', e.target.value as ContactPointType)}>
-            {(Object.keys(TYPE_LABEL) as ContactPointType[]).map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
-          </select>
-          {point?.builtin && <span className="help">The built-in Browser contact point keeps its type.</span>}</label>
+        <div className="field"><span className="lbl" id="cp-type-lbl">Integration</span>
+          <div className="alr-typepick" role="group" aria-labelledby="cp-type-lbl">
+            {(Object.keys(INTEGRATION) as ContactPointType[]).map((t) => (
+              <button key={t} type="button" aria-pressed={d.type === t} className={`alr-typecard${d.type === t ? ' on' : ''}`}
+                disabled={point?.builtin && t !== d.type} onClick={() => set('type', t)}>
+                <IntegrationIcon type={t} />
+                <span className="alr-typecard-text"><b>{INTEGRATION[t].label}</b><span>{INTEGRATION[t].blurb}</span></span>
+              </button>
+            ))}
+          </div>
+          {point?.builtin && <span className="help">The built-in Browser contact point keeps its type.</span>}</div>
 
         {d.type === 'browser' && (
           <Callout kind="info" icon={<IconBell size={15} />}>
@@ -227,9 +269,64 @@ function PointDialog({ point, receiverUrl, onClose, onSaved }: {
 }
 
 // ------------------------------------------------------------------ page
+function Usage({ n, failed }: { n: number | undefined; failed: boolean }) {
+  if (failed) return null;
+  if (n === undefined) return <span className="alr-usage none">…</span>;
+  if (n === 0) return <span className="alr-usage none" title="No notification policy sends to this contact point">Not used</span>;
+  return (
+    <Link className="alr-usage" to="/dashboard/alerting/policies" title="Open notification policies">
+      Used by {n} {n === 1 ? 'policy' : 'policies'}
+    </Link>
+  );
+}
+
+function PointRow({ p, used, usageFailed, testing, onTest, onEdit, onDelete }: {
+  p: ContactPoint; used: number | undefined; usageFailed: boolean; testing: boolean; onTest: () => void; onEdit: () => void; onDelete: () => void;
+}) {
+  const why = p.builtin ? 'The built-in Browser contact point cannot be deleted'
+    : used ? `Used by ${used} notification ${used === 1 ? 'policy' : 'policies'}; re-route ${used === 1 ? 'it' : 'them'} first` : undefined;
+  const target = targetOf(p);
+  const mono = p.type !== 'browser';
+  return (
+    <li className="alr-cp">
+      <IntegrationIcon type={p.type} size={18} />
+      <div className="alr-cp-main">
+        <div className="alr-cp-name">
+          <button type="button" className="alr-namebtn" onClick={onEdit} title={`Edit ${p.name}`}>{p.name}</button>
+          {p.builtin && <Badge kind="info" title="Created by Aletheia; cannot be deleted">built-in</Badge>}
+          {p.disable_resolve_message && <span className="alr-tag" title="Resolved alerts are not announced">no resolve messages</span>}
+        </div>
+        <div className="alr-cp-target">
+          <span className="alr-cp-kind">{INTEGRATION[p.type]?.label ?? p.type}</span>
+          <span className={mono ? 'alr-cp-dest mono' : 'alr-cp-dest'} title={target}>{target}</span>
+        </div>
+      </div>
+      <div className="alr-cp-meta">
+        <span className="alr-cp-use"><Usage n={used} failed={usageFailed} /></span>
+        <span className="alr-cp-sync"><SyncBadge sync={p.sync} /></span>
+      </div>
+      <div className="alr-actions">
+        <button type="button" className="ghost icon" disabled={testing} onClick={onTest}
+          aria-label={`Send a test notification to ${p.name}`} title="Send a test notification">
+          {testing ? <IconSpinner size={15} /> : <IconSend size={15} />}
+        </button>
+        <button type="button" className="ghost icon" onClick={onEdit} aria-label={`Edit ${p.name}`} title="Edit"><IconPencil size={15} /></button>
+        {/* A disabled button swallows hover, so the reason lives on a wrapper too. */}
+        <span className="alr-tipwrap" title={why}>
+          <button type="button" className="ghost icon alr-danger" disabled={!!why} onClick={onDelete}
+            aria-label={why ? `Delete ${p.name} (unavailable: ${why})` : `Delete ${p.name}`} title={why ?? 'Delete'}>
+            <IconTrash size={15} />
+          </button>
+        </span>
+      </div>
+    </li>
+  );
+}
+
 export function ContactPointsPage() {
   const version = useAlertingVersion();
   const list = useAsync(() => api.listContactPoints(), [version]);
+  const pol = useAsync(() => api.getPolicies(), [version]);
   const { status } = useAlertingStatus();
   const { toast } = useNotify();
   const [editing, setEditing] = useState<ContactPoint | 'new' | null>(null);
@@ -237,8 +334,9 @@ export function ContactPointsPage() {
   const [rmErr, setRmErr] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const points = list.data?.contact_points ?? [];
+  const usage = pol.data ? receiverUsage(pol.data.policy) : null;
 
-  const changed = () => { list.reload(); void refreshAlertingStatus(); };
+  const changed = () => { list.reload(); pol.reload(); void refreshAlertingStatus(); };
 
   const test = async (p: ContactPoint) => {
     setTesting(p.id);
@@ -272,28 +370,12 @@ export function ContactPointsPage() {
           </EmptyState>
         )}
         {points.length > 0 && (
-          <div className="table-scroll"><table className="data">
-            <thead><tr><th>Name</th><th>Integration</th><th>Target</th><th>Sync</th><th><span className="sr-only">Actions</span></th></tr></thead>
-            <tbody>
-              {points.map((p) => (
-                <tr key={p.id} className="clickable" onClick={() => setEditing(p)}>
-                  <td className="nowrap"><b>{p.name}</b> {p.builtin && <Badge kind="info" title="Created by Aletheia; cannot be deleted">built-in</Badge>}</td>
-                  <td className="nowrap">{TYPE_LABEL[p.type] ?? p.type}</td>
-                  <td className="wrap">{p.type === 'browser' ? <span className="hint">{targetOf(p)}</span> : <span className="mono">{targetOf(p)}</span>}
-                    {p.disable_resolve_message && <div className="hint">no resolve messages</div>}</td>
-                  <td><SyncBadge sync={p.sync} /></td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div className="row-tight row-nowrap">
-                      <button type="button" className="ghost" disabled={testing === p.id} onClick={() => void test(p)}>{testing === p.id ? 'Testing…' : 'Test'}</button>
-                      <button type="button" className="ghost" onClick={() => setEditing(p)}>Edit</button>
-                      <button type="button" className="ghost" disabled={p.builtin} title={p.builtin ? 'The built-in Browser contact point cannot be deleted' : undefined}
-                        onClick={() => { setRmErr(null); setRemoving(p); }}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table></div>
+          <ul className="alr-cp-list" aria-label="Contact points">
+            {points.map((p) => (
+              <PointRow key={p.id} p={p} used={usage ? usage.get(p.id) ?? 0 : undefined} usageFailed={!!pol.error} testing={testing === p.id}
+                onTest={() => void test(p)} onEdit={() => setEditing(p)} onDelete={() => { setRmErr(null); setRemoving(p); }} />
+            ))}
+          </ul>
         )}
       </Panel>
 
