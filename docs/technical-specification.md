@@ -265,15 +265,44 @@ From this one parse:
                     sources and parser packs; SQL guardrail, session persistence,
                     export (PDF/Markdown/JSON/text)
 
+ ALERTING           (Python, inside Studio) alert rules, contact points and the
+                    notification policy tree; Studio is the store of truth (PostgreSQL)
+                    and pushes every change to Grafana's provisioning API; Grafana
+                    evaluates the rules over Loki / Prometheus / ClickHouse; a local
+                    evaluator stands in when Grafana is unreachable (Section 6.15)
+
  REPLAY ENGINE      the same Go engine in batch mode; re-runs events through any pack
                     version for diffs and reprocessing
 
  VERIFY TOOL        CLI/API that recomputes hashes and Merkle roots from storage to prove
                     integrity for any source and time range
 
+ LOGS PIPELINE      Vector sink "normalized" -> Loki (five low-cardinality labels,
+                    identifiers as structured metadata); Studio's raw store pushes every
+                    verbatim line to Loki as well (labels source, severity, format)
+
+ GRAFANA            provisioned datasources (ClickHouse, Loki, Prometheus) and five
+                    dashboards in the "Aletheia" folder; evaluates and delivers alerts
+
  UI                 Product landing, Overview dashboard (posture, insights, findings),
-                    Events explorer, Lyra chat, Sources & onboarding, Export & Supply,
-                    Demo Console, Settings; Grafana dashboards
+                    Events explorer, byte Lineage, Lyra chat, Sources & onboarding,
+                    Export & Supply, Alerting, Demo Console, Settings
+```
+
+**Observability side path.**
+```
+ Redpanda "normalized" --> Vector (deploy/vector/loki.toml) --+
+                                                              +--> Loki :3100 --+
+ Studio raw store (every verbatim line, sha256 as metadata) --+                 |
+                                                                                v
+ Worker / Studio /metrics --> Prometheus :9090 ------------------------> Grafana :3000
+ ClickHouse ----------------------------------------------------------->   (dashboards,
+                                                                             alert rules)
+                                                                                |
+          contact points: browser (webhook back to Studio) / webhook / email / Slack
+                                                                                v
+                        Studio /api/v1/alerting/receive --> UI notification feed (toasts,
+                                                            OS notifications)
 ```
 
 ### 5.3 Bus topics
@@ -290,10 +319,10 @@ From this one parse:
 |---|---|---|
 | Redpanda | Raw and derived streams | Replicated, replayable log; decouples ingest from processing |
 | ClickHouse | Events (template or verbatim form) and typed OCSF columns; templates dictionary | System of record; columnar, high compression, fast analytics at billions of rows |
-| PostgreSQL | Sources, parser packs and versions, approvals, audit log, Merkle roots | Small, transactional metadata |
+| PostgreSQL | Sources, parser packs and versions, approvals, audit log, Merkle roots, runtime settings (sealed LLM key, supply stream), alerting objects (`alerting_objects`: rules, contact points, policy tree) | Small, transactional metadata |
 | MinIO | Parquet data lake exports, Merkle daily anchors, optional raw archive | S3-compatible object storage that runs on-premises |
 | Git (local) | Parser pack source files with tests | Human-readable history, review and diff |
-| Loki | Normalized events for live operational viewing | Integration with existing Grafana/Loki setups |
+| Loki | Normalized events for live operational viewing, plus the Studio raw store (every verbatim line with its SHA-256 as structured metadata; in-memory fallback when Loki is not reachable) | Integration with existing Grafana/Loki setups; source of the Grafana logs, overview and event dashboards and of LogQL alert rules |
 
 ---
 
@@ -415,11 +444,42 @@ Detailed in Sections 8.6 to 8.12. The optional AI assistant it can call is speci
 | `/dashboard/events` | Events explorer | Searchable OCSF event table with lineage modal — shows normalized event next to reconstructed raw line; clicking an OCSF field highlights the exact bytes it came from |
 | `/dashboard/lyra` | Lyra | Guarded chat assistant — runs read-only SQL against ClickHouse; tools: `run_sql`, `list_sources`, `list_packs`, `final`; SQL guardrail (allow-listed tables/columns/functions, `readonly=1`, max 200 rows); session persistence and export (PDF/Markdown/JSON/text) |
 | `/dashboard/sources` | Sources & onboarding | Unified onboarding flow: connect sources, collect samples, review quarantine clusters, view proposed templates with slots coloured by type, proposed mappings with confidence, gate results, replay diff, approve/reject |
-| `/dashboard/export` | Export & Supply | Reports (PDF/JSON/CSV/Markdown/HTML), log export (JSON/JSONL/CSV/TSV/text/CEF/LEEF/XML), live supply stream (TCP) |
-| `/dashboard/demo` | Demo Console | Guided evaluation scenarios with sample log servers, live traffic controls |
+| `/dashboard/lineage/:eventUid` | Lineage | Full-page byte lineage for one event (same view as the modal) |
+| `/dashboard/export` | Export & Supply | Reports (PDF/HTML/Markdown/CSV/JSON), log export of raw lines, OCSF events or the audit trail (JSON/JSONL/CSV/TSV/text/RFC 5424 syslog/CEF/LEEF/XML) with time range and keyword filters, live supply stream (Section 11.8) |
+| `/dashboard/alerting/rules` | Alert rules | List, create, edit, preview and delete rules; details open in a compact popup; firing state and last evaluation |
+| `/dashboard/alerting/contact-points` | Contact points | Browser, webhook, email and Slack receivers; write-only secrets; **Test** button |
+| `/dashboard/alerting/policies` | Notification policies | Editable policy tree: default receiver, grouping and timing, nested routes with label matchers |
+| `/dashboard/demo` | Demo Console | Guided evaluation scenarios with sample log servers (start/stop, live logs, traffic controls) |
 | `/dashboard/settings` | Settings | LLM provider/model/key configuration, masking mode, air-gap toggle, connection test, usage counter |
 
-- **Grafana dashboards:** Events per source and class, parse status breakdown, verified rate, quarantine rate, throughput and lag.
+- **Notifications.** A single poller in the UI (`lib/notify.tsx`) watches `GET /api/v1/alerting/notifications` and shows each new alert as a toast (critical firing alerts stay until dismissed) and, when the browser has granted permission, as an OS notification. It keeps running while the tab is hidden, dedupes across tabs by notification id, and refreshes the sidebar's firing badge. The same poller announces sources that are ready to approve.
+- **Grafana dashboards** (provisioned from `deploy/grafana/dashboards/` into the Grafana folder **Aletheia**):
+
+| uid | Title | Datasources | Content |
+|---|---|---|---|
+| `aletheia-overview` | Aletheia — Overview | Loki, Prometheus | The Studio Overview page for any time range: ingest, threat signals, normalization and integrity, traffic (top IPs and ports), per-source table. Linked from the Overview page ("View in Grafana") |
+| `aletheia-event` | Aletheia — Event | Loki | One event: every normalized field, the raw line as received (matched on `sha256`), pretty-printed OCSF JSON, and the source's volume and neighbouring lines with the event marked. Target of every "Open in Grafana" button |
+| `aletheia-logs` | Aletheia — Logs (Loki) | Loki | Log volume by vendor and parse status, `raw_only` share (drift signal), top sources, raw ingest by source and severity, normalized and raw lines; variables `event_uid`, `vendor`, `source_id` |
+| `aletheia-events` | Aletheia — Events, storage and integrity | ClickHouse | Unified output across sources, measured storage economy, integrity |
+| `aletheia-pipeline` | Aletheia — Pipeline health | Prometheus | Throughput, coverage and drift, backpressure and storage, registry and integrity, alerting |
+
+### 6.15 Alerting
+- **Purpose:** Let an operator define alerts on the pipeline and on the logs themselves, from the Aletheia UI, and deliver them to the browser, a webhook, email or Slack. Operator reference: `docs/alerting.md`; API contract: `docs/CONTRACTS.md` §13.
+- **Store of truth:** Studio keeps rules, contact points and the policy tree in PostgreSQL (`alerting_objects`). Grafana alerting objects are never file-provisioned, because a provisioned policy tree would lock out Studio's API writes.
+- **How the UI talks to Grafana:** the UI calls only Studio (`/api/v1/alerting/*`). Studio pushes each change to Grafana's provisioning HTTP API (`/api/v1/provisioning/alert-rules`, `/contact-points`, `/policies`, folder rule groups) with `X-Disable-Provenance: true`, so the objects stay editable in Grafana; the next sync from Studio overwrites such edits. Rules go into the Grafana folder **Aletheia** (uid `aletheia`, shared with the provisioned dashboards). Grafana has one evaluation interval per rule group; Studio uses the shortest interval any rule in the group asks for. **Sync** (`POST /api/v1/alerting/sync`) re-pushes everything, and Studio re-syncs by itself when Grafana comes back.
+- **Modes:**
+
+| Mode | When | Who evaluates |
+|---|---|---|
+| `grafana` | `ALETHEIA_GRAFANA_URL` is set and Grafana answers | Grafana unified alerting |
+| `local` | Grafana not configured or unreachable | Studio's own evaluator (`alerting/evaluator.py`): same rules, same notification feed; it reduces across series instead of keeping one instance per series |
+
+  `GET /api/v1/alerting/status` reports the mode and whether Grafana, Loki and Prometheus are reachable; the Alerting page header shows it.
+- **Rules:** name, group, datasource (`loki` LogQL metric query, `prometheus` PromQL, or `clickhouse` SQL returning one number, checked to be a single `SELECT`), reducer, condition (`gt`, `gte`, `lt`, `lte`, `eq`, `ne` against a threshold), pending period (`for`), evaluation interval, severity, labels, summary, description, no-data state, enabled flag. `POST /rules/preview` evaluates a draft rule once without saving it.
+- **Seeded on first start:** the built-in **Browser** contact point (cannot be deleted), a root policy (receiver Browser, group by `alertname`, 30 s / 5 m / 4 h wait, group and repeat intervals, plus a `severity=critical` route) and four starter rules: reconstruction mismatch (critical, must stay zero), format drift (quarantine rate above 3x baseline), consumer lag growing, and more than 100 `raw_only` lines in 5 minutes (Loki).
+- **Contact points:** `browser` (a webhook from Grafana back to Studio's `POST /api/v1/alerting/receive`, which feeds the UI notification feed; Grafana must reach `ALETHEIA_ALERT_RECEIVER_URL`), `webhook` (`url`, optional method), `email` (addresses; Grafana's SMTP, off unless `ALETHEIA_SMTP_ENABLED=true`) and `slack` (incoming-webhook URL, or bot token plus channel; needs egress, so not available air-gapped). Secrets are write-only: the API reports that they are set, never their value. **Test** sends a test notification.
+- **Notification feed:** `GET /api/v1/alerting/notifications?after=<id>` returns notifications newer than an id; the UI poller (Section 6.14) turns them into toasts and OS notifications.
+- **Why Grafana evaluates:** Grafana already reads all three stores, has a mature alert state machine, grouping, silencing and delivery integrations, and keeps evaluating when the Aletheia UI is closed. Keeping Studio as the store of truth means the rules live with the rest of Aletheia's state and survive a Grafana reset (Sync restores them).
 
 ---
 
@@ -669,6 +729,23 @@ anchors/2026-09-19/anchors.json + anchors.json.sig
 archive/raw/ (only if optional raw-archive mode is enabled)
 ```
 
+### 7.8 Studio HTTP API
+The Studio (FastAPI, port 8081) serves everything under `/api/v1`; `/healthz` stays unprefixed for container probes. The UI reaches it through its nginx proxy (`/api/`). The full request and response contracts are in `docs/CONTRACTS.md`; this table lists the surface.
+
+| Area | Endpoints | Notes |
+|---|---|---|
+| Health | `GET /healthz`, `GET /api/v1/health`, `GET /api/v1/packs/verify` | Readiness; pack self-check |
+| Events and lineage | `GET /events`, `GET /events/{event_uid}/lineage` | Explorer table; byte spans for one event |
+| Overview | `GET /stats/overview` | KPIs, posture, insights and ClickHouse aggregates for the Overview page |
+| Sources and onboarding | `GET/POST /sources`, `PATCH/DELETE /sources/{sid}`, `GET /sources/{sid}/raw`, `POST /sources/{sid}/propose`, `GET /sources/{sid}/review`, `POST /sources/{sid}/decision` (approve, reject, retry with feedback) | Decisions run in worker threads so an LLM call never blocks other requests |
+| Push ingest | `POST /ingest/{sid}`, `POST /ingest/loki/push` | Plain lines, or a Loki-compatible JSON push so Vector, Fluent Bit or Logstash can point at Aletheia |
+| Studio (clusters) | `GET /studio/clusters`, `GET /studio/clusters/{id}/proposal`, `POST /studio/clusters/{id}/ask-ai`, `POST /studio/proposals/{id}/gate`, `/replay`, `GET /approval`, `POST /approve`, `POST /reject` | Gate, replay diff and approval flow (Sections 8.9 to 8.11) |
+| Lyra | `POST /chat`, `POST /chat/stream` (streamed step events, then the final answer), `GET/DELETE /chat/sessions`, `GET/PATCH/DELETE /chat/sessions/{id}`, `GET /chat/export` | Sessions are saved on completion; export as PDF, Markdown, JSON or text |
+| Export and supply | `GET /export/report`, `GET /export/logs`, `GET /export/supply/status`, `POST /export/supply/configure` | Downloads carry `X-Aletheia-SHA256` (and `X-Aletheia-Record-Count` for logs); every export and supply change is written to the audit log (Section 11.8) |
+| Alerting | `GET /alerting/status`, `POST /alerting/sync`, `GET/POST /alerting/rules`, `POST /alerting/rules/preview`, `GET/PUT/DELETE /alerting/rules/{id}`, `GET/POST /alerting/contact-points`, `GET/PUT/DELETE /alerting/contact-points/{id}`, `POST /alerting/contact-points/{id}/test`, `GET/PUT /alerting/policies`, `GET /alerting/notifications`, `POST /alerting/receive` | Section 6.15; `receive` is the webhook the browser contact point points Grafana at |
+| Demo | `GET /demo/samples`, `POST /demo/samples/{sid}/start`, `/stop`, `/control`, `GET /demo/samples/{sid}/logs`, `GET /demo/scenarios`, `POST /demo/scenarios/{id}/run`, `POST /demo/reset` | Stop also shuts down a generator started outside Studio through its control port (`POST /shutdown`) |
+| Settings | `GET/PUT /settings/llm`, `POST /settings/llm/test`, `POST /settings/airgap`, `POST /settings/reset` | `PUT` rejects a non-`gemini-*` model on the `gemini` provider with 422 |
+
 ---
 
 ## 8. Algorithms in detail
@@ -820,14 +897,14 @@ Quarantined `raw_only` events of the affected source can be re-processed with th
 ### 8.12 Pluggable AI assistant (bring your own model)
 
 #### 8.12.1 Principle
-The Aletheia image contains **no model weights and no inference runtime**. AI is an optional, external helper for onboarding only. This keeps the image small, keeps model choice with the operator, and keeps the core system fully functional without any AI.
+The Aletheia image contains **no model weights and no inference runtime**. AI is an optional, external helper for onboarding and for the Lyra chat assistant; nothing in the pipeline depends on it. This keeps the image small, keeps model choice with the operator, and keeps the core system fully functional without any AI.
 
 Three operating modes:
 
 | Mode | What the operator provides | Data leaves the machine? | Allowed in air-gap mode |
 |---|---|---|---|
 | **None** (default) | Nothing | No | Yes |
-| **Cloud vendor** | An API key for OpenAI, Google Gemini, Groq, Anthropic, or any OpenAI-compatible vendor | Yes, masked samples only (Section 8.12.5) | No |
+| **Cloud vendor** | A Google Gemini API key (the only supported cloud provider) | Yes, masked samples only (Section 8.12.5) | No |
 | **Self-hosted** | A URL of a model server they run: Ollama, llama.cpp server, vLLM, LM Studio, or any OpenAI-compatible server | Only to that server (usually the same host or LAN) | Yes, if the address is private |
 
 #### 8.12.2 Supported providers
@@ -839,12 +916,17 @@ Three operating modes:
 
 `local` covers Ollama, vLLM, the llama.cpp server, LM Studio and any other server that exposes an OpenAI-compatible chat completions API. `ollama` is accepted as a legacy alias for `local`. Default URLs can always be overridden with `ALETHEIA_LLM_BASE_URL`. The **model name is always the operator's choice** (`ALETHEIA_LLM_MODEL`); Aletheia does not hard-code vendor model names because they change often. The README lists the models tested at release time. The default model is `gemini-3.5-flash-lite`.
 
+**Gemini models only.** On the `gemini` provider only `gemini-*` models are accepted. Saving another model (for example a Gemma model) from Settings is rejected with HTTP 422, and a stale non-Gemini model coming from the environment or an old saved setting falls back to `gemini-3.5-flash-lite` with a warning. The model list shown by **Test connection** is filtered to `gemini-*`. Earlier builds used `gemma-4-31b-it`; it was dropped as too slow and unreliable (see `docs/llm-provider-notes.md`). There is no OpenAI, Groq or Anthropic adapter.
+
+**Lyra model.** `ALETHEIA_LLM_CHAT_MODEL` (setting `llm.chat_model`) can point Lyra at a different, faster model than onboarding uses; on the `gemini` provider it is honoured only if it is a `gemini-*` model. Lyra caps its output at 4096 tokens.
+
 #### 8.12.3 Adapter design
 - One interface in the Studio: `complete_json(system_prompt, user_prompt, json_schema) -> dict`.
 - Two implementations cover every provider:
-  - **GeminiProvider**: Gemini's native `generateContent` API with `response_schema` for structured output.
-  - **OpenAICompatibleProvider**: Ollama, vLLM, llama.cpp, LM Studio and similar.
-- Both use plain HTTPS calls (`httpx`), not vendor SDKs, so the image carries no vendor dependencies and adding a vendor is configuration, not code.
+  - **GeminiProvider**: the official `google-genai` SDK, `response_mime_type="application/json"` with `response_schema` for structured output. `gemini-3*` models get `thinking_level`, `gemini-2*` models `thinking_budget=0`.
+  - **OpenAICompatibleProvider**: plain HTTPS (`httpx`) Chat Completions for Ollama, vLLM, llama.cpp, LM Studio and similar, with Ollama-native fallbacks.
+- **One retry loop** (`llm/base.py`, `with_retry`) wraps both: up to 4 attempts on 408/409/425/429/5xx and transport errors with jittered backoff. A 429 (per-minute quota) waits for the server's `RetryInfo` delay when given, otherwise 20 s times the attempt, capped at 60 s. The SDK's own retries are disabled so the loops do not stack.
+- **Tolerant JSON parsing:** a reply wrapped in a code fence or followed by prose is still parsed (`parse_json_text`) before validation.
 - Adding a new protocol means writing one small adapter class that implements the same interface.
 
 #### 8.12.4 Structured, validated output
@@ -855,6 +937,8 @@ Three operating modes:
 5. A valid suggestion is only a **proposal**. It goes through the reconstruction gate (Section 8.9), replay diff (Section 8.10) and human approval, exactly like a heuristic proposal. AI can never approve.
 
 What the AI is asked: given the template (literals and typed slots) and a few sample values per slot, propose the OCSF class, the slot-to-path mapping, enum value mappings, and whether any slot should be split. It is one request per **cluster** during onboarding, never per event.
+
+The allowed paths are sent **per class** (`class_uid` to its list of leaf paths, built from `backend/ocsf/schema_subset.yaml` with `$ref` objects expanded). Engine-owned fields (`class_uid`, `category_uid`, `type_uid`, `activity_id`, `metadata.uid`, `raw_data`, `observables`, `unmapped` and similar) are never offered. When a reviewer rejects a mapping with feedback, that feedback (up to 1000 characters) is included in the next request.
 
 #### 8.12.5 Data minimization and masking
 Log samples can contain sensitive data (internal IPs, usernames, hostnames). Controlled by `ALETHEIA_LLM_SEND_SAMPLES`:
@@ -874,11 +958,8 @@ Format preservation matters: a masked IPv4 is still an IPv4, so the model can st
 - This guard is a safety net; the real air-gap is enforced by the network.
 
 #### 8.12.7 Keys and secrets
-- The API key can be supplied in three ways, in order of preference:
-  1. A mounted file: `-v ./llm.key:/run/secrets/llm_key:ro` with `ALETHEIA_LLM_API_KEY_FILE=/run/secrets/llm_key`.
-  2. An env file: `docker run --env-file aletheia.env ...` (keeps the key out of shell history).
-  3. The Studio **Settings** page, where it is stored encrypted (AES-GCM, key derived from `ALETHEIA_SECRET`) in PostgreSQL.
-- Passing the key with `-e` works but makes it visible in `docker inspect`; the README says so.
+- The API key is taken **only** from the Studio **Settings** page, where it is stored encrypted (AES-GCM, key derived from `ALETHEIA_SECRET`) in the PostgreSQL `settings` table. `ALETHEIA_LLM_API_KEY` and `ALETHEIA_LLM_API_KEY_FILE` in the Studio's environment are ignored (a test enforces this), so a key never sits in `docker inspect` output or a compose file.
+- For local development, `make seed` reads `ALETHEIA_LLM_API_KEY` from the gitignored `deploy/secrets/aletheia.env` and writes it through the same sealed settings path (Section 21.5).
 - Keys are never logged, never returned by the API (the UI shows only the last four characters), never written into parser packs and never included in exports.
 
 #### 8.12.8 Settings page and connection test
@@ -906,7 +987,7 @@ ollama pull qwen2.5-coder:7b          # any instruction-following model works; t
 OLLAMA_HOST=0.0.0.0 ollama serve
 
 # start Aletheia
-docker run -d --name aletheia -p 8080:8080 -p 3000:3000 \
+docker run -d --name aletheia -p 6156:6156 -p 3000:3000 \
   -p 5514:5514/udp -p 5514:5514/tcp \
   --add-host=host.docker.internal:host-gateway \
   -e ALETHEIA_LLM_PROVIDER=ollama \
@@ -921,7 +1002,7 @@ docker network create aletheia-net
 docker run -d --name ollama --network aletheia-net -v ollama:/root/.ollama ollama/ollama
 docker exec ollama ollama pull qwen2.5-coder:7b
 docker run -d --name aletheia --network aletheia-net \
-  -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   -e ALETHEIA_LLM_PROVIDER=ollama \
   -e ALETHEIA_LLM_BASE_URL=http://ollama:11434/v1 \
   -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
@@ -936,14 +1017,14 @@ docker run -d --name aletheia --network aletheia-net \
 ```bash
 # aletheia.env  (keep this file private)
 ALETHEIA_LLM_PROVIDER=gemini
-ALETHEIA_LLM_API_KEY=<your key>
-ALETHEIA_LLM_MODEL=<model name from the vendor>
+ALETHEIA_LLM_MODEL=gemini-3.5-flash-lite    # any gemini-* model
 ALETHEIA_LLM_SEND_SAMPLES=masked
 
 docker run -d --name aletheia --env-file aletheia.env \
-  -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
+Then open **Settings** (`http://localhost:6156/dashboard/settings`), paste the Gemini key and press **Test connection**. The key is not read from the environment (Section 8.12.7).
 
 #### 8.12.12 Why this design
 | Alternative | Problem it has | How the pluggable design avoids it |
@@ -952,6 +1033,13 @@ docker run -d --name aletheia --env-file aletheia.env \
 | Cloud AI only | Breaks air-gap; sends data out | Self-hosted and none modes; air-gap guard; masking |
 | Local AI only | Forces every evaluator to install and run a model | Cloud key or none also work |
 | AI required for onboarding | System fails when AI is unavailable or wrong | Heuristics always run; AI output is gated and reviewed |
+
+#### 8.12.13 AI-first mapping in source onboarding
+Source onboarding on the Sources page (`ingest/onboarding.py`, `POST /sources/{sid}/propose` and the `retry` decision) clusters the source's raw lines, derives one byte-exact template per cluster, and then maps each template:
+1. **AI first, one request per unique format.** The configured provider maps each derived template (never each event), with the reviewer's feedback and optional class hint. At most two requests run in parallel, because free tiers cap tokens per minute.
+2. **Rules fill the gaps.** The heuristic mapping (Section 8.8) fills only slots the AI left unmapped, and never reuses a path the AI already chose. Rule-filled rows are marked `rules:` in their evidence.
+3. **Rules stand in** when no provider is configured, the AI declines or fails validation, or the AI mapping fails the reconstruction gate while the rules mapping passes. The cluster then shows `ai_note` with the reason ("AI mapping failed the reconstruction gate", "AI mapping unavailable", and so on).
+4. The result goes through the same gate, review and approval as any other proposal. AI never approves.
 
 ---
 
@@ -1080,10 +1168,12 @@ Batch inserts from workers (thousands of rows per insert) through the native pro
 Periodic export using ClickHouse's `s3` table function writing Parquet to MinIO, partitioned by `class_uid`, date and source. Typed columns make it ready for Python/Spark/DuckDB ML workflows (requirement h).
 
 ### 11.3 Grafana Loki
-- Vector consumes the `normalized` topic and pushes to Loki (Vector's `loki` sink), or workers push directly to Loki's HTTP push API.
+- Vector consumes the `normalized` topic (consumer group `aletheia-sinks`) and pushes to Loki with its `loki` sink (`deploy/vector/loki.toml`, disk-buffered, snappy-compressed). In `make services` mode a small `vector-loki` container runs only this file; the full stack and the all-in-one image load it next to the HEC/CEF sinks (`sinks.toml`).
 - **Labels must be low-cardinality**, because Loki indexes only labels and each unique label combination creates a stream. Allowed labels: `vendor`, `product`, `device`/`source_id`, `ocsf_class`, `parse_status`.
 - **Never labels:** IP addresses, ports, usernames, `event_uid`. These would create millions of streams.
-- `event_uid` and `template_id` go into **structured metadata** (supported in Loki 3.x), so a log line in Grafana can be linked back to the full record and lineage view.
+- `event_uid`, `template_id`, `merkle_batch` and `storage_mode` go into **structured metadata** (supported in Loki 3.x): usable as filters (`| event_uid="..."`), not as stream selectors. The Loki datasource turns `event_uid` into two links: the full ClickHouse record (`aletheia-events` dashboard) and the event dashboard (`aletheia-event`).
+- **Raw lines too.** The Studio raw store pushes every verbatim line it receives to Loki (`/loki/api/v1/push`) with labels `source`, `severity` and `format` and the line's SHA-256 as structured metadata, so the event dashboard can show the raw line as received and a consumer can re-verify it. When `ALETHEIA_LOKI_URL` is unset or Loki does not answer, raw lines are kept in memory only.
+- **Limits** (`deploy/loki/loki.yml`): at most 12 label names per series, 10,000 streams per tenant, 168 h retention, and `max_query_series: 20000`, because the Grafana overview groups by parsed IP and port fields before `topk`.
 - The log line itself is the normalized OCSF JSON; LogQL's `| json` parser can filter on its fields at query time.
 - **Why Loki is a sink and not the main store:** field-level aggregations across billions of events (for example top talkers by `src_ip`) require parsing lines at query time in Loki, which is slow at this scale. ClickHouse stores fields as columns and handles these queries efficiently. Loki is valuable for live tailing and for teams already using Grafana.
 
@@ -1098,6 +1188,22 @@ For SIEMs that only ingest CEF, a mapping table converts OCSF fields back to CEF
 
 ### 11.7 Optional raw_data on export
 Any sink can request `raw_data` to be filled by reconstruction at export time, so downstream tools can have the original without Aletheia storing it twice.
+
+### 11.8 Export page: file export and the supply stream
+Both are rendered by one module, `ingest/logformats.py`, so a file and a stream in the same format are identical.
+
+| Format | Shape | Typical consumer |
+|---|---|---|
+| `cef` | CEF 0 with vendor and product `Aletheia`; OCSF severity mapped to CEF 0 to 10; `rawSha256`, `templateId`, `parseStatus`, `merkleBatch` and `verified` in `cs1` to `cs5` | ArcSight, most SIEMs |
+| `leef` | LEEF 2.0, tab-delimited attributes, same integrity fields | QRadar |
+| `syslog` | RFC 5424, structured-data id `aletheia@32473` (RFC 5612 documentation enterprise number), RFC 6587 octet counting on streams | rsyslog, syslog-ng, Splunk and Elastic TCP inputs |
+| `xml`, `csv`, `tsv`, `json`, `jsonl`, `text` | Flattened records (dotted keys; lists kept whole as JSON) | Scripts, spreadsheets, data tools |
+
+Raw lines are always carried whole, so a receiver can recompute the SHA-256.
+
+- **File export** (`GET /export/logs`): dataset `raw` (verbatim lines from the raw store), `ocsf` (normalized events from ClickHouse, template-mode text searched in `vars` as well) or `system` (the audit trail); filters for source, severity (`info`, `notice`, `warn`, `risk`), keyword, last N seconds or an ISO-8601/epoch `start`/`end`; up to 50,000 records, newest first. The response carries `X-Aletheia-SHA256` so `sha256sum` of the saved file can be compared, and `X-Aletheia-Record-Count`. Reports (`GET /export/report`) are PDF, HTML, Markdown, CSV or JSON.
+- **Supply stream** (`POST /export/supply/configure`): formats `raw`, `tagged`, `json`, `syslog`, `cef`, `ocsf`. Mode `listen` accepts TCP receivers on `host:port` (default `127.0.0.1:9099`; `0.0.0.0` is an explicit choice) with an optional allow-list of client IPs/CIDRs; mode `push` opens one outbound connection to a collector's `host:port`. Slow clients get a bounded backlog and are dropped after 30 s without reading. The configuration is saved in the settings table and restored when Studio restarts; a stream that failed to start is saved as disabled.
+- **Audit.** Every report, log export and supply change is written to the audit log with the actor, dataset, format, filters and record count, because who exported what is itself compliance evidence.
 
 ---
 
@@ -1143,7 +1249,7 @@ Aletheia is delivered to evaluators as a **Docker image pushed to a public conta
 | Mode | Artifact | Purpose | Scaling |
 |---|---|---|---|
 | **Evaluation (all-in-one)** | One image: `docker.io/<namespace>/aletheia:<version>` | Evaluators, demos, air-gapped trials on a single machine | Single host; worker count configurable inside the container |
-| **Production (multi-image)** | Component images: `aletheia-worker`, `aletheia-sealer`, `aletheia-studio`, `aletheia-ui`, plus upstream images (Vector, Redpanda, ClickHouse, PostgreSQL, MinIO, Loki, Grafana, Prometheus), orchestrated by Docker Compose or Helm | Real deployments | Horizontal: many workers, multi-node bus and ClickHouse |
+| **Production (multi-image)** | Component images: `aletheia-worker`, `aletheia-sealer`, `aletheia-studio`, `aletheia-ui`, plus upstream images (Vector, Redpanda, ClickHouse, PostgreSQL, MinIO, Loki, Grafana, Prometheus), orchestrated by Docker Compose (`deploy/docker-compose.yml`) or Helm | Real deployments | Horizontal: many workers, multi-node bus and ClickHouse |
 
 Both modes are built from the same repository, run the same engine binary and load the same parser packs. The all-in-one image is a packaging choice for convenient evaluation, not a different product.
 
@@ -1155,7 +1261,7 @@ Both modes are built from the same repository, run the same engine binary and lo
 | Bus | Redpanda, single node in development-container mode |
 | Aletheia services | Worker(s), Merkle sealer, parser registry API, Onboarding Studio, UI (including the Demo Console), `aletheia` CLI |
 | Storage | ClickHouse, PostgreSQL, MinIO |
-| Views and monitoring | Grafana (pre-provisioned dashboards and data sources), Loki, Prometheus |
+| Views and monitoring | Grafana (pre-provisioned datasources and the five dashboards of Section 6.14; evaluates alert rules), Loki (normalized events via Vector, raw lines via Studio), Prometheus |
 | Demo content | Parser packs with golden tests, recorded log corpora, a packet capture for live Suricata replay, the ASA drift variant, the scenario engine behind the Demo Console |
 
 **Process supervision.** A container normally runs one process. The all-in-one image uses **s6-overlay** as PID 1, which:
@@ -1176,7 +1282,7 @@ Both modes are built from the same repository, run the same engine binary and lo
 **State.** All data lives under `/data`. Without a mounted volume, every `docker run` starts a fresh, identical demo, which is what evaluators usually want. With `-v aletheia-data:/data`, state persists across restarts.
 
 **What is deliberately left out.**
-- **No AI model weights and no inference runtime.** The AI assistant is external by design (Section 8.12): the operator either supplies a cloud vendor API key (OpenAI, Gemini, Groq, Anthropic or any OpenAI-compatible vendor) or points Aletheia at a model server they run themselves (for example Ollama). With nothing configured, the Studio runs on heuristics alone. There is only one image tag per release.
+- **No AI model weights and no inference runtime.** The AI assistant is external by design (Section 8.12): the operator either enters a Google Gemini API key in Settings or points Aletheia at a model server they run themselves (for example Ollama). With nothing configured, the Studio runs on heuristics alone. There is only one image tag per release.
 - No secrets, tokens or production credentials. Demo credentials are documented and can be overridden with environment variables.
 
 **Build properties.**
@@ -1196,19 +1302,20 @@ Both modes are built from the same repository, run the same engine binary and lo
 docker pull docker.io/<namespace>/aletheia:1.0.0
 
 docker run -d --name aletheia \
-  -p 8080:8080 \
+  -p 6156:6156 \
   -p 3000:3000 \
   -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
-Wait until `docker ps` shows `healthy` (typically one to two minutes), then open `http://localhost:8080`.
+Wait until `docker ps` shows `healthy` (typically one to two minutes), then open `http://localhost:6156`.
 
 **Ports.**
 | Host port | Service | Use |
 |---|---|---|
-| 8080 | Aletheia UI | Demo Console, lineage viewer, Onboarding Studio, replay diff |
+| 6156 | Aletheia UI | Landing, dashboard, lineage, Lyra, Sources, Export, Alerting, Demo Console, Settings; Studio API proxied under `/api/` |
 | 3000 | Grafana | Dashboards over ClickHouse, Loki and Prometheus |
 | 5514 UDP/TCP | Syslog input | Send your own logs |
+| 5515 TCP (optional) | Octet-counted syslog | RFC 6587 octet-counted TCP senders |
 | 6514 (optional) | Syslog over TLS | TLS ingestion test |
 | 8123 (optional) | ClickHouse HTTP | Direct SQL with a read-only demo user |
 
@@ -1223,12 +1330,22 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 | `ALETHEIA_LLM_PROVIDER` | `gemini` | `none`, `gemini`, `local` (`ollama` accepted as legacy alias) |
 | `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` | Model name at the chosen provider |
 | `ALETHEIA_LLM_BASE_URL` | provider default | Endpoint override; e.g. `http://vllm-host:8000/v1` |
-| `ALETHEIA_LLM_API_KEY` / `ALETHEIA_LLM_API_KEY_FILE` | empty | Cloud API key, directly or from a mounted file |
+| `ALETHEIA_LLM_CHAT_MODEL` | empty (use `ALETHEIA_LLM_MODEL`) | Separate model for Lyra; `gemini-*` only on the `gemini` provider |
+| `ALETHEIA_LLM_TIMEOUT_S` / `ALETHEIA_LLM_MAX_OUTPUT_TOKENS` / `ALETHEIA_LLM_REQUESTS_PER_HOUR` | `120` / `8192` / `60` | Per-request limits (Section 8.12.9) |
 | `ALETHEIA_LLM_SEND_SAMPLES` | `masked` | `masked`, `none`, or `raw` (self-hosted only) |
 | `ALETHEIA_AIRGAP` | `false` | When `true`, cloud AI providers are refused |
 | `ALETHEIA_SECRET` | generated at first start | Key material for encrypting secrets stored via the UI |
+| `ALETHEIA_SUPPLY_ENABLED`, `_HOST`, `_PORT`, `_FORMAT`, `_ALLOW`, `_MODE`, `_TARGET` | `false`, `127.0.0.1`, `9099`, `raw`, empty, `listen`, empty | Startup defaults for the supply stream (Section 11.8); the Export page's saved values win |
+| `ALETHEIA_GRAFANA_URL` / `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://127.0.0.1:3000` / `http://localhost:3000` | Grafana as Studio reaches it, and as the browser does (for "Open in Grafana" links) |
+| `ALETHEIA_GRAFANA_USER` / `ALETHEIA_GRAFANA_PASSWORD` / `ALETHEIA_GRAFANA_TOKEN` | `admin` / `ALETHEIA_ADMIN_PASSWORD` / empty | Grafana credentials; a service-account token takes precedence |
+| `ALETHEIA_LOKI_URL` / `ALETHEIA_LOKI_TENANT` | `http://127.0.0.1:3100` / empty | Loki for the raw store and alerting health; unset means raw lines stay in memory |
+| `ALETHEIA_PROMETHEUS_URL` | `http://127.0.0.1:9090` | Prometheus for alerting health and local evaluation |
+| `ALETHEIA_ALERT_RECEIVER_URL` | `http://127.0.0.1:8081` | Where Grafana posts browser-contact-point notifications (Studio) |
+| `ALETHEIA_SMTP_ENABLED`, `_HOST`, `_USER`, `_PASSWORD`, `_FROM_ADDRESS` | `false`, empty, empty, empty, `aletheia@aletheia.localhost` | Grafana SMTP for email contact points (mapped to `GF_SMTP_*`) |
 
-**Enabling the AI assistant (optional).** Either pass a cloud key or point to a self-hosted model. Full commands for both are in Sections 8.12.10 and 8.12.11. The provider can also be set later from the Studio Settings page without restarting the container.
+There is no environment variable for the LLM API key: it is entered in Settings (Section 8.12.7).
+
+**Enabling the AI assistant (optional).** Either pass a cloud key or point to a self-hosted model. Full commands for both are in Sections 8.12.10 and 8.12.11. The provider, model and key are set from the Settings page without restarting the container; the key can only be set there.
 
 **CLI inside the container.**
 ```bash
@@ -1265,7 +1382,7 @@ sha256sum aletheia-1.0.0.tar          # compare with the value published in the 
 # air-gapped machine
 sha256sum aletheia-1.0.0.tar
 docker load -i aletheia-1.0.0.tar
-docker run -d --name aletheia -p 8080:8080 -p 3000:3000 \
+docker run -d --name aletheia -p 6156:6156 -p 3000:3000 \
   -p 5514:5514/udp -p 5514:5514/tcp docker.io/<namespace>/aletheia:1.0.0
 ```
 - Nothing is downloaded at start or at run time: no packages, no models, no fonts, no map tiles, no update checks.
@@ -1277,11 +1394,14 @@ docker run -d --name aletheia -p 8080:8080 -p 3000:3000 \
 
 ### 13.5 Production deployment
 - Docker Compose file (and optional Helm chart) with one service per component.
+- `deploy/docker-compose.yml` services: `postgres`, `clickhouse`, `redpanda`, `minio`, one-shot `init-topics` and `init-buckets`, `loki` (3.3.2), `prometheus` (v3.1.0), `grafana` (11.4.0), `aletheia-worker`, `aletheia-sealer`, `aletheia-studio` (port 8081, internal), `aletheia-ui` (nginx, host port `ALETHEIA_UI_PORT`, default 8080) and `vector` (started last). Grafana is published on `ALETHEIA_GRAFANA_PORT` (default 3000) and served under `/grafana/`, and the UI's nginx proxies it at `http://localhost:8080/grafana/`. Studio reaches Grafana at `http://grafana:3000/grafana`, Loki at `http://loki:3100`, Prometheus at `http://prometheus:9090`, and Grafana calls Studio back at `http://aletheia-studio:8081`. Grafana telemetry, update checks and plugin installs are disabled.
+- For development, `deploy/docker-compose.services.yml` (`make services`) runs only the datastores and views in Docker (Redpanda 9092, ClickHouse 8123/9000, PostgreSQL 5432, Loki 3100, Grafana 3000, Prometheus 9090, plus a `vector-loki` container for the `normalized` to Loki sink); the engine, Studio (8081) and the Vite frontend run natively (`make run`).
 - Workers scale by replica count; Redpanda and ClickHouse are deployed as multi-node clusters.
 - Same environment variables and parser pack format as the evaluation image.
 
 ### 13.6 No outbound calls
-- Disable telemetry and update checks in every component (Grafana analytics and update checks, Redpanda usage reporting, and similar settings).
+- Disable telemetry and update checks in every component (Grafana analytics, update checks, news feed and plugin preinstall, Redpanda usage reporting, and similar settings).
+- Alert delivery is the other outbound path the operator can choose: webhook, email (SMTP) and Slack contact points send only where configured; the default Browser contact point stays inside the host.
 - The UI bundles all fonts, icons and JavaScript; it loads nothing from the internet.
 - The only outbound call Aletheia can ever make is to an AI provider that the operator explicitly configures. With `none` or a self-hosted endpoint on the local network, nothing leaves the network; `ALETHEIA_AIRGAP=true` enforces this (Section 8.12.6).
 - Time synchronisation uses the site's internal NTP source; correct clocks matter for receive timestamps and Merkle batch minutes.
@@ -1347,7 +1467,7 @@ Workers and services expose Prometheus metrics; Grafana dashboards display them.
 | `aletheia_templates{source}` | Template count; explosion alert |
 | `aletheia_merkle_sealed_total` and seal delay | Integrity sealing health |
 
-A drift alert fires when a source's quarantine rate rises above its baseline, which typically indicates a firmware or configuration change.
+A drift alert fires when a source's quarantine rate rises above three times its 6-hour baseline, which typically indicates a firmware or configuration change. The Prometheus alerting rules (`deploy/prometheus/rules/aletheia.rules.yml`) are seeded into Studio's alerting as editable rules (Section 6.15), next to a Loki rule on `raw_only` volume, and the Pipeline health dashboard has an alerting row.
 
 ---
 
@@ -1399,12 +1519,12 @@ Every number presented must be measured with this methodology and recorded with 
 | Bus | Redpanda | Kafka API, single binary, simple air-gapped operation | Apache Kafka: equivalent API, more operational parts |
 | Hot path | Go with RE2 `regexp`, `franz-go` Kafka client, `clickhouse-go` v2 | Linear-time regex, efficient concurrency, single static binary | Python: much lower per-core throughput; Java: heavier runtime |
 | Onboarding Studio | Python, FastAPI, Drain3 | Drain3 exists in Python; this path is not throughput-critical | Reimplementing Drain in Go: unnecessary effort |
-| AI assistant (optional) | Provider adapters over plain HTTPS: one OpenAI-compatible adapter (OpenAI, Groq, Gemini compatibility endpoint, Ollama, vLLM, llama.cpp server, LM Studio) and one native Anthropic adapter | No weights in the image; operator chooses cloud key, self-hosted model or none; air-gap works with self-hosted | Bundling a model: multi-GB image and a fixed model; cloud-only: breaks air-gap |
+| AI assistant (optional) | Two provider adapters: Google Gemini through the official `google-genai` SDK (`gemini-*` models only), and an OpenAI-compatible adapter over plain HTTPS for self-hosted servers (Ollama, vLLM, llama.cpp server, LM Studio) | No weights in the image; operator chooses cloud key, self-hosted model or none; air-gap works with self-hosted | Bundling a model: multi-GB image and a fixed model; cloud-only: breaks air-gap |
 | Analytics store | ClickHouse | Columnar compression, fast aggregations at billions of rows, Parquet/S3 export | Elasticsearch/OpenSearch: higher storage and memory cost for this workload |
 | Metadata | PostgreSQL | Transactional, reliable, familiar | None needed |
 | Object store | MinIO | S3-compatible on-premises | Cloud S3: violates air-gap |
 | Log view | Grafana Loki | Common in operations teams; demonstrates integration | Not a replacement for ClickHouse (Section 11.3) |
-| Dashboards | Grafana | Reads ClickHouse, Loki and Prometheus | Kibana: tied to Elasticsearch |
+| Dashboards and alerting | Grafana 11 (unified alerting, provisioning API) | Reads ClickHouse, Loki and Prometheus; evaluates alert rules and delivers to browser, webhook, email and Slack | Kibana: tied to Elasticsearch; Alertmanager alone: no LogQL/SQL rules and no UI for contact points |
 | Metrics | Prometheus | Standard pipeline observability | None needed |
 | UI | React with Vite | Lineage viewer, Studio, replay diff | None needed |
 | Packaging | All-in-one evaluation image on Docker Hub (s6-overlay, multi-arch via buildx); per-component images with Docker Compose or Helm for production | One `docker run` for evaluators; `docker save`/`docker load` for air-gap | supervisord: less robust signal handling and dependency ordering than s6-overlay |
@@ -1439,8 +1559,12 @@ aletheia/
 │   ├── redpanda/                   # topic definitions
 │   ├── clickhouse/init.sql
 │   ├── postgres/init.sql
-│   ├── grafana/                    # provisioned data sources and dashboards
-│   ├── prometheus/
+│   ├── docker-compose.services.yml # dev: datastores, Loki, Grafana, Prometheus, vector-loki only
+│   ├── grafana/                    # provisioned data sources; dashboards/: aletheia-overview, -event,
+│   │                               # -logs, -events, -pipeline; grafana.ini (SMTP)
+│   ├── loki/loki.yml               # limits (max_query_series 20000), 168 h retention
+│   ├── secrets/aletheia.env.example # local dev secrets template (Gemini key for make seed)
+│   ├── prometheus/                 # scrape config and rules/aletheia.rules.yml
 │   └── offline/                    # save_images.sh, load_images.sh, checksums
 ├── engine/                         # Go
 │   ├── cmd/worker/                 # streaming worker
@@ -1454,12 +1578,16 @@ aletheia/
 │   ├── merkle/                     # leaves, sealing, chaining, verification
 │   ├── registry/                   # pack loading, hot reload
 │   └── sink/                       # ClickHouse batcher, normalized publisher
-├── studio/                         # Python FastAPI
+├── studio/                         # Python FastAPI (backend/studio in the repository)
+│   ├── seed_demo.py                # make seed: reset stack, set Gemini, connect demo sources, seed alerts
+│   ├── alerting/                   # rules, contact points, policy tree; Grafana provisioning client,
+│   │                               # local evaluator, notification feed, first-start seed
 │   ├── chat/                       # Lyra chat agent, SQL guard, session store
 │   │   ├── agent.py                # tool-using chat loop (run_sql, list_sources, list_packs, final)
 │   │   ├── guard.py                # SQL guardrail (allow-listed tables/columns/functions)
 │   │   └── store.py                # chat session persistence and export (PDF/Markdown/JSON/text)
 │   ├── api/                        # REST endpoints
+│   │   ├── alerting.py             # /alerting/*: rules, contact points, policies, sync, receive
 │   │   ├── chat.py                 # chat and session management endpoints
 │   │   ├── stats.py                # dashboard overview, KPIs, insights, ClickHouse aggregates
 │   │   ├── sources.py              # source management and onboarding
@@ -1472,12 +1600,13 @@ aletheia/
 │   ├── derive/                     # exact template derivation, structural templating
 │   ├── slottype/                   # typing heuristics, synonym tables
 │   ├── propose/                    # OCSF mapping proposals
-│   ├── llm/                        # provider adapters (Gemini native, OpenAI-compatible), masking,
+│   ├── llm/                        # provider adapters (Gemini via google-genai, OpenAI-compatible), masking,
 │   │                               # schema validation, air-gap guard, settings and connection test
 │   ├── gate/                       # reconstruction gate (calls engine test-pack)
 │   ├── replay/                     # replay diff orchestration and reports
 │   ├── core/                       # settings store, crypto, database
-│   └── ingest/                     # source connectors and pipeline
+│   └── ingest/                     # source connectors, pipeline, raw store (Loki), AI-first onboarding,
+│                                   # supply stream, logformats.py (CEF/LEEF/RFC 5424/XML/CSV/TSV/JSON)
 ├── packs/                          # parser packs + tests/ (samples and expected outputs)
 ├── ocsf/                           # pinned OCSF schema subset and validator
 ├── sources/
@@ -1491,10 +1620,13 @@ aletheia/
 └── ui/                             # React + Vite + TypeScript
     ├── pages/                      # HomePage (landing), OverviewPage (dashboard), EventsPage,
     │                               # LyraPage, SourcesPage (onboarding), ExportPage, DemoPage,
-    │                               # SettingsPage, LineagePage
+    │                               # SettingsPage, LineagePage, AlertingPage (shell), AlertRulesPage,
+    │                               # ContactPointsPage, NotificationPoliciesPage
     ├── components/                 # Layout, Insights (posture gauge, donut, ranked bars, timeline,
     │                               # findings), LineageModal, OcsfTree, Icons, Bits, Pagination
-    └── lib/                        # api client, types, mocks, settings, theme, notify
+    ├── lib/                        # api client, types, mocks, settings, theme, notify (toasts and
+    │                               # alert poller), alerting (formatting, browser notifications), routing
+    └── styles/                     # global.css split into numbered files under styles/global/
 ```
 
 ---
@@ -1504,7 +1636,7 @@ aletheia/
 Every scenario runs inside the evaluation image. The same flows are used in the demo video, and the evaluator can reproduce each of them from the **Demo Console**.
 
 ### 21.1 The Demo Console
-A page in the Aletheia UI (`http://localhost:8080/demo`) that lists the scenarios in order. Each scenario card has:
+A page in the Aletheia UI (`http://localhost:6156/dashboard/demo`) that lists the scenarios in order. Each scenario card has:
 - a button that performs the action (start traffic, trigger drift, tamper a byte, run verify, and so on),
 - a short explanation of what is being proven,
 - the **expected result**, so the evaluator knows what success looks like,
@@ -1536,6 +1668,16 @@ The **Tamper one stored byte** action changes one character inside one event's s
 ### 21.4 A note on the benchmark inside one container
 Scenario 8 runs on whatever machine the evaluator uses, with all services sharing that machine. It demonstrates that throughput scales with workers, but absolute numbers are lower than a production deployment where the bus, workers and ClickHouse run on separate nodes. The reference numbers from the team's measured runs, with hardware specifications, are shown alongside.
 
+
+### 21.5 Seeding a fresh demo (development stack)
+`make seed` (`backend/studio/seed_demo.py`) prepares a known starting point on the development stack:
+1. Reads the Gemini key from the gitignored `deploy/secrets/aletheia.env` (`make secrets` creates it from the example) and stops if it is empty, before touching anything.
+2. Wipes the development services and their volumes (PostgreSQL, ClickHouse, Redpanda, Loki) and starts them again; `ARGS=--no-reset` skips the wipe.
+3. Starts two sample generators, `asa` (a TCP stream) and `web` (pulled through the Loki API), so two connector types are exercised; running generators are reused.
+4. Writes provider `gemini`, the model and the sealed key into the settings table, registers the two demo sources, and seeds and syncs the alert rules, contact points and policy (Section 6.15).
+
+It talks to PostgreSQL directly, so it works with Studio stopped; Studio picks up new sources at startup, so run it before `make dev` or restart Studio afterwards. The sources then collect lines and are approved on the Sources page.
+
 ---
 
 ## 22. Deliverables and their technical content
@@ -1549,7 +1691,7 @@ Scenario 8 runs on whatever machine the evaluator uses, with all services sharin
 The README is written so that an evaluator who has never seen the project can run and assess it in minutes.
 1. **What Aletheia does**, in three lines, and the architecture diagram.
 2. **Requirements:** Docker; 4 cores, 8 GB RAM for Docker, 10 GB disk; note on raising Docker Desktop's memory limit.
-3. **Quick start:** `docker pull` and the single `docker run` command; how to know it is ready (`healthy`); URLs for the UI (8080) and Grafana (3000); demo credentials.
+3. **Quick start:** `docker pull` and the single `docker run` command; how to know it is ready (`healthy`); URLs for the UI (6156 in the all-in-one image, 8080 in the compose stack) and Grafana (3000); demo credentials.
 4. **Guided evaluation:** open the Demo Console and run the scenarios in order, with a screenshot and the expected result for each.
 5. **Bring your own log:** `logger` and `nc` examples for port 5514.
 6. **CLI:** `docker exec aletheia aletheia verify | replay | bench` examples.
@@ -1678,7 +1820,7 @@ One billion per day is about 11,574 events per second on average. Workers are st
 Deliberately outside the evidence path. The hot path is deterministic compiled code. During onboarding an optional AI assistant can suggest mappings, and every suggestion must pass the byte-exact gate, the replay diff and human review.
 
 **Which AI does it use?**
-Whichever the operator chooses: a cloud vendor with their own key (OpenAI, Gemini, Groq, Anthropic or any OpenAI-compatible vendor), a model they host themselves (for example Ollama), or none. The image ships no model, so it stays small and model choice is not locked in.
+Whichever the operator chooses: Google Gemini with their own key (entered in Settings), a model they host themselves on an OpenAI-compatible server (for example Ollama), or none. The image ships no model, so it stays small and model choice is not locked in.
 
 **Doesn't using a cloud AI vendor break the air-gap requirement?**
 Yes, which is why it is optional and refused in air-gap mode. In an air-gapped network the assistant is either off or a self-hosted model inside the network. Even with a cloud vendor, only masked samples are sent, once per cluster during onboarding, never live events.

@@ -5,12 +5,14 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, TYPE_CHECKING
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..core.db import Repo
 
 from ..cluster.engine import ClusterEngine
+from ..core.models import MappingProposal, TemplateProposal
 from ..derive.exact import derive_exact
 from ..propose.heuristics import propose_mapping
 from .rawstore import RawStore
@@ -208,40 +210,96 @@ def _gate(p: dict[str, Any], tokens) -> dict[str, Any] | None:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
+# (template, class_hint, reviewer feedback) -> llm.assistant.AIResult. Never raises.
+AIMapper = Callable[[TemplateProposal, "int | None", str], Any]
+AI_WORKERS = 2                                   # free tiers cap tokens per minute
+
+
+def _merge(ai: MappingProposal, rules: MappingProposal) -> MappingProposal:
+    """AI mapping first; rules fill only slots the AI left unmapped, never a path it already used."""
+    taken = {fm.slot for fm in ai.mappings}
+    used = {fm.path for fm in ai.mappings}
+    fills = [fm.model_copy(update={"evidence": ["rules: " + e for e in fm.evidence] or ["rules"]})
+             for fm in rules.mappings if fm.slot not in taken and fm.path not in used]
+    mapped = taken | {fm.slot for fm in fills}
+    return ai.model_copy(update={"mappings": [*ai.mappings, *fills],
+                                 "unmapped_keep": [s for s in ai.unmapped_keep if s not in mapped]})
+
+
+def _map_all(tpls: list[TemplateProposal], class_hint: int | None, feedback: str,
+             ai: AIMapper | None) -> list[tuple[MappingProposal, MappingProposal, str | None]]:
+    """Per cluster: (chosen mapping, rules mapping, why rules were used or None). AI calls overlap."""
+    rules = [propose_mapping(t, class_hint) for t in tpls]
+    if ai is None:
+        return [(r, r, "no AI mapper attached") for r in rules]
+    with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
+        results = list(pool.map(lambda t: ai(t, class_hint, feedback), tpls))
+    out = []
+    for r, res in zip(rules, results):
+        if getattr(res, "ok", False) and res.proposal is not None:
+            out.append((_merge(res.proposal, r), r, None))
+        else:
+            out.append((r, r, getattr(res, "reason", None) or "AI mapping unavailable"))
+    return out
+
+
+def _cluster_payload(sid: str, cl: Any, tpl: TemplateProposal, mp: MappingProposal,
+                     n_lines: int) -> tuple[dict[str, Any], dict[str, Any]]:
+    pid = f"{sid}-c{cl.cluster_id}".replace("/", "_")
+    by_slot = {fm.slot: fm for fm in mp.mappings}
+    rows = [{"slot": s.name, "type": s.type, "sample": (s.values or [""])[0],
+             "path": by_slot[s.name].path if s.name in by_slot else None,
+             "confidence": by_slot[s.name].confidence if s.name in by_slot else 0.0,
+             "transform": by_slot[s.name].transform if s.name in by_slot else None,
+             "evidence": (by_slot[s.name].evidence if s.name in by_slot else [])[:3]}
+            for s in tpl.slots]
+    p = {"proposal_id": pid, "source_id": sid, "samples": cl.samples[:20],
+         "template": {"discriminator": tpl.discriminator}, "mapping": mp.model_dump()}
+    c = {
+        "cluster_id": pid, "size": cl.size, "share": round(cl.size / max(n_lines, 1), 3),
+        "samples": cl.samples[:5], "format": tpl.format, "warnings": tpl.warnings,
+        "tokens": tpl.token_dicts(),
+        "mapping": {"class_uid": mp.class_uid, "class_name": CLASS_NAMES.get(mp.class_uid, str(mp.class_uid)),
+                    "activity_id": mp.activity_id, "confidence": mp.confidence, "origin": mp.origin,
+                    "unmapped_keep": mp.unmapped_keep, "rows": rows,
+                    "_raw": mp.model_dump()},
+    }
+    return p, c
+
+
 def propose(store: RawStore, sid: str, attempt: int = 0, *, class_hint: int | None = None,
             feedback: str = "", limit: int = 2000, max_clusters: int = 8,
-            repo: Repo | None = None) -> dict[str, Any]:
+            repo: Repo | None = None, ai: AIMapper | None = None) -> dict[str, Any]:
+    """Cluster the stream, derive one byte-exact template per format, then map it.
+
+    Mapping is AI-first: one LLM request per unique format (never per event), rules filling gaps
+    and standing in whenever the AI is off, fails, or its mapping fails the reconstruction gate.
+    """
     lines = [r["line"] for r in store.query(sid, limit=limit)]
     sim = SIM_LADDER[attempt % len(SIM_LADDER)]
     engine = ClusterEngine(sim_th=sim)
     clusters = engine.add_all(reversed(lines), sid)[:max_clusters]
-    out = []
+    derived = []
     for cl in clusters:
-        pid = f"{sid}-c{cl.cluster_id}".replace("/", "_")
         try:
-            tpl = derive_exact(cl.samples[:20])
+            derived.append((cl, derive_exact(cl.samples[:20])))
         except ValueError:
             continue
-        mp = propose_mapping(tpl, class_hint)
-        by_slot = {fm.slot: fm for fm in mp.mappings}
-        rows = [{"slot": s.name, "type": s.type, "sample": (s.values or [""])[0],
-                 "path": by_slot[s.name].path if s.name in by_slot else None,
-                 "confidence": by_slot[s.name].confidence if s.name in by_slot else 0.0,
-                 "transform": by_slot[s.name].transform if s.name in by_slot else None,
-                 "evidence": (by_slot[s.name].evidence if s.name in by_slot else [])[:3]}
-                for s in tpl.slots]
-        p = {"proposal_id": pid, "source_id": sid, "samples": cl.samples[:20],
-             "template": {"discriminator": tpl.discriminator}, "mapping": mp.model_dump()}
-        out.append({
-            "cluster_id": pid, "size": cl.size, "share": round(cl.size / max(len(lines), 1), 3),
-            "samples": cl.samples[:5], "format": tpl.format, "warnings": tpl.warnings,
-            "tokens": tpl.token_dicts(),
-            "mapping": {"class_uid": mp.class_uid, "class_name": CLASS_NAMES.get(mp.class_uid, str(mp.class_uid)),
-                        "activity_id": mp.activity_id, "confidence": mp.confidence, "origin": mp.origin,
-                        "unmapped_keep": mp.unmapped_keep, "rows": rows,
-                        "_raw": mp.model_dump()},
-            "gate": _gate(p, tpl.tokens),
-        })
+    mapped = _map_all([t for _, t in derived], class_hint, feedback, ai)
+    out = []
+    for (cl, tpl), (mp, rules, why_rules) in zip(derived, mapped):
+        p, c = _cluster_payload(sid, cl, tpl, mp, len(lines))
+        gate = _gate(p, tpl.tokens)
+        if why_rules is None and not (gate or {}).get("ok", True) and rules is not mp:
+            # The AI's mapping broke the pack; the rules' mapping may still pass.
+            p2, c2 = _cluster_payload(sid, cl, tpl, rules, len(lines))
+            gate2 = _gate(p2, tpl.tokens)
+            if (gate2 or {}).get("ok"):
+                p, c, gate = p2, c2, gate2
+                why_rules = "AI mapping failed the reconstruction gate"
+        c["mapping"]["ai_note"] = why_rules
+        c["gate"] = gate
+        out.append(c)
     prop = {"source_id": sid, "attempt": attempt, "sim_th": sim, "class_hint": class_hint,
             "feedback": feedback, "lines_examined": len(lines), "generated_at": time.time(),
             "covered": sum(c["size"] for c in out), "clusters": out}

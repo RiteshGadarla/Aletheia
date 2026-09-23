@@ -160,7 +160,11 @@ are fixed; do not rename.
 ## 7. PostgreSQL schema
 
 Frozen in `deploy/postgres/init.sql`: `sources`, `packs`, `merkle_batches`, `anchors`,
-`audit_log`, plus `settings` (see §9).
+`audit_log`, plus `settings` (see §9) and `alerting_objects` (see §13).
+
+`alerting_objects`: `(kind TEXT, id TEXT, doc JSONB, updated_at TIMESTAMPTZ)`, `kind` ∈
+`rule|contact_point|policy`. Studio keeps a write-through cache over it (`alerting/store.py`)
+and also creates it on first use if `init.sql` predates it.
 
 `backend/packs/_sources.yaml` is the file-driven mirror of the `sources` table, for a run with
 no PostgreSQL. An unregistered source still works — it resolves to a synthetic UTC entry — but
@@ -197,8 +201,38 @@ Studio Settings page after the container is running.
 Values with `encrypted=true` are AES-GCM sealed with a key derived (HKDF-SHA256) from
 `ALETHEIA_SECRET`. The API **never** returns a key — only `last4`.
 
-Env defaults: `ALETHEIA_LLM_PROVIDER|_MODEL|_BASE_URL|_API_KEY|_API_KEY_FILE|_SEND_SAMPLES`,
-`ALETHEIA_AIRGAP`, `ALETHEIA_SECRET`.
+Settings keys (`core/settings.py` `SPEC`), each with its env default:
+
+| key | env | default |
+|---|---|---|
+| `llm.provider` | `ALETHEIA_LLM_PROVIDER` | `gemini` |
+| `llm.model` | `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` |
+| `llm.chat_model` | `ALETHEIA_LLM_CHAT_MODEL` | `""` (Lyra uses `llm.model`) |
+| `llm.base_url` | `ALETHEIA_LLM_BASE_URL` | per provider (table below) |
+| `llm.api_key` | — (encrypted; settings table only) | `""` |
+| `llm.send_samples` | `ALETHEIA_LLM_SEND_SAMPLES` | `masked` (`masked\|none\|raw`) |
+| `llm.timeout_s` / `llm.max_output_tokens` / `llm.requests_per_hour` | `ALETHEIA_LLM_TIMEOUT_S` / `_MAX_OUTPUT_TOKENS` / `_REQUESTS_PER_HOUR` | `120` / `8192` / `60` |
+| `airgap` | `ALETHEIA_AIRGAP` | `false` |
+| `engine.bin` | `ALETHEIA_ENGINE_BIN` | `aletheia` |
+| `bus.brokers` | `ALETHEIA_BUS_BROKERS` | `""` (no bus: raw forwarding and `ocsf` supply off) |
+| `supply.enabled\|host\|port\|format\|allow\|mode\|target` | `ALETHEIA_SUPPLY_*` | `false`, `127.0.0.1`, `9099`, `raw`, `""`, `listen`, `""` |
+| `supply.source_id` | — | `""` |
+
+`ALETHEIA_SECRET` is the sealing key. **The LLM API key has no env path in Studio:** `llm.api_key`
+maps to no variable and `_key_from_file()` (`ALETHEIA_LLM_API_KEY_FILE`) is defined but never
+called, so the key must be saved from the Settings page, or by `make seed`, which reads
+`ALETHEIA_LLM_API_KEY` from `deploy/secrets/aletheia.env` and writes it sealed into the table.
+The compose files and `aletheia.env.example` still pass both variables; Studio ignores them.
+
+Settings endpoints (prefix `/api/v1`):
+
+| Method & path | Body → Response |
+|---|---|
+| `GET /settings/llm` | → `{provider, model, base_url, send_samples, api_key_last4, api_key_set, airgap, sources, usage: {requests, tokens, window: "hour", cap_per_hour}, updated_at}` (`sources`: key → `db\|env\|default`) |
+| `PUT /settings/llm` | `{provider, model?, base_url?, send_samples?, api_key?}` → same shape. `api_key` omitted keeps it, `""` clears it. Non-`gemini-*` model on `gemini` → 422 |
+| `POST /settings/llm/test` | → `ConnTest`; provider not configured or blocked by air-gap → 400 |
+| `POST /settings/airgap` | `{airgap: bool}` → settings shape |
+| `POST /settings/reset` | Wipes sources, raw store, proposals, approvals, Studio packs, ClickHouse `events`/`baseline_events`/`templates`, supply settings and Lyra sessions; keeps LLM config and air-gap → settings shape |
 
 ### Supported providers — exactly three
 
@@ -213,25 +247,21 @@ alias for `local`, but must not appear in the UI — Ollama *is* local, so a sep
 redundant; the base URL is what distinguishes one local server from another.
 
 ### Default provider for this deployment
-`provider=gemini`, `model=gemini-3.5-flash-lite` (fast, reliable cloud model).
-`gemma-4-31b-it` is also supported for onboarding proposals but is slower and less reliable
-(see `docs/llm-provider-notes.md`).
+`provider=gemini`, `model=gemini-3.5-flash-lite` (fast, reliable cloud model). **Only `gemini-*`
+models are supported** on this provider: saving another model is rejected (HTTP 422), a stale
+non-Gemini value from env or the settings table falls back to the default, and model lists only
+show `gemini-*`.
 
-Lyra (the chat assistant) uses `llm.chat_model` if set, otherwise the main `llm.model`.
-Default: the same `gemini-3.5-flash-lite`. `gemma-4-31b-it` is too slow (~34-50 s/call) and
-too unreliable (~50% failure rate) for a chat agent that makes several sequential calls per turn.
+Lyra (the chat assistant) uses `llm.chat_model` if set (Gemini only), otherwise the main
+`llm.model`.
 
-**Gemma-specific facts that the adapter must honour** (measured, not assumed):
-1. `gemma-4-31b-it` **rejects `systemInstruction`** (HTTP 500). Fold the system prompt into the
-   first user message.
-2. It is a **thinking model**: the native endpoint returns extra parts flagged `"thought": true`.
-   Concatenate only parts **without** the thought flag. (The OpenAI-compat endpoint inlines
-   `<thought>…</thought>` into the content string instead — which is why we use the **native**
-   `generateContent` endpoint for `provider=gemini`.)
-3. `generationConfig.responseMimeType="application/json"` + `responseSchema` **works** and is the
-   preferred structured-output mode.
-4. The endpoint returns **intermittent HTTP 500** — retry with exponential backoff (3 attempts)
-   before declaring failure.
+**Gemini adapter behaviour** (measured, not assumed):
+1. `system_instruction` works on `gemini-*` models.
+2. `response_mime_type="application/json"` + `response_schema` is the structured-output mode.
+   Replies are still parsed tolerantly (a code fence or trailing prose is stripped).
+3. `gemini-3*` take `thinking_level`, `gemini-2*` take `thinking_budget=0`.
+4. 5xx and timeouts retry with exponential backoff; **429 waits for the server's `retryDelay`**
+   (or 20/40/60 s), because free-tier limits are per-minute windows.
 
 Adapter interface (all providers):
 
@@ -292,7 +322,7 @@ Server-side enforcement: `readonly=1`, `max_execution_time=10`, `max_result_rows
 
 ### Chat session persistence (`backend/studio/chat/store.py`)
 
-Sessions are stored in a JSON file (`.chat_sessions.json`). Each session has:
+Sessions are stored in a JSON file (`.chat_sessions.json` in Studio's working directory). Each session has:
 `id` (UUID), `title` (auto-generated or user-set), `created_at`, `updated_at`,
 `messages` (array of `{role, content, blocks?}`).
 
@@ -307,13 +337,26 @@ Sessions are stored in a JSON file (`.chat_sessions.json`). Each session has:
 | `PATCH` | `/api/v1/chat/sessions/{id}` | Rename session |
 | `DELETE` | `/api/v1/chat/sessions/{id}` | Delete session |
 | `DELETE` | `/api/v1/chat/sessions` | Clear all sessions |
-| `GET` | `/api/v1/chat/export` | Export session (PDF/Markdown/JSON/text) |
+| `GET` | `/api/v1/chat/export?session_id=&format=` | Export session; `format` ∈ `pdf` (default), `markdown`, `json`, `text`; empty `session_id` = latest; none → 404 |
+
+Request body for both chat endpoints:
+
+```json
+{"messages": [{"role": "user", "content": "≤4000 chars", "blocks": []}],
+ "session_id": "optional, append to this session", "title": "optional"}
+```
+
+At most 40 messages. Only `user`/`assistant` roles reach the model. `POST /chat` returns
+`{available, answer, blocks, session_id, session_title}`; `blocks` holds result tables
+(`{"type": "table", "rows": [...]}`, max 200 rows). With `provider=none` both answer
+`available: false`; `/chat` still saves the turn, `/chat/stream` saves only when `available`. List returns `{sessions: [...]}`; delete returns
+`{ok: true, deleted}`; clear returns `{ok: true}`.
 
 ### SSE stream events
 
 ```
 data: {"type": "step", "step": "Querying ClickHouse telemetry data store…"}
-data: {"type": "done", "available": true, "answer": "...", "blocks": [...], "session_id": "..."}
+data: {"type": "done", "available": true, "answer": "...", "blocks": [...], "session_id": "...", "session_title": "..."}
 ```
 
 ## 12. Stats / Overview API contract
@@ -330,6 +373,8 @@ data: {"type": "done", "available": true, "answer": "...", "blocks": [...], "ses
 | `sources` | Per-source stats with sparklines |
 | `normalized` | ClickHouse parse-status breakdown: `total`, `full`, `partial`, `raw_only`, `templates`, `normalized_pct` |
 | `history` | Recent approval/rejection activity |
+| `generated_at`, `window_s`, `bucket_s` | Snapshot time (epoch s), 300 s window, 5 s buckets |
+| `store`, `bus` | Raw store kind (`loki\|memory`); whether a Redpanda bus is configured |
 
 ## 13. Alerting API contract (Grafana-backed)
 
@@ -349,6 +394,7 @@ Studio's own evaluator runs the same rules (`mode: "local"`), so the feature wor
 | `ALETHEIA_GRAFANA_USER` / `ALETHEIA_GRAFANA_PASSWORD` | `admin` / `aletheia` | Basic auth fallback |
 | `ALETHEIA_ALERT_RECEIVER_URL` | `http://host.docker.internal:8081` | Studio base URL as **Grafana** reaches it, for the browser webhook |
 | `ALETHEIA_LOKI_URL` | unset | Loki base URL; raw store (only if `/ready` answers) and `loki` rule queries |
+| `ALETHEIA_LOKI_TENANT` | unset | Sent as `X-Scope-OrgID` by the raw store and the local evaluator |
 | `ALETHEIA_PROMETHEUS_URL` | unset | Prometheus base URL for `prometheus` rule queries in local mode |
 
 ### 13.2 Objects
@@ -472,4 +518,172 @@ Contact point `Browser` (builtin, type `browser`); root policy → Browser with 
 ### 13.5 Grafana deep links
 
 Loki log dashboard uid `aletheia-logs`, variables `var-event_uid`, `var-source_id`, `var-vendor`.
-Event link: `${public_url}/d/aletheia-logs/aletheia-logs?var-event_uid=<uid>`.
+Single-event dashboard uid `aletheia-event`, variables `var-event_uid`, `var-source_id`, `var-raw_sha256`.
+Event link: `${public_url}/d/aletheia-event/aletheia-event?var-event_uid=<uid>&var-source_id=<id>&var-raw_sha256=<hex>&from=<ms>&to=<ms>`,
+with `from`/`to` two minutes either side of the receive time held in the event_uid's ULID prefix.
+Overview dashboard uid `aletheia-overview`, variable `var-source` (multi, default all): `${public_url}/d/aletheia-overview/aletheia-overview`.
+Also provisioned from `deploy/grafana/dashboards/`: `aletheia-events` (`var-event_uid`, `var-source_id`)
+and `aletheia-pipeline` (`var-source`). Datasource uids: `aletheia-clickhouse`, `aletheia-loki`,
+`aletheia-prometheus`. The Loki datasource's `event_uid` derived field links to `aletheia-event`.
+
+### 13.6 Loki streams
+
+Two writers, disjoint label sets. Loki keeps at most 12 label names per series
+(`deploy/loki/loki.yml`); `max_query_series` is 20000 for the overview dashboard's top-k panels.
+
+| Writer | Line | Labels | Structured metadata |
+|---|---|---|---|
+| Studio raw store (`ingest/rawstore.py`) | the raw line, verbatim | `source`, `severity` (`info\|notice\|warn\|risk`), `format` | `sha256` (of the line) |
+| Vector `deploy/vector/loki.toml` (tails topic `normalized`) | normalized OCSF JSON | `vendor`, `product`, `source_id`, `ocsf_class`, `parse_status` | `event_uid`, `template_id`, `merkle_batch`, `storage_mode` |
+
+No other value may become a label: IPs, ports, users and `event_uid` stay in metadata or the line.
+
+## 14. Export & log supply (`backend/studio/api/export.py`, `backend/studio/ingest/supply.py`)
+
+### 14.1 Log export
+
+`GET /api/v1/export/logs` downloads one dataset, newest first.
+
+| Param | Values |
+|---|---|
+| `log_type` | `raw` (verbatim lines from the raw store), `ocsf` (normalized events from ClickHouse), `system` (audit log plus source lifecycle) |
+| `format` | `json`, `jsonl`, `csv`, `tsv`, `xml`, `syslog` (RFC 5424), `cef`, `leef` (2.0, tab-delimited), `text` (the original lines, byte for byte) |
+| `source_id`, `severity` (`info\|notice\|warn\|risk`), `q` | Filters. For `ocsf`, `q` also searches `vars`, so template-mode events match on their content |
+| `since_s`, or `start`/`end` | Time range. `start`/`end` take ISO-8601 or epoch seconds; `start` overrides `since_s` |
+| `limit` | 1 to 50,000. Raw reads page past Loki's 5,000-row query cap |
+
+Raw records: `{time, timestamp_ns, source_id, severity, sha256, line}`, where `sha256` is over `line`.
+OCSF records are the §5 event plus OCSF `raw_data`, the original rebuilt from template + vars, so
+`sha256(raw_data) == aletheia.raw_sha256` whenever `aletheia.verified` is true. Hashes are lowercase hex.
+
+Response headers: `X-Aletheia-Record-Count`, and `X-Aletheia-SHA256` (the body's SHA-256, so the
+receiver can check the file with `sha256sum`). Every export is written to the audit log as
+`export.logs` / `export.report`. Errors: 422 bad parameter, 503 ClickHouse down (`ocsf`), 502 raw store failure.
+
+`GET /api/v1/export/report` (`pdf|html|markdown|csv|json`) is a snapshot of §12. With `source_id`,
+KPIs, severity and history are that source's figures; an unknown source is 404. `categories`
+(comma-separated `kpis,sources,severity,normalized,usage,history,insights,traffic,storage`, empty = all)
+picks sections; `window_s` (5 to 86400) is accepted but rates always use the live 5-minute window.
+
+Renderers live in `backend/studio/ingest/logformats.py`, shared by export and supply. Severity maps:
+ingest word → OCSF `{info:1, notice:2, warn:3, risk:4}`, → syslog `{info:6, notice:5, warn:4, risk:3}`;
+OCSF `severity_id` → CEF `{0:0,1:2,2:3,3:5,4:7,5:9,6:10}`. Syslog uses facility 16 (local0) and SD-ID
+`aletheia@32473` (RFC 5612 documentation PEN). Nested fields flatten to dotted keys; lists stay
+whole as JSON. The audit actor is the `X-Aletheia-Actor` header (default `unknown`).
+
+### 14.2 Supply stream
+
+`POST /api/v1/export/supply/configure`, `GET /api/v1/export/supply/status`.
+
+| Field | Meaning |
+|---|---|
+| `mode` | `push`: dial out to `target` (`host:port`), buffer while it is down, reconnect with backoff (1 s to 30 s), resend the chunk whose send failed. `listen`: serve receivers on `host:port` |
+| `host` | `listen` bind address, default `127.0.0.1`. `allow` (IPs/CIDRs) refuses other clients |
+| `log_type` | `raw` (original line + `\n`), `syslog` (RFC 5424, original as MSG, `[aletheia@32473 source sha256]`, RFC 6587 octet counting), `cef`, `json`, `tagged`, `ocsf` (tails topic `normalized` under a private group from the latest offset; needs `bus.brokers`) |
+| `source_id` | Empty for all sources |
+| `enabled`, `port`, `allow`, `target` | Start/stop; listen port 1024 to 65535 (default 9099); allow-list as a list; `push` target `host:port` |
+
+Every field is optional; omitted fields keep their value. Both endpoints return the status:
+`{active, enabled, mode, target, host, port, log_type, source_id, allow, clients_count, clients[],
+lines_sent, bytes_sent, dropped_lines, refused, started_at, last_error, bus, formats[], modes[]}`.
+
+Each receiver has its own bounded queue (512 chunks); a receiver that falls behind loses its
+own backlog, counted in `dropped_lines`, and never blocks ingest. A client that reads nothing for
+30 s is disconnected. Errors: 422 invalid option, 409 cannot start (port taken, no bus); the
+reason is also kept in `last_error`. Settings persist as `supply.*` (§9) and are restored at startup.
+
+## 15. Studio HTTP API index (`backend/studio/main.py`, `backend/studio/api/`)
+
+Every route is under `/api/v1` except `/healthz`. Routes already specified above: settings (§9),
+chat (§11), stats (§12), alerting (§13), export and supply (§14). The rest:
+
+### 15.1 Health, packs, events
+
+| Method & path | Response |
+|---|---|
+| `GET /healthz`, `GET /api/v1/health` | `{status: "ready"\|"degraded", checks: {settings, repo, engine_cli}, version}` |
+| `GET /packs/verify` | JSON from `backend/packs/verify_packs.py` (golden-sample reconstruction); 503 if not installed |
+| `GET /events?source_id=&class_uid=&parse_status=&q=&limit=≤1000&offset=` | `{events[], total, sources[], classes: [{class_uid, name}]}`; ClickHouse down → empty page, not an error |
+| `GET /events/{event_uid}/lineage` | `{event_uid, raw, raw_sha256, verified, storage_mode, parse_status, template_id, pack, pack_version, merkle_batch, tokens, vars, spans: {slot: [start, end)}, field_map, event}`; spans are **byte** offsets. 404 unknown, 503 ClickHouse down |
+
+### 15.2 Sources and push ingest (`api/sources.py`)
+
+Source types: `tcp` (`host`, `port`), `udp_listen` (`port`), `http_stream` (`url`), `websocket`
+(`url`), `loki_pull` (`url`, `query`), `rest_cursor` (`url`), `push` (none). States:
+`collecting → review → approved | rejected`. Id: `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,62}$`.
+
+| Method & path | Body → Response |
+|---|---|
+| `GET /sources` | → `{store, bus, worker, types[], sources: SourceView[]}` |
+| `POST /sources` | `{id, type, name?, config?, enabled?}` → `SourceView` (201); duplicate 409, invalid 422 |
+| `PATCH /sources/{sid}` | `{name?, config?, enabled?}` → `SourceView` |
+| `DELETE /sources/{sid}` | → `{deleted}` (also drops its proposal) |
+| `GET /sources/{sid}/raw?limit=≤1000&q=&severity=` | → `{source_id, count, lines: [{ts_ns, line, severity}]}`; raw store down 503 |
+| `POST /ingest/{sid}` | newline-delimited text (gzip allowed) → `{source_id, accepted}` (202); unknown id self-registers as `push` |
+| `POST /ingest/loki/push` | Loki JSON push `{streams: [{stream, values}]}` → 204; source id from label `source`, `job` or `service_name` |
+| `POST /sources/{sid}/propose` | `{class_hint?, feedback?}` → proposal; no lines 409, already approved 409 |
+| `GET /sources/{sid}/review` | → `{source: SourceView, proposal \| null}` |
+| `POST /sources/{sid}/decision` | `{action: approve\|reject\|retry, approver, reason?, cluster_ids?, class_hint?, feedback?}`. Empty `approver` 422. Approve → `{source, packs[], backfilled, bus}`; a cluster whose gate failed 409 |
+
+`SourceView`: `{id, name, type, config, enabled, state, attempts, created_at, history[≤10],
+<connector status>, lines, bytes, errors, eps, last_seen, by_severity, has_proposal, ready_for_review}`.
+A `collecting` source with ≥100 lines is proposed automatically every 10 s.
+
+Proposal: `{source_id, attempt, sim_th, class_hint, feedback, lines_examined, generated_at, covered,
+clusters: [{cluster_id, size, share, samples[≤5], format, warnings, tokens, mapping, gate}]}`, where
+`mapping` = `{class_uid, class_name, activity_id, confidence, origin, unmapped_keep, rows:
+[{slot, type, sample, path, confidence, transform, evidence}], ai_note}`. Mapping is **AI-first**:
+one LLM request per cluster (2 in parallel), the allow-list is per `class_uid`, and reviewer
+`feedback` is passed to the model on retry. Rules fill slots and paths the AI left free, and take
+over when the AI is off or fails, or when the AI mapping fails the gate but the rules mapping
+passes. `ai_note` says why rules were used (`null` = AI mapping kept).
+
+### 15.3 Quarantine studio (`main.py`)
+
+| Method & path | Body → Response |
+|---|---|
+| `GET /studio/clusters` | → Drain3 clusters over ClickHouse `raw_only` events |
+| `GET /studio/clusters/{id}/proposal` | → `{proposal_id, cluster_id, source_id, template: {tokens, slots, method, format, discriminator, warnings}, mapping, samples, origin}` |
+| `POST /studio/clusters/{id}/ask-ai` | → `{available, origin, proposal, suggestion?, reason?}`; never an error, heuristics stand |
+| `POST /studio/proposals/{id}/gate` | `{faulty?: bool}` → `{ok, samples, reconstructed, failures, type_validation_ok, golden_tests_ok, no_adjacent_slots_ok, coverage, ran_at, cli, checks}` |
+| `POST /studio/proposals/{id}/replay` | → `{proposal_id, source_id, events_examined, from_version, to_version, newly_matched, template_changed, fields, regressions, blocking, report_sha256, cli}` |
+| `GET /studio/proposals/{id}/approval` | → `{proposal_id, state, approver, approved_at, report_sha256, reason}` |
+| `POST /studio/proposals/{id}/approve` | `{approver, report_sha256?}` → approval record |
+| `POST /studio/proposals/{id}/reject` | `{approver, reason?}` → approval record |
+
+### 15.4 Demo Console and sample servers
+
+| Method & path | Body → Response |
+|---|---|
+| `GET /demo/scenarios` | → scenario catalogue `[{id, number, title, action_label, proves, expected, link, cli, requirements, runnable}]` |
+| `POST /demo/scenarios/{id}/run` | → `{scenario_id, ok, started_at, duration_ms, output, link}`; not runnable 404 |
+| `POST /demo/reset` | → `{ok, output}` |
+| `GET /demo/samples` | → `{available, samples: [{id, title, format, transport, port, preset, purpose, category, running, managed, stats}]}` |
+| `POST /demo/samples/{id}/start` \| `/stop` | → sample view; generators absent 503 |
+| `GET /demo/samples/{id}/logs?after=&tail=` | → generator's `/logs` page; not running 409 |
+| `POST /demo/samples/{id}/control` | `{rate?, risk?, paused?, drift?, clear_risk?}` → sample view |
+
+Sample ids: `asa`, `fortigate`, `web`, `vpn`, `cef`, `app`, `shop`, `defense`, `llm`; each `preset`
+pre-fills a Sources connector.
+
+### 15.5 Other Studio environment
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALETHEIA_PG_DSN` (or `ALETHEIA_POSTGRES_DSN`, `DATABASE_URL`) | unset → in-memory repo | PostgreSQL |
+| `ALETHEIA_CH_URL` / `_USER` / `_PASSWORD` / `_DB` | `http://localhost:8123` / `aletheia` ×3 | ClickHouse for events, lineage, Lyra |
+| `ALETHEIA_BIN`, `ALETHEIA_ENGINE_BIN` | repo `bin/aletheia`, then `PATH` | Engine CLI (§8) |
+| `ALETHEIA_WORKER_METRICS` | `127.0.0.1:9108` | Probed to report `worker` on `GET /sources` |
+| `ALETHEIA_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Dev-server origins |
+| `ALETHEIA_DEMO_SCRIPT`, `ALETHEIA_VERIFY_PACKS`, `ALETHEIA_SERVE_PY`, `ALETHEIA_PACKS_DIR`, `ALETHEIA_OCSF_DIR` | repo paths | Install locations in the all-in-one image |
+| `ALETHEIA_SAMPLES_HOST` / `ALETHEIA_SAMPLES_UDP_TARGET` | `127.0.0.1` / `127.0.0.1:5514` | Sample generators |
+
+Grafana and Loki variables are in §13.1; LLM and supply variables in §9.
+
+### 15.6 Demo seeding (`make seed`, `backend/studio/seed_demo.py`)
+
+Needs `ALETHEIA_LLM_API_KEY` in `deploy/secrets/aletheia.env`. Resets the services stack
+(`docker compose down -v`, `make services`; `ARGS=--no-reset` keeps data), starts the `asa`
+and `web` generators, writes `llm.provider=gemini`, `llm.model` and the sealed key to Postgres,
+registers `asa-fw` (`tcp`) and `web-proxy` (`loki_pull`), then seeds and syncs alerting (§13.4).
+Studio loads sources at startup, so run it before `make dev` or restart Studio afterwards.

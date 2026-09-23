@@ -209,3 +209,7 @@
 /* Demo card categories (categorical blue, aqua, violet; critical uses the status red). */
 :root { --cat-net: #2a78d6; --cat-web: #1baf7a; --cat-access: #4a3aa7; --cat-crit: #d03b3b; --cat-ai: #7c3aed; }
 [data-theme="dark"] { --cat-net: #3987e5; --cat-web: #199e70; --cat-access: #9085e9; --cat-ai: #a78bfa; }
+
+/* Grafana brand accent, only for links that open Grafana. */
+:root { --grafana: #f46800; --grafana-soft: #fff4eb; --grafana-soft-hover: #ffe6d1; --grafana-border: #f5c39b; }
+[data-theme="dark"] { --grafana: #ff8a3d; --grafana-soft: #26190f; --grafana-soft-hover: #352010; --grafana-border: #6b3a17; }

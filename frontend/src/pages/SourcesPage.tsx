@@ -1,11 +1,17 @@
 // Sources: connect log systems in a dialog, watch raw lines land, approve, reject or retry the mapping.
-import { Fragment, useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Confidence, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../components/Bits';
+import {
+  IconCaret, IconCloud, IconExternal, IconLink, IconPlus, IconSearch, IconSend, IconServer, IconSources,
+} from '../components/Icons';
+import { Kpi, bytesFmt } from '../components/Insights';
 import { Modal } from '../components/Modal';
 import { api, errMessage } from '../lib/api';
-import { useNotify } from '../lib/notify';
+import { reloadWithToast, useNotify } from '../lib/notify';
 import { useAsync, usePoll } from '../lib/useAsync';
+import '../styles/sources.css';
 import type { BadgeKind } from '../components/Bits';
 import type { MappingRow, SourceCluster, SourceInfo, SourceProposal, SourceState } from '../lib/types';
 
@@ -17,6 +23,16 @@ const TYPE_LABEL: Record<string, string> = {
   tcp: 'TCP stream', udp_listen: 'UDP listener', http_stream: 'HTTP stream', websocket: 'WebSocket',
   loki_pull: 'Loki pull', rest_cursor: 'REST API', push: 'Pushed to Aletheia',
 };
+const TYPE_HELP: Record<string, string> = {
+  tcp: 'Read lines from a TCP socket', udp_listen: 'Receive syslog-style datagrams',
+  http_stream: 'Follow an NDJSON HTTP stream', websocket: 'Subscribe to a WebSocket feed',
+  loki_pull: 'Query an existing Loki', rest_cursor: 'Poll a paginated REST endpoint',
+  push: 'Your shipper sends lines here',
+};
+const TYPE_ICON: Record<string, typeof IconServer> = {
+  tcp: IconServer, udp_listen: IconServer, http_stream: IconLink, websocket: IconLink,
+  loki_pull: IconCloud, rest_cursor: IconExternal, push: IconSend,
+};
 const TYPE_FIELDS: Record<string, { k: string; label: string; ph: string }[]> = {
   tcp: [{ k: 'host', label: 'Host', ph: '127.0.0.1' }, { k: 'port', label: 'Port', ph: '9101' }],
   udp_listen: [{ k: 'port', label: 'Listen port', ph: '5514' }],
@@ -27,11 +43,11 @@ const TYPE_FIELDS: Record<string, { k: string; label: string; ph: string }[]> = 
   push: [],
 };
 
-export function SeverityBar({ by }: { by: Record<string, number> }) {
+export function SeverityBar({ by, fill }: { by: Record<string, number>; fill?: boolean }) {
   const total = Object.values(by).reduce((a, b) => a + b, 0);
   if (!total) return <span className="hint">no data</span>;
   return (
-    <div style={{ display: 'flex', height: 8, width: 120, borderRadius: 4, overflow: 'hidden', background: 'var(--surface-hover)' }}
+    <div style={{ display: 'flex', height: 8, width: fill ? '100%' : 120, borderRadius: 4, overflow: 'hidden', background: 'var(--surface-hover)' }}
       title={Object.entries(by).map(([k, v]) => `${k} ${v}`).join(' · ')}>
       {['info', 'notice', 'warn', 'risk'].map((k) => by[k]
         ? <i key={k} style={{ width: `${(by[k] / total) * 100}%`, background: SEV_COLOR[k] }} /> : null)}
@@ -64,6 +80,58 @@ function prefillFrom(p: URLSearchParams): Prefill | null {
   return { id: p.get('id') ?? '', type: p.get('type') ?? 'tcp', cfg };
 }
 
+function TypeOption({ t }: { t: string }) {
+  const Icon = TYPE_ICON[t] ?? IconSources;
+  return (
+    <>
+      <span className="tt-icon"><Icon size={16} /></span>
+      <span className="grow"><span className="tt-label">{TYPE_LABEL[t] ?? t}</span>
+        {TYPE_HELP[t] && <span className="tt-help">{TYPE_HELP[t]}</span>}</span>
+    </>
+  );
+}
+
+/** Dropdown for the connection type. The list floats over the form and scrolls; the dialog keeps one size. */
+function TypePicker({ types, value, onChange }: { types: string[]; value: string; onChange: (t: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    box.current?.querySelector<HTMLButtonElement>('[aria-selected="true"] button')?.focus();
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [open]);
+  const move = (e: ReactKeyboardEvent) => {
+    // Escape closes the list, not the whole dialog; arrows walk the options.
+    if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false); return; }
+    if (!open || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+    e.preventDefault();
+    const opts = [...(box.current?.querySelectorAll<HTMLButtonElement>('.type-dd-menu button') ?? [])];
+    const at = opts.indexOf(document.activeElement as HTMLButtonElement);
+    opts[(at + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length]?.focus();
+  };
+  return (
+    <div className={`type-dd${open ? ' open' : ''}`} ref={box} onKeyDown={move}>
+      <button type="button" className="type-dd-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <TypeOption t={value} />
+        <IconCaret size={14} className="type-dd-caret" />
+      </button>
+      {open && (
+        <ul className="type-dd-menu" role="listbox" aria-label="How to connect">
+          {types.map((t) => (
+            <li key={t} role="option" aria-selected={t === value}>
+              <button type="button" className={t === value ? 'on' : ''} onClick={() => { onChange(t); setOpen(false); }}>
+                <TypeOption t={t} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function AddDialog({ types, prefill, onClose, onDone }: {
   types: string[]; prefill: Prefill | null; onClose: () => void; onDone: (id: string) => void;
 }) {
@@ -78,7 +146,7 @@ function AddDialog({ types, prefill, onClose, onDone }: {
     catch (e) { setErr(errMessage(e)); setBusy(false); }
   };
   return (
-    <Modal title="Connect a source" onClose={onClose}
+    <Modal title="Connect a source" onClose={onClose} className="src-connect"
       subtitle={prefill ? 'Filled in from the demo. Check it and press Connect.' : 'Pull from an external system, or point a shipper at Aletheia.'}
       footer={<>
         <button onClick={onClose}>Cancel</button>
@@ -88,13 +156,16 @@ function AddDialog({ types, prefill, onClose, onDone }: {
         <label className="field"><span className="lbl">Name</span>
           <input autoFocus value={id} onChange={(e) => setId(e.target.value)} placeholder="edge-firewall" />
           <span className="help">Letters, digits and - _ . : only. This is how the source appears everywhere.</span></label>
-        <label className="field"><span className="lbl">How to connect</span>
-          <select value={type} onChange={(e) => { setType(e.target.value); setCfg({}); }}>
-            {types.map((t) => <option key={t} value={t}>{TYPE_LABEL[t] ?? t}</option>)}</select></label>
-        {(TYPE_FIELDS[type] ?? []).map((f) => (
-          <label className="field" key={f.k}><span className="lbl">{f.label}</span>
-            <input value={cfg[f.k] ?? ''} placeholder={f.ph} onChange={(e) => setCfg({ ...cfg, [f.k]: e.target.value })} /></label>
-        ))}
+        <div className="field"><span className="lbl">How to connect</span>
+          <TypePicker types={types} value={type} onChange={(t) => { if (t !== type) { setType(t); setCfg({}); } }} /></div>
+        {(TYPE_FIELDS[type] ?? []).length > 0 && (
+          <div className="cfg-grid">
+            {(TYPE_FIELDS[type] ?? []).map((f) => (
+              <label className="field" key={f.k}><span className="lbl">{f.label}</span>
+                <input value={cfg[f.k] ?? ''} placeholder={f.ph} onChange={(e) => setCfg({ ...cfg, [f.k]: e.target.value })} /></label>
+            ))}
+          </div>
+        )}
         {type === 'push' && (
           <p className="hint">Point your shipper (Vector, Fluent Bit, Logstash) at <code>/api/v1/ingest/loki/push</code>, or send lines to
             <code> /api/v1/ingest/{id.trim() || '<name>'}</code>. The source is created when the first line arrives.</p>
@@ -170,9 +241,15 @@ function PatternWalk({ clusters }: { clusters: SourceCluster[] }) {
         </div>
         <div className="panel-right row-tight">
           <Badge kind={g === null ? 'plain' : g.ok ? 'ok' : 'bad'}>{g === null ? 'check not run' : g.ok ? 'rebuilds byte-for-byte' : 'check failed'}</Badge>
+          {c.mapping.origin.startsWith('ai:')
+            ? <Badge kind="info" title="Mapped by the LLM from this format's samples; rules filled any gaps">AI · {c.mapping.origin.slice(3)}</Badge>
+            : <Badge kind="plain" title={c.mapping.ai_note ?? undefined}>Rules{c.mapping.ai_note ? ' (AI not used)' : ''}</Badge>}
           <Confidence value={c.mapping.confidence} />
         </div>
       </header>
+      {c.mapping.ai_note && (
+        <p className="hint panel-pad">Mapped by rules: {c.mapping.ai_note}. Retry after fixing the AI settings to get an LLM mapping.</p>
+      )}
       <div className="panel-body wk-body">
         <div className="wk-nav">
           <button onClick={() => go(-1)} disabled={clusters.length < 2}>← Previous</button>
@@ -257,12 +334,12 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
         const r = await api.sourceDecide(src.id, { action, approver, reason: note, feedback: note });
         if (r.proposal) setProp(r.proposal);
         if (action === 'approve') {
-          if (r.bus === false) {
-            toast({ kind: 'bad', sticky: true, title: `${src.id} approved, but no events yet`, body: 'The event pipeline is not connected, so Events and Lineage stay empty until it is. See the notice on Sources.' });
-          } else {
-            toast({ kind: 'ok', title: `${src.id} approved`, body: `${r.packs?.length ?? 0} parser pack(s) published${r.backfilled ? `, ${r.backfilled} stored lines sent for processing` : ''}. Events will appear in a few seconds.` });
-          }
-          onClose();
+          // Integration changes every page's data; a clean reload beats patching stale state.
+          reloadWithToast(r.bus === false
+            ? { kind: 'bad', sticky: true, title: `${src.id} approved, but no events yet`, body: 'The event pipeline is not connected, so Events and Lineage stay empty until it is. See the notice on Sources.' }
+            : { kind: 'ok', title: `${src.id} approved`, body: `${r.packs?.length ?? 0} parser pack(s) published${r.backfilled ? `, ${r.backfilled} stored lines sent for processing` : ''}. Events will appear in a few seconds.` },
+          '/dashboard/sources');
+          return;
         } else if (action === 'reject') {
           toast({ kind: 'bad', title: `${src.id} rejected`, body: 'Raw logs keep being stored. Nothing is normalized.' });
           onClose();
@@ -435,6 +512,117 @@ function SourceDialog({ src, onClose, onChanged }: { src: SourceInfo; onClose: (
 }
 
 // ------------------------------------------------------------------ page
+type View = 'grid' | 'list';
+type Filter = 'all' | SourceState;
+const FILTERS: [Filter, string][] = [
+  ['all', 'All'], ['review', 'Ready'], ['collecting', 'Collecting'], ['approved', 'Approved'], ['rejected', 'Rejected'],
+];
+const VIEW_KEY = 'aletheia.sources.view';
+const compact = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 });
+
+function ago(t: number | null) {
+  if (!t) return 'No lines yet';
+  const d = Math.max(0, Date.now() / 1000 - t);
+  if (d < 60) return `Last line ${Math.round(d)}s ago`;
+  if (d < 3600) return `Last line ${Math.round(d / 60)}m ago`;
+  if (d < 86400) return `Last line ${Math.round(d / 3600)}h ago`;
+  return `Last line ${Math.round(d / 86400)}d ago`;
+}
+
+/** Transport health, separate from the approval state: a paused or erroring source still keeps its mapping. */
+function ConnStatus({ s }: { s: SourceInfo }) {
+  const tone = !s.enabled || s.status === 'passive' ? 'idle' : s.status === 'connected' ? 'ok' : 'warn';
+  return <span className={`conn ${tone}`} title={s.error || undefined}><i />{s.enabled ? s.status : 'paused'}</span>;
+}
+
+function StateBadge({ s }: { s: SourceInfo }) {
+  if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
+  if (s.state === 'collecting') return <Badge kind="plain">Collecting</Badge>;
+  return <Badge kind={s.state === 'approved' ? 'ok' : 'bad'}>{s.state === 'approved' ? 'Approved' : 'Rejected'}</Badge>;
+}
+
+function SourceCard({ s, onOpen, onToggle, onRemove }: {
+  s: SourceInfo; onOpen: () => void; onToggle: () => void; onRemove: () => void;
+}) {
+  const Icon = TYPE_ICON[s.type] ?? IconSources;
+  const ready = s.state === 'review';
+  return (
+    <article className={`src-card${ready ? ' ready' : ''}${s.enabled ? '' : ' paused'}`} onClick={onOpen}>
+      <header className="sn-head">
+        <span className="sn-icon"><Icon size={18} /></span>
+        <div className="grow">
+          <div className="sn-name truncate" title={s.id}>{s.name || s.id}</div>
+          <div className="sn-meta">{TYPE_LABEL[s.type] ?? s.type}<span aria-hidden="true">·</span><ConnStatus s={s} /></div>
+        </div>
+        <StateBadge s={s} />
+      </header>
+
+      <dl className="sn-metrics">
+        <div><dt>Lines</dt><dd title={s.lines.toLocaleString()}>{compact.format(s.lines)}</dd></div>
+        <div><dt>Rate</dt><dd>{s.eps}<small>/s</small></dd></div>
+        <div><dt>Errors</dt><dd className={s.errors ? 'bad' : ''}>{s.errors}</dd></div>
+      </dl>
+
+      {s.state === 'collecting' ? (
+        <div className="sn-block">
+          <div className="sn-block-h"><span>Collecting a sample</span><span className="mono">{Math.min(s.lines, MIN_LINES)} / {MIN_LINES}</span></div>
+          <div className="progress"><i style={{ width: `${Math.min(100, (s.lines / MIN_LINES) * 100)}%` }} /></div>
+        </div>
+      ) : (
+        <div className="sn-block">
+          <div className="sn-block-h"><span>Severity mix</span></div>
+          <SeverityBar by={s.by_severity} fill />
+          <div className="sn-legend">
+            {SEVS.map((k) => (
+              <span key={k}><i style={{ background: SEV_COLOR[k] }} />{k}<b>{compact.format(s.by_severity[k] ?? 0)}</b></span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <footer className="sn-foot" onClick={(e) => e.stopPropagation()}>
+        <span className="hint">{ago(s.last_seen)}</span>
+        <div className="row-tight row-nowrap">
+          <button className="ghost btn-sm" onClick={onToggle}>{s.enabled ? 'Pause' : 'Resume'}</button>
+          <button className="ghost btn-sm" onClick={onRemove}>Remove</button>
+          <button className={`btn-sm${ready ? ' primary' : ''}`} onClick={onOpen}>{ready ? 'Review mapping' : 'Open'}</button>
+        </div>
+      </footer>
+    </article>
+  );
+}
+
+const isReady = (s: SourceInfo) => s.state === 'review';
+
+function SourceTable({ rows, onOpen, onToggle, onRemove }: {
+  rows: SourceInfo[]; onOpen: (s: SourceInfo) => void; onToggle: (s: SourceInfo) => void; onRemove: (s: SourceInfo) => void;
+}) {
+  return (
+    <div className="table-scroll"><table className="data">
+      <thead><tr><th>Source</th><th>Connection</th><th>Status</th><th className="num">Lines</th><th className="num">Rate</th><th>Severity mix</th><th /></tr></thead>
+      <tbody>
+        {rows.map((s) => (
+          <tr key={s.id} className={`src-row${isReady(s) ? ' ready' : ''}`} onClick={() => onOpen(s)}>
+            <td><b>{s.name || s.id}</b><div className="hint">{TYPE_LABEL[s.type] ?? s.type}</div></td>
+            <td><ConnStatus s={s} /></td>
+            <td><StatusCell s={s} /></td>
+            <td className="num mono" title={s.lines.toLocaleString()}>{compact.format(s.lines)}</td>
+            <td className="num mono">{s.eps}/s</td>
+            <td><SeverityBar by={s.by_severity} /></td>
+            <td onClick={(e) => e.stopPropagation()}>
+              <div className="row-tight row-nowrap src-actions">
+                <button className="ghost btn-sm" onClick={() => onToggle(s)}>{s.enabled ? 'Pause' : 'Resume'}</button>
+                <button className="ghost btn-sm" onClick={() => onRemove(s)}>Remove</button>
+                <button className={`btn-sm${isReady(s) ? ' primary' : ''}`} onClick={() => onOpen(s)}>{isReady(s) ? 'Review' : 'Open'}</button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table></div>
+  );
+}
+
 export function SourcesPage() {
   const list = usePoll(() => api.listSources(), 3000, []);
   const [params, setParams] = useSearchParams();
@@ -442,6 +630,9 @@ export function SourcesPage() {
   const [adding, setAdding] = useState<Prefill | 'blank' | null>(() => prefillFrom(params));
   const [sel, setSel] = useState<string | null>(params.get('review'));
   const [removing, setRemoving] = useState<SourceInfo | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [q, setQ] = useState('');
+  const [view, setView] = useState<View>(() => { try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'; } catch { return 'grid'; } });
   const { reload } = list;
 
   // A toast's Review button lands here with ?review=<id>; the Demo page's Connect with ?connect=1.
@@ -456,8 +647,17 @@ export function SourcesPage() {
   const sources = list.data?.sources ?? [];
   const current = sources.find((s) => s.id === sel) ?? null;
   const ready = sources.filter((s) => s.state === 'review');
-  const readyIds = new Set(ready.map((s) => s.id));
+  const count = (f: Filter) => (f === 'all' ? sources.length : sources.filter((s) => s.state === f).length);
+  const needle = q.trim().toLowerCase();
+  const shown = sources.filter((s) => (filter === 'all' || s.state === filter)
+    && (!needle || `${s.name} ${s.id} ${TYPE_LABEL[s.type] ?? s.type}`.toLowerCase().includes(needle)));
 
+  const totals = sources.reduce((a, s) => ({
+    lines: a.lines + s.lines, bytes: a.bytes + s.bytes, eps: a.eps + s.eps, errors: a.errors + s.errors,
+    live: a.live + (s.enabled && s.status === 'connected' ? 1 : 0), paused: a.paused + (s.enabled ? 0 : 1),
+  }), { lines: 0, bytes: 0, eps: 0, errors: 0, live: 0, paused: 0 });
+
+  const pickView = (v: View) => { setView(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* ignore */ } };
   const toggle = async (s: SourceInfo) => { await api.patchSource(s.id, { enabled: !s.enabled }); reload(); };
   const remove = async () => {
     if (!removing) return;
@@ -468,13 +668,15 @@ export function SourcesPage() {
 
   return (
     <div className="stack">
-      <PageHead title="Sources">
+      <PageHead title="Sources" right={
+        <button className="primary" onClick={() => setAdding('blank')}><IconPlus size={16} />Add source</button>
+      }>
         Connect any log system. Lines are stored raw first; you approve the mapping before anything is normalized.
       </PageHead>
       {list.error && <ErrorState error={list.error} what="sources" />}
 
       {list.data && (!list.data.bus || !list.data.worker) && (
-        <div className="ready-banner" role="alert" style={{ borderColor: 'var(--bad-border)', background: 'var(--bad-soft)' }}>
+        <div className="ready-banner pipe-down" role="alert">
           <div className="grow stack-sm" style={{ gap: 4 }}>
             <div className="row-tight" style={{ gap: 8 }}>
               <b>The event pipeline is offline.</b>
@@ -495,73 +697,98 @@ export function SourcesPage() {
         </div>
       )}
 
-      <button type="button" className="add-hero" onClick={() => setAdding('blank')}>
-        <span className="plus" aria-hidden="true">+</span>
-        <span className="grow">
-          <span className="ah-title">Add a log source</span>
-          <span className="ah-sub">Pull from a server, stream, API or Loki, or point a shipper at Aletheia</span>
-        </span>
-        <span className="ah-cta">Add source</span>
-      </button>
+      {ready.length > 0 && (
+        <div className="ready-banner">
+          <div className="grow">
+            <b>{ready.length === 1 ? '1 source is ready for approval.' : `${ready.length} sources are ready for approval.`}</b>{' '}
+            <span className="hint">Check the proposed mapping before its logs are normalized.</span>
+          </div>
+          <div className="row-tight">
+            {ready.map((s) => (
+              <button key={s.id} className="primary btn-sm" onClick={() => setSel(s.id)}>Review {s.name || s.id}</button>
+            ))}
+          </div>
+        </div>
+      )}
 
-      <Panel
-        title="Connected systems"
-        right={
-          ready.length > 0 ? (
-            <div className="row-tight align-center" style={{ gap: 8 }}>
-              <span className="hint bold">
-                {ready.length === 1 ? '1 source ready for approval:' : `${ready.length} sources ready:`}
-              </span>
-              {ready.map((s) => (
-                <button key={s.id} className="primary btn-sm" onClick={() => setSel(s.id)}>
-                  Review {s.name || s.id}
+      {sources.length > 0 && (
+        <div className="kpis src-kpis">
+          <Kpi label="Sources" value={String(sources.length)}
+            sub={`${totals.live} connected${totals.paused ? ` · ${totals.paused} paused` : ''}`} />
+          <Kpi label="Lines stored" value={compact.format(totals.lines)} sub={bytesFmt(totals.bytes)} />
+          <Kpi label="Ingest rate" value={`${Math.round(totals.eps * 10) / 10}/s`} sub="across all sources" />
+          <Kpi label="Awaiting approval" value={String(ready.length)} tone={ready.length ? 'warn' : undefined}
+            sub={`${count('collecting')} collecting · ${totals.errors} error${totals.errors === 1 ? '' : 's'}`} />
+        </div>
+      )}
+
+      {list.loading && !list.data && <Panel><Spinner label="Loading sources" /></Panel>}
+      {list.data && sources.length === 0 && (
+        <Panel>
+          <EmptyState title="No sources yet" icon={<IconSources size={22} />}
+            action={<button className="primary" onClick={() => setAdding('blank')}><IconPlus size={16} />Add your first source</button>}>
+            Pull from a server, stream, API or Loki, or point a shipper at Aletheia. You can also start a sample
+            log server on the Demo page and press Connect.
+          </EmptyState>
+        </Panel>
+      )}
+
+      {sources.length > 0 && (
+        <>
+          <div className="src-toolbar">
+            <label className="src-search">
+              <IconSearch size={15} />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by name or type" aria-label="Filter sources" />
+            </label>
+            <div className="seg" role="tablist" aria-label="Filter by state">
+              {FILTERS.filter(([f]) => f === 'all' || count(f) > 0).map(([f, label]) => (
+                <button key={f} role="tab" aria-selected={filter === f} className={filter === f ? 'on' : ''} onClick={() => setFilter(f)}>
+                  {label}<span className="seg-n">{count(f)}</span>
                 </button>
               ))}
             </div>
-          ) : undefined
-        }
-        flush
-      >
-        {list.loading && !list.data && <div className="panel-pad"><Spinner label="Loading" /></div>}
-        {list.data && sources.length === 0 && (
-          <EmptyState title="No sources yet">
-            Use the button above, or start a sample log server on the Demo page and press Connect.
-          </EmptyState>
-        )}
-        {sources.length > 0 && (
-          <div className="table-scroll"><table className="data">
-            <thead><tr><th>Source</th><th>Connection</th><th>Status</th><th>Lines</th><th>/s</th><th>Severity mix</th><th /></tr></thead>
-            <tbody>
-              {sources.map((s) => (
-                <tr key={s.id} className={`src-row${readyIds.has(s.id) ? ' ready' : ''}`} onClick={() => setSel(s.id)}>
-                  <td><b>{s.name || s.id}</b><div className="hint">{TYPE_LABEL[s.type] ?? s.type}</div></td>
-                  <td><Badge kind={!s.enabled ? 'plain' : s.status === 'connected' ? 'ok' : s.status === 'passive' ? 'plain' : 'warn'} title={s.error}>{s.enabled ? s.status : 'paused'}</Badge></td>
-                  <td><StatusCell s={s} /></td>
-                  <td className="mono">{s.lines.toLocaleString()}</td><td className="mono">{s.eps}</td>
-                  <td><SeverityBar by={s.by_severity} /></td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div className="row-tight row-nowrap">
-                      <button className={readyIds.has(s.id) ? 'primary' : ''} onClick={() => setSel(s.id)}>{readyIds.has(s.id) ? 'Review' : 'View'}</button>
-                      <button className="ghost" onClick={() => void toggle(s)}>{s.enabled ? 'Pause' : 'Resume'}</button>
-                      <button className="ghost" onClick={() => setRemoving(s)}>Remove</button>
-                    </div>
-                  </td>
-                </tr>
+            <div className="seg src-view" role="tablist" aria-label="Layout">
+              {(['grid', 'list'] as const).map((v) => (
+                <button key={v} role="tab" aria-selected={view === v} className={view === v ? 'on' : ''} onClick={() => pickView(v)}>
+                  {v === 'grid' ? 'Grid' : 'List'}
+                </button>
               ))}
-            </tbody>
-          </table></div>
-        )}
-      </Panel>
+            </div>
+          </div>
+
+          {shown.length === 0 ? (
+            <Panel><EmptyState title="No sources match" icon={<IconSearch size={20} />}
+              action={<button onClick={() => { setQ(''); setFilter('all'); }}>Clear filters</button>} /></Panel>
+          ) : view === 'grid' ? (
+            <div className="src-grid">
+              {shown.map((s) => (
+                <SourceCard key={s.id} s={s} onOpen={() => setSel(s.id)} onToggle={() => void toggle(s)} onRemove={() => setRemoving(s)} />
+              ))}
+              {filter === 'all' && !needle && (
+                <button type="button" className="src-add" onClick={() => setAdding('blank')}>
+                  <span className="sa-plus"><IconPlus size={18} /></span>
+                  <span className="sa-title">Connect another source</span>
+                  <span className="hint">TCP, UDP, HTTP, WebSocket, Loki, REST or push</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <Panel flush>
+              <SourceTable rows={shown} onOpen={(s) => setSel(s.id)} onToggle={(s) => void toggle(s)} onRemove={setRemoving} />
+            </Panel>
+          )}
+        </>
+      )}
 
       {adding && (
         <AddDialog types={list.data?.types ?? Object.keys(TYPE_FIELDS)} prefill={adding === 'blank' ? null : adding}
           onClose={closeAll}
-          onDone={(id) => { toast({ kind: 'ok', title: `${id} connected`, body: 'Collecting raw logs. You will be told when it is ready to approve.' }); closeAll(); reload(); }} />
+          onDone={(id) => reloadWithToast({ kind: 'ok', title: `${id} connected`, body: 'Collecting raw logs. You will be told when it is ready to approve.' }, '/dashboard/sources')} />
       )}
       {current && <SourceDialog key={current.id} src={current} onClose={closeAll} onChanged={reload} />}
       {removing && (
         <Modal title={`Remove ${removing.id}?`} onClose={() => setRemoving(null)}
-          footer={<><button onClick={() => setRemoving(null)}>Cancel</button><button className="primary" onClick={() => void remove()}>Remove</button></>}>
+          footer={<><button onClick={() => setRemoving(null)}>Cancel</button><button className="danger" onClick={() => void remove()}>Remove source</button></>}>
           <p>This stops collecting from the source. Lines already stored stay in the raw store.</p>
         </Modal>
       )}

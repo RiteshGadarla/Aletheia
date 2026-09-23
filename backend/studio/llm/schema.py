@@ -100,10 +100,39 @@ def _load_from_disk(dirpath: str) -> tuple[dict[int, list[str]], str]:
     return dict(BUILTIN_PATHS), "builtin"
 
 
+# Filled by the engine or chosen separately, never by mapping a slot.
+ENGINE_OWNED = {"class_uid", "category_uid", "type_uid", "activity_id", "activity_name",
+                "metadata.version", "metadata.uid", "raw_data", "observables", "unmapped"}
+
+
+def _subset_paths(raw: dict[str, Any]) -> dict[int, list[str]]:
+    """schema_subset.yaml: `common` leaves + each class's attributes, `$ref` objects expanded."""
+    objects = raw.get("objects") or {}
+    common = [k for k in (raw.get("common") or {}) if k not in ENGINE_OWNED
+              and not k.startswith("aletheia.")]
+    out: dict[int, list[str]] = {}
+    for k, cls in (raw.get("classes") or {}).items():
+        try:
+            uid = int(str(k).strip())
+        except ValueError:
+            continue
+        paths = list(common)
+        for attr, spec in ((cls or {}).get("attributes") or {}).items():
+            ref = spec.get("$ref") if isinstance(spec, dict) else None
+            if ref and isinstance(objects.get(ref), dict):
+                paths += [f"{attr}.{leaf}" for leaf in objects[ref]]
+            elif attr not in ENGINE_OWNED:
+                paths.append(str(attr))
+        out[uid] = sorted(set(paths))
+    return out
+
+
 def _coerce(raw: Any) -> dict[int, list[str]]:
     """Accept several plausible shapes so we work with whatever backend/ocsf/ lands as."""
     if not isinstance(raw, dict):
         return {}
+    if isinstance(raw.get("classes"), dict) and ("objects" in raw or "common" in raw):
+        return _subset_paths(raw)
     for key in ("paths", "allowed_paths", "classes", "ocsf_paths"):
         if key in raw and isinstance(raw[key], dict):
             raw = raw[key]

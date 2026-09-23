@@ -1,0 +1,252 @@
+/* =========================================================================
+   Events & Lineage Explorer UI
+   ========================================================================= */
+
+.lineage-search-box {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 4px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 220px;
+}
+
+.lineage-search-box input {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+  width: 100%;
+}
+
+.pick-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.pick-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pick-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.pick-row {
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-soft);
+  transition: background 0.12s ease;
+}
+
+.pick-row:hover {
+  background: var(--surface-hover);
+}
+
+.pick-row td {
+  padding: 12px 16px;
+  vertical-align: middle;
+}
+
+.source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.lineage-inspect-bar {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: all 0.15s ease;
+}
+
+.lineage-inspect-bar.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.lib-content {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  width: 100%;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.lib-badge {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.lib-detail {
+  color: var(--text);
+}
+
+.lib-path {
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.lib-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.slot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.sl-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sl-item i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.slot-ip-dot {
+  background: var(--t-ip);
+}
+
+.slot-ts-dot {
+  background: var(--t-ts);
+}
+
+.slot-num-dot {
+  background: var(--t-num);
+}
+
+.slot-host-dot {
+  background: var(--t-host);
+}
+
+.slot-enum-dot {
+  background: var(--t-enum);
+}
+
+.slot-text-dot {
+  background: var(--t-text);
+}
+
+.bold {
+  font-weight: 600;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.icon-sm {
+  padding: 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.lib-close {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+
+.lib-close:hover {
+  color: var(--text);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.button:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.header-stats-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.hs-chip {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  font-size: 13px;
+}
+
+.hs-chip .hs-val {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.hs-chip .hs-lbl {
+  color: var(--text-muted);
+  font-size: 12px;
+}

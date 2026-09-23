@@ -29,6 +29,16 @@ SPEC: dict[str, tuple[str | None, Any, bool]] = {
     "airgap":                ("ALETHEIA_AIRGAP", False, False),
     "engine.bin":            ("ALETHEIA_ENGINE_BIN", "aletheia", False),
     "bus.brokers":           ("ALETHEIA_BUS_BROKERS", "", False),
+    # Log supply stream: saved from the Export page so a restart brings the feed back as it was.
+    # Loopback by default; serving other hosts is an explicit choice, ideally with an allowlist.
+    "supply.enabled":        ("ALETHEIA_SUPPLY_ENABLED", False, False),
+    "supply.host":           ("ALETHEIA_SUPPLY_HOST", "127.0.0.1", False),
+    "supply.port":           ("ALETHEIA_SUPPLY_PORT", 9099, False),
+    "supply.format":         ("ALETHEIA_SUPPLY_FORMAT", "raw", False),
+    "supply.source_id":      (None, "", False),
+    "supply.allow":          ("ALETHEIA_SUPPLY_ALLOW", "", False),   # comma-separated IPs / CIDRs
+    "supply.mode":           ("ALETHEIA_SUPPLY_MODE", "listen", False),   # listen | push
+    "supply.target":         ("ALETHEIA_SUPPLY_TARGET", "", False),       # push: collector host:port
 }
 
 SECRET_KEYS = {k for k, (_, _, enc) in SPEC.items() if enc}
@@ -49,6 +59,23 @@ def _as_bool(v: Any) -> bool:
     if isinstance(v, bool):
         return v
     return str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+
+
+def is_gemini_model(name: str) -> bool:
+    """Only Gemini models are supported on the gemini provider."""
+    return (name or "").strip().lower().startswith("gemini-")
+
+
+def _model_for(provider: str, model: str) -> str:
+    """A stale non-Gemini model (env, saved setting) on the gemini provider falls back to the default."""
+    if provider == "gemini" and not is_gemini_model(model):
+        if model:
+            log.warning("llm.model %r is not a Gemini model; using %s", model, DEFAULT_GEMINI_MODEL)
+        return DEFAULT_GEMINI_MODEL
+    return model
 
 
 def _as_int(v: Any, default: int) -> int:
@@ -159,7 +186,7 @@ class SettingsStore:
             base_url = DEFAULT_BASE_URLS.get(provider, "")
         cfg = LLMConfig(
             provider=provider,
-            model=str(pick("llm.model") or "").strip(),
+            model=_model_for(provider, str(pick("llm.model") or "").strip()),
             base_url=base_url.rstrip("/"),
             api_key=str(pick("llm.api_key") or ""),
             send_samples=str(pick("llm.send_samples") or "masked").strip().lower(),

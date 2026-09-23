@@ -284,7 +284,7 @@ export const isCloudProvider = (p: Provider): boolean => CLOUD_PROVIDERS.include
 
 export const PROVIDER_DEFAULTS: Record<Provider, { model: string; base_url: string }> = {
   none: { model: '', base_url: '' },
-  gemini: { model: 'gemma-4-31b-it', base_url: 'https://generativelanguage.googleapis.com/v1beta' },
+  gemini: { model: 'gemini-3.5-flash-lite', base_url: 'https://generativelanguage.googleapis.com/v1beta' },
   local: { model: 'llama3.2:1b', base_url: 'http://localhost:11434/api/chat' },
 };
 
@@ -346,7 +346,8 @@ export interface MappingRow {
 
 export interface SourceCluster {
   cluster_id: string; size: number; share: number; samples: string[]; format: string; warnings: string[];
-  mapping: { class_uid: number; class_name: string; activity_id: number; confidence: number; origin: string; rows: MappingRow[] };
+  /** origin: `ai:<provider>/<model>` or `heuristic`; ai_note says why rules were used instead. */
+  mapping: { class_uid: number; class_name: string; activity_id: number; confidence: number; origin: string; ai_note?: string | null; rows: MappingRow[] };
   gate: { ok: boolean; reconstructed?: number; samples?: number; error?: string } | null;
 }
 
@@ -413,7 +414,7 @@ export interface SampleList { available: boolean; samples: SampleServer[] }
 
 /* ---- Export & Log Supply Stream ---- */
 export type ReportFormat = 'pdf' | 'json' | 'csv' | 'markdown' | 'html';
-export type LogExportFormat = 'json' | 'jsonl' | 'csv' | 'tsv' | 'text' | 'cef' | 'leef' | 'xml';
+export type LogExportFormat = 'json' | 'jsonl' | 'csv' | 'tsv' | 'text' | 'syslog' | 'cef' | 'leef' | 'xml';
 export type LogExportType = 'raw' | 'ocsf' | 'system';
 
 export interface ExportReportParams {
@@ -430,25 +431,55 @@ export interface ExportLogsParams {
   severity?: string;
   q?: string;
   limit?: number;
+  since_s?: number;
+}
+
+/** What a finished download carried: the server's record count and SHA-256 of the file. */
+export interface DownloadResult { filename: string; bytes: number; count: number | null; sha256: string | null }
+
+export type SupplyFormat = 'raw' | 'tagged' | 'json' | 'syslog' | 'cef' | 'ocsf';
+export type SupplyMode = 'listen' | 'push';
+
+export interface SupplyClient {
+  addr: string;
+  connected_at: number | null;
+  lines: number;
+  bytes: number;
+  dropped: number;
+  queued: number;
+  connected?: boolean;
 }
 
 export interface SupplyStatus {
   active: boolean;
   enabled: boolean;
+  mode: SupplyMode;
+  target: string;
+  host: string;
   port: number;
-  log_type: string;
+  log_type: SupplyFormat;
   source_id: string;
+  allow: string[];
   clients_count: number;
+  clients: SupplyClient[];
   lines_sent: number;
   bytes_sent: number;
+  dropped_lines: number;
+  refused: number;
   started_at: number | null;
+  last_error: string;
+  bus: boolean;
 }
 
 export interface SupplyConfigUpdate {
   enabled?: boolean;
+  mode?: SupplyMode;
+  target?: string;
+  host?: string;
   port?: number;
-  log_type?: string;
+  log_type?: SupplyFormat;
   source_id?: string;
+  allow?: string[];
 }
 
 /* Lyra chat */

@@ -1,103 +1,80 @@
 # LLM provider notes — measured, not assumed
 
-## Default model change
+## Providers and model
 
-The default `llm.model` is now **`gemini-3.5-flash-lite`**, replacing `gemma-4-31b-it`.
-`gemma-4-31b-it` remains fully supported and is documented below, but its latency (~34-50 s
-per call) and unreliability (~50% failure rate on the free tier, see "Model reliability" below)
-make it unsuitable as the default — especially for Lyra, which makes several sequential calls
-per user question.
+| Provider | What it is | Model |
+|---|---|---|
+| `gemini` (default) | Google's Gemini API, the only cloud option | **`gemini-3.5-flash-lite`** by default, any `gemini-*` accepted |
+| `local` | any local OpenAI-compatible server (Ollama, vLLM, llama.cpp, LM Studio). `ollama` is accepted as a legacy alias | whatever the server hosts; `llm.base_url` picks the server (default `http://localhost:11434/v1`) |
+| `none` | AI off; rules map every format | — |
 
-`gemini-3.5-flash-lite` is fast, reliable, and sufficient for both onboarding OCSF mapping
-proposals and Lyra's tool-using chat loop.
+On `gemini`, only `gemini-*` models are supported: saving another model is rejected (HTTP 422), a
+stale non-Gemini value from env or the settings table falls back to the default, and model lists
+only show `gemini-*`. Gemma is no longer used. For air-gapped deployments use `provider=local`
+instead; air-gap mode refuses the cloud provider.
+
+## Settings
+
+The settings table (written from the Settings page) wins over env, and env only supplies defaults.
+
+| Setting | Env default | Default |
+|---|---|---|
+| `llm.provider` | `ALETHEIA_LLM_PROVIDER` | `gemini` |
+| `llm.model` | `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` |
+| `llm.chat_model` | `ALETHEIA_LLM_CHAT_MODEL` | empty (Lyra uses `llm.model`) |
+| `llm.base_url` | `ALETHEIA_LLM_BASE_URL` | per provider; required for `local` |
+| `llm.send_samples` | `ALETHEIA_LLM_SEND_SAMPLES` | `masked` (`masked` / `none` / `raw`; `raw` is refused for Gemini) |
+| `llm.timeout_s` | `ALETHEIA_LLM_TIMEOUT_S` | 120 |
+| `llm.max_output_tokens` | `ALETHEIA_LLM_MAX_OUTPUT_TOKENS` | 8192 |
+| `llm.requests_per_hour` | `ALETHEIA_LLM_REQUESTS_PER_HOUR` | 60 |
+
+**API key.** The key has no env setting: enter it on the Settings page, where it is sealed with
+`ALETHEIA_SECRET` before it is stored and only its last four characters are ever shown. `make seed`
+reads `ALETHEIA_LLM_API_KEY` from `deploy/secrets/aletheia.env` and stores it the same way. Studio
+does not read `ALETHEIA_LLM_API_KEY` or `ALETHEIA_LLM_API_KEY_FILE` itself when it runs. The
+shipped image has no key, so `gemini` stays unavailable until one is set.
+
+## Where the LLM is used
+
+1. **Onboarding mapping (the core use).** Each new source is clustered into its unique formats and a
+   byte-exact template is derived per format, deterministically. The LLM then maps each template's
+   slots to OCSF from a few masked samples: **one request per unique format, never per event.**
+   Rules fill any slot the LLM leaves unmapped, and stand in for the LLM when it is off, rate-limited,
+   failing, or its mapping fails the reconstruction gate. The review screen shows which one mapped
+   each format (`AI · gemini/…` or `Rules`) and why rules were used. A human still approves.
+   A reviewer can instead **retry** with written feedback (and an optional class hint); the
+   feedback goes into the next mapping request.
+2. **Lyra** (the data assistant), several calls per question.
+
+Runtime parsing never uses the LLM: the Go engine applies the approved templates.
 
 ## Lyra and `llm.chat_model`
 
-Lyra (the data assistant at `/dashboard/lyra`) defaults to whatever `llm.model` is configured,
-but the setting `llm.chat_model` can override it for Lyra specifically. This exists because
-onboarding proposals (one request per cluster, latency-tolerant) can benefit from a large
-thinking model, while Lyra needs several fast round-trips per turn.
+Lyra has no separate fast model. It uses `llm.model`, by default the same `gemini-3.5-flash-lite`,
+which is fast enough for its loop of at most 5 steps per question. `llm.chat_model` points Lyra alone
+at another model (Gemini models only; a non-Gemini value is ignored) and caps its output budget at
+4096 tokens. It is set through `ALETHEIA_LLM_CHAT_MODEL` or the settings table, not on the Settings
+page. If `llm.chat_model` is empty (the default), Lyra uses the main model.
 
-If `llm.chat_model` is empty (the default), Lyra uses the main model.
+## Adapter rules
 
----
-
-## Gemma 4 31B IT — measured behaviour
-
-Provider `gemini`, model **`gemma-4-31b-it`**.
-Resolved from `GET /v1beta/models` on 2026-09-19. The other Gemma on the API is
-`gemma-4-26b-a4b-it`. Both: 262144-token input limit, methods `generateContent`, `countTokens`.
-
-## Measured behaviour
-
-| Probe | Result | Consequence for the adapter |
-|---|---|---|
-| `systemInstruction` field | **HTTP 500 every time** | Gemma rejects system instructions. Fold the system prompt into the first user turn. |
-| Plain `generateContent` | works, but returns **`"thought": true` parts** | It is a thinking model. Join only parts *without* the thought flag. |
-| OpenAI-compat endpoint (`/v1beta/openai/chat/completions`) | works, but inlines `<thought>…</thought>` **into the content string** | Rejected. Stripping tags from prose is fragile → we use the **native** endpoint for `gemini`. |
-| `responseMimeType: application/json` + `responseSchema` | **works**; response is a single clean part, no thought part | This is our primary structured-output mode. |
-| Repeated identical calls | **~50% HTTP 500** (1/4 then 2/4 successful) | Not caused by `temperature`. Transient server-side. **Retry with exponential backoff is mandatory.** |
-| Sustained load later the same session | **500, 503 and ReadTimeout**; 0/3 calls survived 4 retries each | The free-tier Gemma endpoint degrades badly under load. The heuristic fallback is not a nicety — it is the load-bearing path. |
-| A reply that did arrive | rejected by our parser as "not JSON" | **Our bug, since fixed.** Gemma 4 is a *thinking* model and thought tokens count against `maxOutputTokens`; a 2048 budget truncated the JSON mid-object. Default raised to 8192 and a truncation-aware retry added. |
-
-## Adapter rules that follow
-
-1. Endpoint: `POST /v1beta/models/{model}:generateContent?key=…` (native, not OpenAI-compat).
-2. No `systemInstruction`. Prepend the system prompt to the first user part.
-3. Always send `generationConfig.responseMimeType="application/json"` + `responseSchema`.
-4. Parse: `candidates[0].content.parts`, keep parts where `part.get("thought")` is falsy, join, `json.loads`.
-5. Retry 5xx / timeouts up to 4 attempts, backoff 1s, 2s, 4s, 8s (+jitter). Then fall back to the
-   heuristic proposal and surface "AI suggestion unavailable" — never block onboarding.
-6. Budget at least **8192** output tokens. Thought tokens are billed against the same budget, so a
-   budget sized for the answer alone truncates the JSON. On `finishReason: MAX_TOKENS`, retry once
-   with double the budget before giving up.
-6. Token usage from `usageMetadata.{promptTokenCount,candidatesTokenCount}` for the Settings counter.
+1. Official `google-genai` SDK, native `generateContent` (not the OpenAI-compatible endpoint).
+2. `system_instruction` carries the system prompt.
+3. Structured output: `response_mime_type="application/json"` + `response_schema`. Replies are
+   still parsed tolerantly — a code fence or trailing prose is stripped before `json.loads`.
+4. `gemini-3*` take `thinking_level="minimal"`; `gemini-2*` take `thinking_budget=0`.
+5. Budget **8192** output tokens; on `finish_reason=MAX_TOKENS` retry once with double the budget.
+6. Retries: up to 4 attempts. 5xx and timeouts back off 1/2/4/8 s (+jitter). **429 waits for the server's
+   `retryDelay`, or 20/40/60 s** — free-tier limits are per-minute token windows, which a short
+   backoff cannot outlast. Onboarding runs at most 2 mapping requests at a time for the same reason.
+7. After the last attempt the call fails cleanly and rules take over; onboarding is never blocked.
+8. Token usage from `usage_metadata` feeds the Settings usage counter. `llm.requests_per_hour`
+   caps onboarding and Lyra calls together; once it is reached, onboarding falls back to rules
+   and Lyra declines until the hour window frees up.
+9. `local` goes through the OpenAI-compatible adapter with the same retry rules and JSON schema.
 
 ## Sample output quality
 
-Given the ASA 302013 template it returned a well-formed mapping with per-slot confidence, but
-assigned `ip_a → src_endpoint.ip`, whereas for an **outbound** ASA 302013 the `for` side is the
-remote party (spec §7.3 maps `ip_b → src_endpoint.ip` on outbound). A textbook case of why AI
-output is a *proposal* that must clear the reconstruction gate, the replay diff and human review.
-
-## Latency and the two bugs it exposed
-
-Measured with a 180-second client timeout and a realistic OCSF-mapping prompt, successful calls
-returned in **34 s and 50 s**. Two of our defaults were wrong for a thinking model, and both are fixed:
-
-| Default | Was | Now | Why |
-|---|---|---|---|
-| `ALETHEIA_LLM_TIMEOUT_S` | 30 | **120** | Real calls take 34–50 s. A 30 s limit turned would-be successes into `ReadTimeout`, which is exactly what we first saw. |
-| `ALETHEIA_LLM_MAX_OUTPUT_TOKENS` | 2048 | **8192** | Thought tokens are billed against the same budget, so 2048 truncated the JSON mid-object. A truncation-aware retry now doubles the budget on `finishReason: MAX_TOKENS`. |
-
-Spec §8.12.9 suggests a 30 s default. That predates knowing the model reasons before answering, so we
-deviate deliberately and document it here.
-
-## Model reliability, measured side by side
-
-Six identical JSON-mode calls per model, same key, same window:
-
-| Model | Successful | Codes seen |
-|---|---|---|
-| `gemma-4-31b-it` | **3/6** | 200 x3, 503 x2, 500 x1 |
-| `gemma-4-26b-a4b-it` | **6/6** | 200 x6 |
-
-`gemma-4-26b-a4b-it` is the sparse/MoE variant (~4 B active parameters), so it is cheaper to serve
-and visibly less contended. The default model is now `gemini-3.5-flash-lite` (see "Default model
-change" above); `gemma-4-31b-it` can still be used for onboarding proposals if desired — **switch
-models on the Settings page** — no restart, no rebuild.
-
-## Operational conclusion for the demo
-
-Treat `gemma-4-31b-it` as **best-effort**. During one measurement window it answered roughly half
-the time; in a later window it answered not at all, returning 500/503/timeout through every retry.
-The product is designed for exactly this: heuristics always run first, the AI is a second opinion,
-and any suggestion still has to clear the reconstruction gate, the replay diff and human approval.
-
-Practical advice:
-- Do not put a live "Ask AI" call on the critical path of a timed demo. Scenario 5c should be shown
-  with a pre-captured suggestion, or with the fallback message, which is itself an honest
-  demonstration of the design.
-- For a more reliable cloud model, switch provider/model on the Settings page — no rebuild needed.
-- For guaranteed offline behaviour, use `provider=local` with a local model
-  (`ollama` is accepted as a legacy alias for `local`; the base URL is what distinguishes servers).
+AI output is a *proposal*. On the ASA 302013 template a model assigned `ip_a → src_endpoint.ip`,
+whereas for an **outbound** 302013 the `for` side is the remote party (spec §7.3). That is why every
+mapping must clear the reconstruction gate and human review before it is used.

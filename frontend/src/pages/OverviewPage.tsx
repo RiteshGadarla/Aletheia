@@ -5,7 +5,8 @@ import { Badge, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../comp
 import { api } from '../lib/api';
 import { usePoll } from '../lib/useAsync';
 import type { Overview } from '../lib/types';
-import { IconExport } from '../components/Icons';
+import { IconExport, IconExternal } from '../components/Icons';
+import { GrafanaLogo, grafanaOverviewUrl, useAlertingStatus } from '../lib/alerting';
 import {
   Donut, Finding, Gauge, Heatmap, Kpi, RankBars, Section, Timeline, actionName, bytesFmt, className, dur, findings, ocsfSevName,
 } from '../components/Insights';
@@ -123,15 +124,24 @@ const offsetText = (ms: number) => {
 export function OverviewPage() {
   const q = usePoll(() => api.overview(), 3000, []);
   const d = q.data;
+  const grafana = grafanaOverviewUrl(useAlertingStatus().status);
 
   return (
     <div className="stack">
       <PageHead
         title="Overview"
         right={
-          <Link to="/dashboard/export?tab=report" className="btn secondary sm flex align-center" style={{ gap: 4 }}>
-            <IconExport size={14} /> Export Report & Logs
-          </Link>
+          <div className="row-tight">
+            {grafana && (
+              <a href={grafana} target="_blank" rel="noopener noreferrer" className="btn btn-grafana"
+                title="The same overview in Grafana, over any time range, from Loki and Prometheus">
+                <GrafanaLogo size={18} />View in Grafana<IconExternal size={13} className="bg-ext" />
+              </a>
+            )}
+            <Link to="/dashboard/export?tab=report" className="btn secondary sm flex align-center" style={{ gap: 4 }}>
+              <IconExport size={14} /> Export Report & Logs
+            </Link>
+          </div>
         }
       >
         Live ingest across every connected source. Updates every 3 seconds.

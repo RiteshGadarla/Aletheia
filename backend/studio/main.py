@@ -25,6 +25,7 @@ from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
 from .core.models import Token
+from .core.settings import is_gemini_model
 from .derive.exact import derive_exact
 from .gate.reconstruction import run_gate
 from .llm.factory import origin_tag
@@ -49,8 +50,12 @@ VERIFY_PACKS = Path(os.environ.get(
 async def lifespan(_: FastAPI):
     """Start the raw-ingest pipeline, source connectors and the onboarding watcher."""
     st = get_state()
+    # Lineage must also know packs approved in Studio, which live only in the repo.
+    packs.registry().attach(
+        lambda: [r for r in get_state().repo.packs_list() if r.get("status") == "approved"])
     await st.pipeline.start()
     st.connectors.start_all()
+    export_api.restore_supply()
     watcher = asyncio.create_task(sources_api.auto_propose_loop())
     await st.alerting.start()
     yield
@@ -159,6 +164,8 @@ def get_settings() -> dict[str, Any]:
 @api.put("/settings/llm")
 def put_settings(update: LlmSettingsUpdate) -> dict[str, Any]:
     st = get_state()
+    if update.provider.strip().lower() == "gemini" and update.model and not is_gemini_model(update.model):
+        raise HTTPException(422, f"only Gemini models (gemini-*) are supported, not {update.model!r}")
     st.settings.set("llm.provider", update.provider)
     st.settings.set("llm.model", update.model)
     st.settings.set("llm.base_url", update.base_url)
@@ -426,7 +433,10 @@ def _epoch_ms(v: Any) -> float:
 
 
 # ------------------------------------------------------- stored template resolution
-_TPL_CACHE: dict[str, Any] = {"fingerprint": None, "index": {}}
+_TPL_CACHE: dict[str, Any] = {"fingerprint": None, "index": {}, "checked": 0.0}
+# Resolution runs once per event, so a bulk export or lineage page would otherwise pay one
+# ClickHouse round trip per row just to learn the table has not changed.
+_TPL_RECHECK_S = 2.0
 
 
 def _templates_index() -> dict[tuple[str, int], list[list[dict[str, Any]]]]:
@@ -436,6 +446,9 @@ def _templates_index() -> dict[tuple[str, int], list[list[dict[str, Any]]]]:
     column saying which. Callers therefore try each candidate and keep the one that actually
     reconstructs the event's bytes.
     """
+    if time.monotonic() - _TPL_CACHE["checked"] < _TPL_RECHECK_S:
+        return _TPL_CACHE["index"]
+    _TPL_CACHE["checked"] = time.monotonic()
     try:
         fp = (_ch("SELECT count() AS n FROM templates FORMAT JSON") or [{}])[0].get("n", 0)
     except Exception:                                               # noqa: BLE001
@@ -954,6 +967,9 @@ async def reset_settings() -> dict[str, Any]:
             st.supply_server.stop()
         except Exception:                                           # noqa: BLE001
             pass
+    for key in ("supply.enabled", "supply.host", "supply.port", "supply.format", "supply.source_id", "supply.allow",
+                "supply.mode", "supply.target"):
+        st.settings.unset(key)
 
     if hasattr(st, "chat_store") and st.chat_store:
         try:

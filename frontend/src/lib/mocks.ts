@@ -10,7 +10,7 @@ import type {
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, MappingProposal, NormalizedEvent,
   PackProposal, QuarantineCluster, ReplayDiff, SlotType, Token,
   AlertingStatus, AlertNotification, AlertOp, AlertPreview, AlertPreviewRequest, AlertRule, AlertRuleInput,
-  ContactPoint, ContactPointInput, NotificationPolicy, PolicyRoute, Sync,
+  ContactPoint, ContactPointInput, NotificationPolicy, PolicyRoute, Sync, SupplyConfigUpdate, SupplyStatus,
 } from './types';
 import { isCloudProvider } from './types';
 
@@ -183,7 +183,7 @@ interface MockState {
 
 const defaultSettings = (): LlmSettings => ({
   provider: 'gemini',
-  model: 'gemma-4-31b-it',
+  model: 'gemini-3.5-flash-lite',
   base_url: 'https://generativelanguage.googleapis.com/v1beta',
   send_samples: 'masked',
   api_key_last4: null,
@@ -241,10 +241,10 @@ const HEURISTIC_MAPPINGS: MappingProposal[] = [
 
 const AI_MAPPINGS: MappingProposal[] = HEURISTIC_MAPPINGS.map((m) =>
   m.slot === 'user'
-    ? { ...m, ocsf_path: 'user.name', confidence: 0.84, origin: 'ai:gemini/gemma-4-31b-it' as const, evidence: 'Literal "user " immediately precedes the slot; values look like account names (r.menon, a.iyer, svc_backup).' }
-    : { ...m, origin: 'ai:gemini/gemma-4-31b-it' as const },
+    ? { ...m, ocsf_path: 'user.name', confidence: 0.84, origin: 'ai:gemini/gemini-3.5-flash-lite' as const, evidence: 'Literal "user " immediately precedes the slot; values look like account names (r.menon, a.iyer, svc_backup).' }
+    : { ...m, origin: 'ai:gemini/gemini-3.5-flash-lite' as const },
 ).concat([
-  { slot: 'duration', ocsf_path: 'connection_info.uid', confidence: 0.41, origin: 'ai:gemini/gemma-4-31b-it', evidence: 'Low confidence: h:mm:ss shape; the model suggested reusing the connection id field, which the reviewer should reject.' },
+  { slot: 'duration', ocsf_path: 'connection_info.uid', confidence: 0.41, origin: 'ai:gemini/gemini-3.5-flash-lite', evidence: 'Low confidence: h:mm:ss shape; the model suggested reusing the connection id field, which the reviewer should reject.' },
 ]);
 
 const SLOT_SAMPLES = [
@@ -267,7 +267,7 @@ const SLOT_SAMPLES = [
   { slot: 'user', type: 'word' as SlotType, examples: ['r.menon', 'a.iyer', 'svc_backup'] },
 ];
 
-function proposal(origin: 'heuristic' | 'ai:gemini/gemma-4-31b-it'): PackProposal {
+function proposal(origin: 'heuristic' | 'ai:gemini/gemini-3.5-flash-lite'): PackProposal {
   return {
     proposal_id: origin === 'heuristic' ? 'pr_asa_302013_v5' : 'pr_asa_302013_v5_ai',
     cluster_id: 'cl_asa_302013_v2',
@@ -843,7 +843,7 @@ export const mockApi = {
     }
     state.settings = { ...s, usage: { ...s.usage, requests: s.usage.requests + 1, tokens: (s.usage.tokens ?? 0) + 2317 } };
     return delay(
-      { ok: true, proposal: { ...proposal('ai:gemini/gemma-4-31b-it'), cluster_id: clusterId }, provider: s.provider, model: s.model },
+      { ok: true, proposal: { ...proposal('ai:gemini/gemini-3.5-flash-lite'), cluster_id: clusterId }, provider: s.provider, model: s.model },
       900,
     );
   },
@@ -942,7 +942,7 @@ export const mockApi = {
     if (s.provider === 'gemini') {
       return delay({
         ...base, ok: true, latency_ms: 812, json_mode: 'schema' as const,
-        models: ['gemma-4-31b-it', 'gemini-2.5-flash', 'gemini-2.5-pro'], error: null,
+        models: ['gemini-3.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-pro'], error: null,
       }, 900);
     }
     if (s.provider === 'local') {
@@ -982,28 +982,39 @@ export const mockApi = {
   mockSupplyState: {
     active: true,
     enabled: true,
+    mode: 'listen',
+    target: '',
+    host: '127.0.0.1',
     port: 9099,
     log_type: 'raw',
     source_id: '',
+    allow: [],
     clients_count: 2,
+    clients: [
+      { addr: '127.0.0.1:52144', connected_at: Date.now() / 1000 - 1800, lines: 9120, bytes: 1120400, dropped: 0, queued: 0 },
+      { addr: '127.0.0.1:52210', connected_at: Date.now() / 1000 - 600, lines: 5700, bytes: 724620, dropped: 0, queued: 0 },
+    ],
     lines_sent: 14820,
     bytes_sent: 1845020,
+    dropped_lines: 0,
+    refused: 0,
     started_at: Date.now() / 1000 - 3600,
-  },
+    last_error: '',
+    bus: true,
+  } as SupplyStatus,
 
   async getSupplyStatus() {
     return delay(this.mockSupplyState, 200);
   },
 
-  async configureSupply(b: { enabled?: boolean; port?: number; log_type?: string; source_id?: string }) {
-    if (b.enabled !== undefined) {
-      this.mockSupplyState.enabled = b.enabled;
-      this.mockSupplyState.active = b.enabled;
+  async configureSupply(b: SupplyConfigUpdate) {
+    const { enabled, ...rest } = b;
+    Object.assign(this.mockSupplyState, rest);
+    if (enabled !== undefined) {
+      this.mockSupplyState.enabled = enabled;
+      this.mockSupplyState.active = enabled;
     }
-    if (b.port !== undefined) this.mockSupplyState.port = b.port;
-    if (b.log_type !== undefined) this.mockSupplyState.log_type = b.log_type;
-    if (b.source_id !== undefined) this.mockSupplyState.source_id = b.source_id;
-    return delay(this.mockSupplyState, 300);
+    return delay({ ...this.mockSupplyState }, 300);
   },
 };
 

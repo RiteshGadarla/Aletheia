@@ -1,0 +1,126 @@
+/* =========================================================================
+   Utilities
+   ========================================================================= */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s7);
+  min-width: 0;
+}
+
+.stack-sm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.row-tight {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.row-nowrap {
+  flex-wrap: nowrap;
+}
+
+.between {
+  justify-content: space-between;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.faint {
+  color: var(--text-faint);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.wrap {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Secondary prose inside a panel: one size, one colour, everywhere. */
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+
+.hint.err {
+  color: var(--bad);
+}
+
+/* =========================================================================
+   Page header — identical on every page: title, one-line purpose, optional action
+   ========================================================================= */
+
+.page-head-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+
+.page-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  max-width: 74ch;
+  flex: 1;
+  min-width: 0;
+}
+
+.page-head .sub {
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  line-height: var(--lh-loose);
+}
+
+.page-head-row>.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  margin-left: auto;
+}

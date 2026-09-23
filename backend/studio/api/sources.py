@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from ..ingest import onboarding
 from ..ingest.forward import backfill
 from ..ingest.sources import Source, TYPES, validate
+from ..llm.assistant import ask_ai
 from .state import get_state
 
 router = APIRouter()
@@ -186,11 +187,19 @@ class DecisionIn(BaseModel):
     feedback: str = ""
 
 
+def _ai_mapper() -> onboarding.AIMapper:
+    """The configured LLM maps each unique format; ask_ai never raises and reports why it declined."""
+    st = get_state()
+    cfg = st.settings.llm_config()
+    return lambda tpl, hint, feedback: ask_ai(tpl, cfg, counter=st.usage, class_hint=hint, feedback=feedback)
+
+
 def _run_proposal(s: Source, class_hint: int | None, feedback: str) -> dict[str, Any]:
     st = get_state()
     if not any(True for _ in st.raw.query(s.id, limit=1)):
         raise HTTPException(409, "no raw lines collected yet")
-    prop = onboarding.propose(st.raw, s.id, s.attempts, class_hint=class_hint, feedback=feedback, repo=st.repo)
+    prop = onboarding.propose(st.raw, s.id, s.attempts, class_hint=class_hint, feedback=feedback,
+                              repo=st.repo, ai=_ai_mapper())
     st.registry.update(s.id, state="review")
     return prop
 
@@ -216,27 +225,52 @@ def review(sid: str) -> dict[str, Any]:
 
 @router.post("/sources/{sid}/decision")
 async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
-    st, s = get_state(), _get(sid)
+    # Clustering, LLM calls, Postgres and bus writes are blocking: run them in threads so one
+    # decision never freezes every other request (the UI polls all of them).
+    _get(sid)
     actor = body.approver.strip()
     if not actor:
         raise HTTPException(422, "a named human approver is required")
     if body.action == "reject":
-        st.registry.update(sid, state="rejected")
-        st.registry.event(sid, "rejected", actor, {"reason": body.reason})
-        st.repo.audit(actor, "source.reject", sid, {"reason": body.reason})
-        return {"source": _view(_get(sid))}
+        return await asyncio.to_thread(_reject, sid, actor, body)
     if body.action == "retry":
-        st.registry.update(sid, attempts=s.attempts + 1)
-        st.registry.event(sid, "retry", actor, {"feedback": body.feedback, "class_hint": body.class_hint})
-        prop = _run_proposal(_get(sid), body.class_hint, body.feedback)
-        return {"source": _view(_get(sid)), "proposal": onboarding.public(prop)}
+        return await asyncio.to_thread(_retry, sid, actor, body)
     if body.action != "approve":
         raise HTTPException(422, "action must be approve, reject or retry")
+    st = get_state()
+    rows, version, prop = await asyncio.to_thread(_approve_packs, sid, actor, body)
+    if st.forwarder.enabled:
+        await asyncio.sleep(2.0)                     # let the worker swap in the new parser first
+    approved_ns = await asyncio.to_thread(_approve_finish, sid, actor, rows, version, prop)
+    fwd = await asyncio.to_thread(backfill, st.raw, st.forwarder, sid, 200_000, approved_ns)
+    return {"source": _view(_get(sid)), "packs": [r["pack"] for r in rows], "backfilled": fwd,
+            "bus": st.forwarder.enabled}
+
+
+def _reject(sid: str, actor: str, body: DecisionIn) -> dict[str, Any]:
+    st = get_state()
+    _get(sid)
+    st.registry.update(sid, state="rejected")
+    st.registry.event(sid, "rejected", actor, {"reason": body.reason})
+    st.repo.audit(actor, "source.reject", sid, {"reason": body.reason})
+    return {"source": _view(_get(sid))}
+
+
+def _retry(sid: str, actor: str, body: DecisionIn) -> dict[str, Any]:
+    st, s = get_state(), _get(sid)
+    st.registry.update(sid, attempts=s.attempts + 1)
+    st.registry.event(sid, "retry", actor, {"feedback": body.feedback, "class_hint": body.class_hint})
+    prop = _run_proposal(_get(sid), body.class_hint, body.feedback)
+    return {"source": _view(_get(sid)), "proposal": onboarding.public(prop)}
+
+
+def _approve_packs(sid: str, actor: str, body: DecisionIn) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
+    st, s = get_state(), _get(sid)
     prop = onboarding.get_proposal(sid, st.repo, st.raw)
     if not prop:
         raise HTTPException(409, "nothing to approve: generate a proposal first")
     if s.state == "collecting":
-        s = st.registry.update(sid, state="review")
+        st.registry.update(sid, state="review")
     chosen = [c for c in prop["clusters"] if not body.cluster_ids or c["cluster_id"] in body.cluster_ids]
     if not chosen:
         raise HTTPException(422, "no matching clusters")
@@ -248,16 +282,18 @@ async def decide(sid: str, body: DecisionIn) -> dict[str, Any]:
     for r in everything:
         st.repo.pack_upsert(r)
     st.bus.publish_pack_approved(rows[-1]["pack"], version, rows[-1]["checksum"], sid)
-    if st.forwarder.enabled:
-        await asyncio.sleep(2.0)                     # let the worker swap in the new parser first
+    return rows, version, prop
+
+
+def _approve_finish(sid: str, actor: str, rows: list[dict[str, Any]], version: int,
+                    prop: dict[str, Any]) -> int:
+    st = get_state()
     approved_ns = time.time_ns()
     st.registry.update(sid, state="approved", approved_ns=approved_ns)
     st.registry.event(sid, "approved", actor, {"packs": [r["pack"] for r in rows], "version": version})
     st.repo.audit(actor, "source.approve", sid, {"packs": [r["pack"] for r in rows], "version": version})
     onboarding.save_proposal(sid, prop, st.repo)
-    fwd = await asyncio.to_thread(backfill, st.raw, st.forwarder, sid, 200_000, approved_ns)
-    return {"source": _view(_get(sid)), "packs": [r["pack"] for r in rows], "backfilled": fwd,
-            "bus": st.forwarder.enabled}
+    return approved_ns
 
 
 async def auto_propose_loop() -> None:
@@ -267,7 +303,8 @@ async def auto_propose_loop() -> None:
         st = get_state()
         for s in st.registry.list():
             if s.state == "collecting":
-                prop = onboarding.get_proposal(s.id, st.repo, st.raw)
+                # Postgres and pack reconstruction block; keep them off the event loop.
+                prop = await asyncio.to_thread(onboarding.get_proposal, s.id, st.repo, st.raw)
                 if prop:
                     st.registry.update(s.id, state="review")
                 else:

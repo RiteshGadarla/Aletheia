@@ -68,7 +68,7 @@ export function LineageModal({ eventUid, onClose }: LineageModalProps) {
             </div>
           </div>
           <div className="row-tight" style={{ gap: 8 }}>
-            <GrafanaEventLink eventUid={eventUid} label="Open in Grafana" />
+            <GrafanaEventLink eventUid={eventUid} event={lineage.data?.event?.aletheia} label="Open in Grafana" />
             {d && (
               <button
                 type="button"

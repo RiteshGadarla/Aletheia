@@ -24,16 +24,30 @@ SERVICES = {
 }
 
 
-async def start(name: str, seed: int, host: str) -> None:
+async def start(name: str, seed: int, host: str, live: set[str], done: asyncio.Event) -> None:
     make, port, ctl, rate, transport = SERVICES[name]
     rate = float(os.environ.get("RATE", rate))
     feed = Feed(name, make(seed), rate, seed + sum(map(ord, name)))
-    asyncio.create_task(feed.run())
-    await asyncio.start_server(http_handler(feed), host, ctl)
+    tasks = [asyncio.create_task(feed.run())]
+    servers = [await asyncio.start_server(http_handler(feed), host, ctl)]
     if transport == "tcp":
-        await asyncio.start_server(tcp_handler(feed), host, port)
+        servers.append(await asyncio.start_server(tcp_handler(feed), host, port))
     if transport == "udp" and os.environ.get("PUSH_TARGET"):
-        asyncio.create_task(udp_pusher(feed, os.environ["PUSH_TARGET"]))
+        tasks.append(asyncio.create_task(udp_pusher(feed, os.environ["PUSH_TARGET"])))
+
+    def shutdown() -> None:
+        # Studio's Stop button: close this service's ports; the process exits once none are left.
+        for srv in servers:
+            srv.close()
+        for t in tasks:
+            t.cancel()
+        live.discard(name)
+        print(f"[{name}] stopped", flush=True)
+        if not live:
+            done.set()
+
+    feed.on_shutdown = shutdown
+    live.add(name)
     print(f"[{name}] data={transport}:{port} http:{ctl} eps~{rate}", flush=True)
 
 
@@ -43,9 +57,11 @@ async def main() -> None:
     ap.add_argument("--seed", type=int, default=int(os.environ.get("SEED", 1337)))
     ap.add_argument("--host", default="0.0.0.0")
     a = ap.parse_args()
+    live: set[str] = set()
+    done = asyncio.Event()
     for n in (SERVICES if a.type == "all" else [a.type]):
-        await start(n, a.seed, a.host)
-    await asyncio.Event().wait()
+        await start(n, a.seed, a.host, live, done)
+    await done.wait()
 
 
 if __name__ == "__main__":

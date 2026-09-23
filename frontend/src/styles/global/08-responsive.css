@@ -1,0 +1,161 @@
+/* =========================================================================
+   Responsive: laptop down to phone. No horizontal page scroll anywhere.
+   ========================================================================= */
+
+@media (max-width: 1400px) {
+  .page {
+    padding: var(--s6) var(--s5) var(--s8);
+  }
+
+  .banner {
+    padding-left: var(--s5);
+    padding-right: var(--s5);
+  }
+}
+
+@media (max-width: 1180px) {
+  .lineage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .grid-side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .demo-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pick-list {
+    max-height: 340px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mobile-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: var(--s2) var(--s4);
+    min-height: var(--header-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .mobile-bar .name {
+    font-weight: var(--fw-semi);
+    font-size: var(--fs-lg);
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    transform: translateX(-100%);
+    transition: transform var(--t-med);
+    box-shadow: var(--shadow-lg);
+    height: 100dvh;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: var(--scrim);
+    border: none;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar {
+      transition: none;
+    }
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: var(--s5) var(--s4) var(--s7);
+  }
+
+  .banner {
+    padding-left: var(--s4);
+    padding-right: var(--s4);
+  }
+
+  h1 {
+    font-size: var(--fs-xl);
+  }
+
+  .filter-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .filter-bar .search {
+    grid-column: span 1;
+  }
+
+  .panel>header {
+    padding: var(--s3) var(--s4);
+  }
+
+  .panel>.panel-body {
+    padding: var(--s4);
+  }
+
+  .pager {
+    gap: var(--s3);
+  }
+
+  .pager .controls {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .meta-list {
+    gap: var(--s3) var(--s5);
+  }
+
+  .proof .hash .full {
+    max-width: 22ch;
+  }
+}
+
+/* =========================================================================
+   Sidebar brand link (clickable logo back to landing page)
+   ========================================================================= */
+
+.sidebar-brand-link {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  text-decoration: none;
+  color: inherit;
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-brand-link:hover .name {
+  color: var(--accent);
+}

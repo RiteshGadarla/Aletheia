@@ -1,9 +1,7 @@
 """Gemini adapter via the official `google-genai` SDK — default provider (gemini-3.5-flash-lite).
 
-Replaces a hand-rolled `httpx` client that worked around gemma-4-31b-it's quirks (rejected
-`systemInstruction`, thought parts mixed into `content.parts`). Gemma is no longer used by this
-app (too slow and unreliable for a chat agent — see docs/llm-provider-notes.md), and measured
-against the SDK directly (2026-09):
+Only `gemini-*` models are supported (core/settings.py enforces it). Measured against the SDK
+directly (2026-09):
  1. `response.text` already excludes thinking parts; no manual part-filtering needed.
  2. `system_instruction` works normally on `gemini-*` models.
  3. `response_mime_type="application/json"` + `response_schema=<dict>` still works, fed the same
@@ -29,7 +27,8 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from ..core.models import ConnTest
-from .base import LLMError, redact, with_retry
+from ..core.settings import is_gemini_model
+from .base import LLMError, parse_json_text, redact, with_retry
 from .schema import to_gemini_schema
 
 log = logging.getLogger("studio.llm.gemini")
@@ -114,7 +113,7 @@ class GeminiProvider:
                     continue          # thinking consumed the whole budget
                 raise LLMError(f"gemini: no text in response (finishReason={finish})")
             try:
-                return json.loads(text)
+                return parse_json_text(text)       # tolerate a code fence or trailing prose
             except json.JSONDecodeError as exc:
                 if truncated and not widen:
                     continue          # JSON cut mid-object; one wider retry
@@ -140,7 +139,7 @@ class GeminiProvider:
             return ConnTest(ok=False, error=f"gemini: {redact(str(exc), [self._key])}", provider=self.name,
                             model=self.model, latency_ms=latency)
         latency = int((time.monotonic() - t0) * 1000)
-        names = sorted(m.name.split("/")[-1] for m in models if m.name)
+        names = sorted(n for m in models if m.name and is_gemini_model(n := m.name.split("/")[-1]))
         return ConnTest(ok=True, latency_ms=latency, json_mode="response_schema", models=names,
                         provider=self.name, model=self.model)
 
@@ -148,7 +147,7 @@ class GeminiProvider:
         try:
             models = list(self._client.models.list(config={"page_size": 200}))
             names = [m.name.split("/")[-1] for m in models if m.name]
-            return sorted(n for n in names if n)
+            return sorted(n for n in names if is_gemini_model(n))      # Gemini only
         except Exception as exc:                                                     # noqa: BLE001
             log.info("model listing unavailable: %s", type(exc).__name__)
             return []

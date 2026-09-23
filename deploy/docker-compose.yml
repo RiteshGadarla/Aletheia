@@ -8,7 +8,7 @@ x-restart: &restart
 x-llm-env: &llm-env
   # CONTRACTS §9 — env is only a *default*; the settings table (set from the UI) wins.
   ALETHEIA_LLM_PROVIDER: ${ALETHEIA_LLM_PROVIDER:-gemini}
-  ALETHEIA_LLM_MODEL: ${ALETHEIA_LLM_MODEL:-gemma-4-31b-it}
+  ALETHEIA_LLM_MODEL: ${ALETHEIA_LLM_MODEL:-gemini-3.5-flash-lite}
   ALETHEIA_LLM_BASE_URL: ${ALETHEIA_LLM_BASE_URL:-}
   ALETHEIA_LLM_API_KEY_FILE: ${ALETHEIA_LLM_API_KEY_FILE:-}
   ALETHEIA_LLM_SEND_SAMPLES: ${ALETHEIA_LLM_SEND_SAMPLES:-masked}

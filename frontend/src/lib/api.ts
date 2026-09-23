@@ -7,7 +7,7 @@ import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, PackProposal, PackVerify,
   Overview, QuarantineCluster, RawLine, SampleList, SampleServer, ReplayDiff, SourceInfo, SourceList, SourceProposal,
-  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate, ChatMessage, ChatReply,
+  ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate, DownloadResult, ChatMessage, ChatReply,
   ChatSessionSummary, ChatSession, ChatExportFormat,
   AlertingStatus, AlertRule, AlertRuleInput, AlertPreview, AlertPreviewRequest, ContactPoint, ContactPointInput,
   NotificationPolicy, Sync, AlertNotification,
@@ -177,7 +177,29 @@ export const api = {
     `${BASE}/export/report${qs({ format: p.format, source_id: p.source_id, window_s: p.window_s, categories: p.categories })}`,
 
   exportLogsUrl: (p: ExportLogsParams = {}): string =>
-    `${BASE}/export/logs${qs({ log_type: p.log_type, format: p.format, source_id: p.source_id, severity: p.severity, q: p.q, limit: p.limit })}`,
+    `${BASE}/export/logs${qs({ log_type: p.log_type, format: p.format, source_id: p.source_id, severity: p.severity, q: p.q, limit: p.limit, since_s: p.since_s || undefined })}`,
+
+  /** Fetch an export and save it; a failed export throws its reason instead of opening an error page. */
+  download: async (url: string): Promise<DownloadResult> => {
+    const res = await fetch(url);
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { detail = String((await res.json()).detail ?? detail); } catch { /* not JSON */ }
+      throw new ApiError(detail, res.status);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition') ?? '';
+    const filename = /filename="([^"]+)"/.exec(cd)?.[1] ?? 'aletheia-export';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    const count = res.headers.get('x-aletheia-record-count');
+    return { filename, bytes: blob.size, count: count === null ? null : Number(count), sha256: res.headers.get('x-aletheia-sha256') };
+  },
 
   getSupplyStatus: (): Promise<SupplyStatus> =>
     USE_MOCKS ? mockApi.getSupplyStatus() : http('/export/supply/status'),

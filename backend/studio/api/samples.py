@@ -112,8 +112,17 @@ def stop_sample(sid: str) -> dict[str, Any]:
     _known(sid)
     p = _PROCS.pop(sid, None)
     if p is None or p.poll() is not None:
-        if _up(SAMPLES[sid]["ctl"]):
-            raise HTTPException(409, "started outside Studio (make gens or a manual run); stop it there")
+        # Not ours (an earlier Studio run, make gens, or a manual run): ask the generator to shut itself down.
+        ctl = SAMPLES[sid]["ctl"]
+        if _up(ctl):
+            try:
+                httpx.post(f"http://{HOST}:{ctl}/shutdown", timeout=2).raise_for_status()
+            except httpx.HTTPError as e:
+                raise HTTPException(409, "this generator predates remote stop; restart it or stop it where it runs") from e
+            for _ in range(30):
+                if not _up(ctl):
+                    break
+                time.sleep(0.1)
         return _view(sid)
     p.terminate()
     try:

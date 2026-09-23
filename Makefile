@@ -28,7 +28,7 @@ export PATH := $(GOROOT_LOCAL)/bin:$(PATH)
 .PHONY: help doctor setup venv node-deps secrets check test verify-packs engine engine-test \
         studio-test frontend-check dev studio frontend lite cli bench-storage demo up down \
         logs install-go clean distclean services services-down gens gens-down bench-engine worker services-logs run topics \
-        worker-smoke seal bench-storage-full
+        worker-smoke seal bench-storage-full seed
 
 ## ---------------------------------------------------------------- help / doctor
 
@@ -54,6 +54,7 @@ help:
 	@echo "  frontend        frontend dev server only"
 	@echo "  lite            dockerless end-to-end over files"
 	@echo "  cli ARGS='...'  run the aletheia CLI, e.g. ARGS='test-pack --help'"
+	@echo "  seed            reset DB, set Gemini as LLM, connect 2 demo servers, seed alerts"
 	@echo
 	@echo "  services        start ONLY the datastores in Docker (CH, PG, Redpanda, Loki, Grafana, Prometheus)"
 	@echo "  run             services in Docker + engine/studio/frontend natively"
@@ -229,6 +230,15 @@ seal: engine
 
 demo:
 	@python3 $(ROOT)/demo/scenarios.py $(ARGS)
+
+# Fresh-demo reset: wipes postgres/clickhouse/redpanda/loki, loads the Gemini key from the local
+# secrets file (never committed), sets it as the LLM provider, turns on two generator servers and
+# registers them as sources, and seeds+syncs alert rules. Run before `make dev`, or restart Studio
+# after so it picks up the new sources. Pass ARGS=--no-reset to skip the wipe.
+seed:
+	@[ -d $(VENV) ] || { echo "run make setup first"; exit 1; }
+	@[ -f $(SECRETS) ] || { echo "run make secrets first, then add your Gemini key to $(SECRETS)"; exit 1; }
+	cd $(ROOT)/backend && $(VENV)/bin/python -m studio.seed_demo $(ARGS)
 
 ## ---------------------------------------------------------------- backing services
 

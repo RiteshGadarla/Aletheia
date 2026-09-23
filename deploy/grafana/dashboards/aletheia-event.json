@@ -1,0 +1,478 @@
+{
+  "uid": "aletheia-event",
+  "title": "Aletheia — Event",
+  "description": "One event: its fields, raw line and normalized form, and what its source sent around it. Deep link: /d/aletheia-event/aletheia-event?var-event_uid=<uid>&var-source_id=<id>&var-raw_sha256=<hex>&from=<ms>&to=<ms> (CONTRACTS §13.5).",
+  "tags": [
+    "aletheia",
+    "logs"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "graphTooltip": 1,
+  "links": [
+    {
+      "type": "link",
+      "title": "All logs",
+      "url": "/d/aletheia-logs/aletheia-logs?var-source_id=${source_id}",
+      "keepTime": true,
+      "icon": "doc",
+      "targetBlank": false,
+      "includeVars": false,
+      "tags": []
+    },
+    {
+      "type": "dashboards",
+      "tags": [
+        "aletheia"
+      ],
+      "asDropdown": true,
+      "title": "Aletheia",
+      "includeVars": false,
+      "keepTime": true,
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "event_uid",
+        "label": "event_uid",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": []
+      },
+      {
+        "name": "source_id",
+        "label": "Source",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "aletheia-loki"
+        },
+        "query": {
+          "type": 1,
+          "label": "source_id",
+          "stream": "",
+          "refId": "LokiVariableQueryEditor-VariableQuery"
+        },
+        "definition": "label_values(source_id)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": false,
+        "allValue": ".+",
+        "sort": 1,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": []
+      },
+      {
+        "name": "raw_sha256",
+        "label": "raw_sha256",
+        "type": "textbox",
+        "query": "",
+        "hide": 2,
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "name": "This event",
+        "enable": true,
+        "iconColor": "red",
+        "datasource": {
+          "type": "loki",
+          "uid": "aletheia-loki"
+        },
+        "expr": "{source_id=~\"$source_id\"} | event_uid=\"$event_uid\"",
+        "instant": false,
+        "titleFormat": "This event",
+        "textFormat": "$event_uid",
+        "target": {
+          "refId": "Anno",
+          "expr": "{source_id=~\"$source_id\"} | event_uid=\"$event_uid\"",
+          "queryType": "range"
+        }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Event fields",
+      "description": "Every field of the normalized OCSF event, flattened (aletheia_* is the provenance block).",
+      "datasource": {
+        "type": "loki",
+        "uid": "aletheia-loki"
+      },
+      "gridPos": {
+        "h": 20,
+        "w": 10,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "aletheia-loki"
+          },
+          "expr": "{source_id=~\"$source_id\"} | event_uid=\"$event_uid\" | json",
+          "queryType": "range",
+          "maxLines": 1
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "json",
+            "replace": true,
+            "keepTime": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "detected_level": true,
+              "service_name": true
+            }
+          }
+        },
+        {
+          "id": "transpose",
+          "options": {
+            "firstFieldName": "Field",
+            "restFieldsName": "Value"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Field"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "inspect": true,
+            "cellOptions": {
+              "type": "auto",
+              "wrapText": true
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": false,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Raw line, exactly as received",
+      "description": "From the Studio raw store, matched on the SHA-256 of its bytes: the same hash the event carries as aletheia.raw_sha256.",
+      "datasource": {
+        "type": "loki",
+        "uid": "aletheia-loki"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 14,
+        "x": 10,
+        "y": 0
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": true,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "aletheia-loki"
+          },
+          "expr": "{source=~\"$source_id\"} | sha256=\"$raw_sha256\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "Normalized OCSF event",
+      "description": "The event as the engine published it (Redpanda `normalized` → Vector → Loki). Expand the line for its structured metadata.",
+      "datasource": {
+        "type": "loki",
+        "uid": "aletheia-loki"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 14,
+        "x": 10,
+        "y": 6
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": true,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "aletheia-loki"
+          },
+          "expr": "{source_id=~\"$source_id\"} | event_uid=\"$event_uid\"",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Around it: $source_id in the selected time range",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Events from $source_id by parse status",
+      "description": "The red marker is this event.",
+      "datasource": {
+        "type": "loki",
+        "uid": "aletheia-loki"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 1,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "full"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "partial"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "raw_only"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "aletheia-loki"
+          },
+          "expr": "sum by (parse_status) (count_over_time({source_id=~\"$source_id\"} [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{parse_status}}"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "logs",
+      "title": "Raw lines from $source_id",
+      "description": "Everything the source sent in the selected range, verbatim.",
+      "datasource": {
+        "type": "loki",
+        "uid": "aletheia-loki"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "aletheia-loki"
+          },
+          "expr": "{source=~\"$source_id\"}",
+          "queryType": "range"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "logs",
+      "title": "Normalized events from $source_id",
+      "description": "The same range after normalization.",
+      "datasource": {
+        "type": "loki",
+        "uid": "aletheia-loki"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "aletheia-loki"
+          },
+          "expr": "{source_id=~\"$source_id\"}",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}

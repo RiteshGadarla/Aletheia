@@ -4,10 +4,10 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useOutletContext } from 'react-router-dom';
 import { ErrorState } from '../components/Bits';
-import { IconAlert, IconBell, IconExternal, IconRefresh } from '../components/Icons';
+import { IconAlert, IconBell, IconRefresh } from '../components/Icons';
 import { api, errMessage } from '../lib/api';
 import {
-  ago, countRoutes, grafanaAlertingUrl, IconRoute, IconSend, refreshAlertingStatus, setAlertingStatus, useAlertingStatus,
+  ago, countRoutes, GrafanaLogo, grafanaAlertingUrl, IconRoute, IconSend, refreshAlertingStatus, setAlertingStatus, useAlertingStatus,
 } from '../lib/alerting';
 import { useNotify } from '../lib/notify';
 import type { AlertingStatus } from '../lib/types';
@@ -87,7 +87,7 @@ function StatusStrip({ s, onSynced }: { s: AlertingStatus; onSynced: () => void 
           </button>
           {grafana && (
             <a className="btn ghost alg-conn-btn" href={grafanaAlertingUrl(s)} target="_blank" rel="noopener noreferrer">
-              <IconExternal size={13} />Open Grafana alerting
+              <GrafanaLogo size={14} />Open Grafana alerting
             </a>
           )}
         </span>

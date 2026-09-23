@@ -36,8 +36,8 @@ datasources:
         - name: event_logs
           matcherType: label
           matcherRegex: event_uid
-          url: /d/aletheia-logs/aletheia-logs?var-event_uid=$${__value.raw}
-          urlDisplayLabel: Log lines for this event
+          url: /d/aletheia-event/aletheia-event?var-event_uid=$${__value.raw}
+          urlDisplayLabel: Event details
     editable: false
 
   - name: Prometheus

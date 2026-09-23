@@ -12,7 +12,7 @@ import { Modal } from '../components/Modal';
 import { useAlertingVersion } from './AlertingPage';
 import { api, errMessage } from '../lib/api';
 import {
-  ago, conditionSentence, conditionText, fmtValue, grafanaLogsUrl, grafanaRuleUrl, IconBolt, IconEdit, IconFolder,
+  ago, conditionSentence, conditionText, fmtValue, GrafanaLogo, grafanaLogsUrl, grafanaRuleUrl, IconBolt, IconEdit, IconFolder,
   IconPause, IconPlay, isDuration, OP_SYMBOL, refreshAlertingStatus, TemplateText, useAlertingStatus,
 } from '../lib/alerting';
 import { useNotify } from '../lib/notify';
@@ -318,7 +318,7 @@ function RuleDetail({ r, status, onEdit, onClose }: {
         </div>
         <div className="alr-links">
           <button type="button" className="btn-sm" onClick={onEdit}><IconEdit size={13} />Edit rule</button>
-          {view && <a className="btn btn-sm" href={view} target="_blank" rel="noopener noreferrer"><IconExternal size={13} />View in Grafana</a>}
+          {view && <a className="btn btn-sm" href={view} target="_blank" rel="noopener noreferrer"><GrafanaLogo size={14} />View in Grafana</a>}
           {logs && <a className="btn btn-sm" href={logs} target="_blank" rel="noopener noreferrer"><IconExternal size={13} />Explore logs</a>}
         </div>
       </div>

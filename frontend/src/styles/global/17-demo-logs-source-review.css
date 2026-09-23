@@ -1,0 +1,344 @@
+/* ---- Demo live logs popup ---- */
+.live-logs {
+  height: 55vh;
+  overflow: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--s3);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-xs);
+}
+
+.live-logs .ll {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 1px 0 1px var(--s2);
+  border-left: 2px solid var(--sev-info);
+  color: var(--text);
+}
+
+.live-logs .ll-notice {
+  border-left-color: var(--sev-notice);
+}
+
+.live-logs .ll-warn {
+  border-left-color: var(--sev-warn);
+}
+
+.live-logs .ll-risk {
+  border-left-color: var(--sev-risk);
+}
+
+/* pattern walkthrough (Sources review) */
+.wk-h {
+  margin: 0 0 var(--s2);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wk-step {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+
+.wk-line,
+.wk-json {
+  margin: 0;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-hover);
+  font-family: var(--mono, monospace);
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.wk-json {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.wk-line mark {
+  background: color-mix(in srgb, var(--h) 22%, transparent);
+  color: inherit;
+  border-bottom: 2px solid var(--h);
+  border-radius: 3px;
+  padding: 1px 2px;
+  cursor: default;
+}
+
+.wk-line mark.hot {
+  background: color-mix(in srgb, var(--h) 50%, transparent);
+}
+
+.wk-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+tr.wk-hot td {
+  background: var(--surface-hover);
+}
+
+.modal-scrim:has(.modal.wide) {
+  padding: 3vh var(--s4);
+}
+
+.modal.wide {
+  max-width: min(1400px, 96vw);
+  max-height: 94vh;
+}
+
+.modal.wide .modal-body {
+  padding: var(--s6, 28px);
+}
+
+.wk-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: var(--s5);
+  padding: var(--s5);
+}
+
+.wk-nav {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--border);
+}
+
+.wk-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: var(--s4);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.wk-card:nth-of-type(1) {
+  grid-column: 1 / -1;
+}
+
+.wk-card:nth-of-type(3) {
+  grid-row: 3;
+  grid-column: 2;
+}
+
+.wk-card:nth-of-type(2) {
+  grid-row: 3;
+  grid-column: 1;
+}
+
+.wk-line {
+  font-size: 14px;
+  line-height: 2;
+  padding: var(--s4);
+}
+
+.wk-json {
+  max-height: 380px;
+}
+
+.wk-body>p {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1000px) {
+  .wk-body {
+    grid-template-columns: 1fr;
+  }
+
+  .wk-card:nth-of-type(n) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+/* compact review popup */
+.modal-scrim:has(.modal.wide) {
+  padding: 1.5vh var(--s4);
+}
+
+.modal.wide {
+  max-height: 97vh;
+}
+
+.modal.wide .modal-head {
+  padding: var(--s2) var(--s4);
+}
+
+.modal.wide .modal-head h2 {
+  font-size: 16px;
+}
+
+.modal.wide .modal-body {
+  padding: var(--s3) var(--s4);
+}
+
+.modal.wide .tabs {
+  margin-bottom: var(--s2);
+}
+
+.modal.wide .tabs button {
+  padding: var(--s1) var(--s3);
+}
+
+.wk-body {
+  gap: var(--s3);
+  padding: var(--s3);
+}
+
+.wk-nav {
+  padding-bottom: var(--s2);
+}
+
+.wk-card {
+  padding: var(--s3);
+}
+
+.wk-h {
+  margin-bottom: var(--s1);
+}
+
+.wk-line {
+  padding: var(--s2) var(--s3);
+  line-height: 1.8;
+  max-height: 110px;
+  overflow: auto;
+}
+
+.wk-json {
+  max-height: 300px;
+}
+
+.modal.wide .modal-head .grow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.modal.wide .modal-head .hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* same popup size on every tab */
+.modal.wide {
+  height: 97vh;
+}
+
+.modal.wide .table-scroll {
+  max-height: none !important;
+}
+
+/* details tab */
+.modal.wide {
+  height: 97vh;
+  min-height: 97vh;
+}
+
+.dt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.dt-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s3);
+}
+
+.dt-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s4);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-hover);
+}
+
+.dt-stat b {
+  font-size: 26px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-k {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+}
+
+.dt-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s4);
+  align-items: start;
+}
+
+.dt-hist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.dt-hist li {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-start;
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--border);
+}
+
+.dt-hist li:last-child {
+  border: 0;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .dt-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* identical popup width on every tab (the scrim is a grid, so width:100% shrank to content) */
+.modal.wide {
+  width: min(1400px, 96vw);
+  max-width: none;
+}
+
+.dt-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .dt-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

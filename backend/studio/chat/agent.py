@@ -17,6 +17,7 @@ from typing import Any
 
 from ..api.state import get_state
 from ..llm.base import LLMError
+from ..core.settings import is_gemini_model
 from ..llm.factory import build_provider, origin_tag
 from ..llm.limits import RateLimited
 from .guard import GuardError, MAX_LIMIT, validate_sql
@@ -25,9 +26,7 @@ log = logging.getLogger("studio.chat")
 
 # Lyra makes several sequential calls per question. llm.chat_model can point it at a different
 # model than the rest of the Studio; unset, it uses whatever provider/model Settings has (default
-# gemini-3.5-flash-lite — see core/settings.py). Gemma is not used here: it was too slow (30-56s
-# per call) and too unreliable (~50% failure rate, docs/llm-provider-notes.md) for a chat agent
-# that makes several calls per turn.
+# gemini-3.5-flash-lite — see core/settings.py). Only Gemini models are supported.
 
 MAX_STEPS, MAX_HISTORY, MAX_ROWS_TO_LLM, MAX_CELL = 5, 20, 30, 120
 
@@ -129,7 +128,7 @@ def chat_stream_events(messages: list[dict[str, str]]):
         yield {"type": "done", "available": False, "answer": "No AI provider is configured. Set one in Settings so I can help.", "blocks": []}
         return
     override = str(st.settings.get("llm.chat_model") or "").strip()
-    if override:
+    if override and (cfg.provider != "gemini" or is_gemini_model(override)):
         cfg = dataclasses.replace(cfg, model=override, max_output_tokens=min(cfg.max_output_tokens, 4096))
 
     try:
@@ -189,7 +188,7 @@ def chat(messages: list[dict[str, str]]) -> dict[str, Any]:
     if (cfg.provider or "none") == "none":
         return {"available": False, "answer": "No AI provider is configured. Set one in Settings so I can help.", "blocks": []}
     override = str(st.settings.get("llm.chat_model") or "").strip()
-    if override:
+    if override and (cfg.provider != "gemini" or is_gemini_model(override)):
         cfg = dataclasses.replace(cfg, model=override, max_output_tokens=min(cfg.max_output_tokens, 4096))
     try:
         provider = build_provider(cfg)

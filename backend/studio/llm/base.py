@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import random
+import re
 import time
 from typing import Any, Callable, Protocol
 
@@ -18,6 +20,30 @@ log = logging.getLogger("studio.llm")
 MAX_ATTEMPTS = 4
 BASE_BACKOFF_S = 1.0
 RETRY_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+# Rate limits are per-minute windows: a 1-8s backoff cannot outlast one, so 429 waits longer.
+RATE_LIMIT_BACKOFF_S = 20.0
+MAX_RATE_WAIT_S = 60.0
+_RETRY_DELAY = re.compile(r"retryDelay'?\"?\s*:\s*'?\"?(\d+(?:\.\d+)?)s")
+_FENCE = re.compile(r"^```[a-zA-Z]*\s*|\s*```\s*$")
+
+
+def parse_json_text(text: str) -> Any:
+    """JSON from a model reply that may wrap it in a code fence or trail prose after it."""
+    t = _FENCE.sub("", (text or "").strip()).strip()
+    try:
+        return json.loads(t)
+    except json.JSONDecodeError:
+        start = min((i for i in (t.find("{"), t.find("[")) if i >= 0), default=-1)
+        if start < 0:
+            raise
+        return json.JSONDecoder().raw_decode(t[start:])[0]
+
+
+def _rate_wait(exc: Exception, attempt: int) -> float:
+    """The server's RetryInfo delay when it gives one, else a growing per-minute-sized wait."""
+    m = _RETRY_DELAY.search(str(getattr(exc, "details", "") or exc))
+    wait = float(m.group(1)) if m else RATE_LIMIT_BACKOFF_S * attempt
+    return min(wait + random.uniform(0, 1), MAX_RATE_WAIT_S)
 
 
 class LLMError(RuntimeError):
@@ -65,6 +91,9 @@ def with_retry(call: Callable[[int], Any], *, what: str, secrets: list[str],
                 raise LLMError(f"{what}: HTTP {status}: {body}", attempts=attempt,
                                status=status) from exc
             log.warning("%s: HTTP %s on attempt %d/%d", what, status, attempt, attempts)
+            if status == 429 and attempt < attempts:
+                sleep(_rate_wait(exc, attempt))
+                continue
         except httpx.HTTPStatusError as exc:                  # OpenAI-compatible providers
             status = exc.response.status_code
             last = exc
@@ -73,6 +102,9 @@ def with_retry(call: Callable[[int], Any], *, what: str, secrets: list[str],
                 raise LLMError(f"{what}: HTTP {status}: {body}", attempts=attempt,
                                status=status) from exc
             log.warning("%s: HTTP %d on attempt %d/%d", what, status, attempt, attempts)
+            if status == 429 and attempt < attempts:
+                sleep(_rate_wait(exc, attempt))
+                continue
         except (httpx.TimeoutException, httpx.TransportError) as exc:
             last = exc
             log.warning("%s: %s on attempt %d/%d", what, type(exc).__name__, attempt, attempts)
@@ -83,5 +115,6 @@ def with_retry(call: Callable[[int], Any], *, what: str, secrets: list[str],
         status = last.code
     else:
         status = getattr(getattr(last, "response", None), "status_code", None)
-    raise LLMError(f"{what}: giving up after {attempts} attempts ({type(last).__name__})",
+    raise LLMError(f"{what}: giving up after {attempts} attempts ({type(last).__name__}"
+                   f"{f' HTTP {status}' if status else ''})",
                    attempts=attempts, status=status) from last

@@ -1,0 +1,322 @@
+/* =========================================================================
+   Badges, chips, pills
+   ========================================================================= */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s-1) var(--s2);
+  border-radius: var(--r-sm);
+  background: var(--neutral-soft);
+  border: 1px solid var(--neutral-border);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+.badge.ok {
+  background: var(--ok-soft);
+  border-color: var(--ok-border);
+  color: var(--ok);
+}
+
+.badge.warn {
+  background: var(--warn-soft);
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+.badge.bad {
+  background: var(--bad-soft);
+  border-color: var(--bad-border);
+  color: var(--bad);
+}
+
+.badge.info {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.badge.mono {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-normal);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s-1) var(--s2);
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.status-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.status-full {
+  background: var(--ok-soft);
+  border-color: var(--ok-border);
+  color: var(--ok);
+}
+
+.status-partial {
+  background: var(--warn-soft);
+  border-color: var(--warn-border);
+  color: var(--warn);
+}
+
+.status-raw_only {
+  background: var(--bad-soft);
+  border-color: var(--bad-border);
+  color: var(--bad);
+}
+
+.meta-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s4) var(--s7);
+}
+
+.meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+.meta-item .k {
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: var(--fw-semi);
+}
+
+.meta-item .v {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+
+.meter {
+  width: 52px;
+  height: 5px;
+  flex: none;
+  background: var(--surface-3);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+
+.meter>i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.meter.low>i {
+  background: var(--warn);
+}
+
+.meter.vlow>i {
+  background: var(--bad);
+}
+
+.conf-val {
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.spinner {
+  font-size: var(--fs-sm);
+}
+
+/* =========================================================================
+   Tables — one density, one separator, sticky header, aligned numerics
+   ========================================================================= */
+
+.table-scroll {
+  overflow: auto;
+  max-height: 70vh;
+}
+
+table.data {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--fs-sm);
+}
+
+table.data thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: var(--s3);
+  text-align: left;
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+table.data tbody td {
+  padding: var(--s3);
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+table.data tbody tr:last-child td {
+  border-bottom: none;
+}
+
+table.data tbody tr.clickable {
+  cursor: pointer;
+}
+
+table.data tbody tr.clickable:hover td {
+  background: var(--surface-hover);
+}
+
+table.data tbody tr.on td {
+  background: var(--accent-soft);
+}
+
+/* Monospace is reserved for IPs, ports, hashes, UIDs and timestamps. */
+table.data td.mono,
+table.data th.mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+table.data td.num,
+table.data th.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* No min-width: break-word already reflows this column, and a floor here pushed the table past
+   the viewport at 1440 for no gain. */
+table.data td.wrap {
+  white-space: normal;
+  word-break: break-word;
+  max-width: 380px;
+}
+
+/* Goes on a child, never on the td: a cell that is not display:table-cell leaves the table
+   layout. Two lines keeps one long message from making its row four times taller than its
+   neighbours, which is what made the table look ragged. */
+table.data td .clamp2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+table.data td.nowrap {
+  white-space: nowrap;
+}
+
+/* Endpoints and template ids have no bounded length, and a single long value used to push the
+   last column off the right edge at 1440. Capped only where the table is short of room, so a
+   wide screen still shows them whole; the full value is always in the cell's title. */
+@media (max-width: 1600px) {
+  table.data td.clip {
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+table.data td.dim,
+table.data .dim {
+  color: var(--text-faint);
+}
+
+
+/* =========================================================================
+   Pagination
+   ========================================================================= */
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+}
+
+.pager .showing {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pager .showing b {
+  color: var(--text);
+  font-weight: var(--fw-semi);
+}
+
+.pager .size {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--text-muted);
+}
+
+.pager .size select {
+  width: auto;
+  min-height: 32px;
+  padding: var(--s1) var(--s5) var(--s1) var(--s2);
+  font-size: var(--fs-sm);
+}
+
+.pager .controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.pager .controls .page-of {
+  padding: 0 var(--s3);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pager .controls button {
+  min-height: 32px;
+  width: 32px;
+  padding: 0;
+}

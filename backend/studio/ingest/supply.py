@@ -1,198 +1,461 @@
-"""Supply Log Stream server & Export Exporter utilities for Aletheia.
+"""Log supply stream server and export utilities for Aletheia.
 
-Provides a dedicated TCP streaming server to supply centralized logs in real-time to external clients,
-along with report & log formatting tools for downloadable exports.
+The supply stream feeds other systems (a SIEM, a data lake, a second collector) over TCP, either
+by serving receivers that connect here (`listen`) or by dialling out to a collector that listens,
+which is how rsyslog, syslog-ng, QRadar and Splunk TCP inputs expect to be fed (`push`). Every
+connection gets its own bounded queue and writer thread, so a slow or stalled receiver loses its
+own backlog (counted as dropped) and never holds up ingest or the other receivers.
 """
 from __future__ import annotations
 
-import asyncio
 import csv
+import hashlib
 import io
+import ipaddress
 import json
 import logging
+import queue
+import select
 import socket
 import threading
 import time
+import uuid
 from typing import Any
+
+from . import logformats as lf
 
 log = logging.getLogger("studio.supply")
 
+# raw/tagged/json/syslog/cef carry the raw pipeline; ocsf tails the worker's `normalized` topic.
+STREAM_FORMATS = ("raw", "tagged", "json", "syslog", "cef", "ocsf")
+STREAM_MODES = ("listen", "push")
+NORMALIZED_TOPIC = "normalized"
+CLIENT_QUEUE_CHUNKS = 512        # per-client backlog, in broadcast chunks (up to 2000 lines each)
+SEND_TIMEOUT_S = 30.0            # a client that reads nothing for this long is disconnected
 
-class LogSupplyServer:
-    """Centralized log streaming server on a dedicated TCP port.
 
-    Broadcasts incoming raw or transformed log entries to connected TCP clients (e.g. nc, syslog receivers, log aggregators).
+class SupplyError(Exception):
+    """Configuration the server cannot run with; the message is shown to the operator.
+
+    `status` is 422 for an invalid option and 409 when valid options cannot start (port taken, no bus).
     """
 
-    def __init__(self, port: int = 9099, enabled: bool = False, log_type: str = "raw", source_id: str = "") -> None:
-        self.port = port
-        self.enabled = enabled
-        self.log_type = log_type  # "raw" or "ocsf"
-        self.source_id = source_id  # "" means all sources
-        self._server_socket: socket.socket | None = None
-        self._clients: set[socket.socket] = set()
-        self._lock = threading.Lock()
-        self._thread: threading.Thread | None = None
-        self._running = False
-        self.lines_sent = 0
-        self.bytes_sent = 0
-        self.started_at: float | None = None
+    def __init__(self, msg: str, status: int = 409) -> None:
+        super().__init__(msg)
+        self.status = status
 
-        if self.enabled:
+
+class _Client:
+    def __init__(self, sock: socket.socket, addr: tuple[str, int], on_sent: Any) -> None:
+        self.sock, self.addr, self._on_sent = sock, addr, on_sent
+        self.q: queue.Queue[tuple[bytes, int]] = queue.Queue(maxsize=CLIENT_QUEUE_CHUNKS)
+        self.connected_at = time.time()
+        self.lines = self.bytes = self.dropped = 0
+        self.alive = True
+        sock.settimeout(SEND_TIMEOUT_S)
+        self.thread = threading.Thread(target=self._drain, daemon=True, name=f"supply-{addr[0]}:{addr[1]}")
+        self.thread.start()
+
+    def offer(self, data: bytes, n: int) -> int:
+        """Queue a chunk; returns how many lines were dropped because this client fell behind."""
+        try:
+            self.q.put_nowait((data, n))
+            return 0
+        except queue.Full:
+            self.dropped += n
+            return n
+
+    def _peer_closed(self) -> bool:
+        """Notice a hung-up receiver while idle; anything it sends us is read and discarded."""
+        try:
+            r, _, _ = select.select([self.sock], [], [], 0)
+            return bool(r) and not self.sock.recv(4096)
+        except (OSError, ValueError):                   # ValueError: closed under us by stop()
+            return True
+
+    def _drain(self) -> None:
+        while self.alive:
+            try:
+                data, n = self.q.get(timeout=0.5)
+            except queue.Empty:
+                if self._peer_closed():
+                    break
+                continue
+            try:
+                self.sock.sendall(data)
+            except OSError:
+                break
+            self.lines += n
+            self.bytes += len(data)
+            self._on_sent(n, len(data))
+        self.close()
+
+    def close(self) -> None:
+        self.alive = False
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+    def view(self) -> dict[str, Any]:
+        return {"addr": f"{self.addr[0]}:{self.addr[1]}", "connected_at": self.connected_at, "lines": self.lines,
+                "bytes": self.bytes, "dropped": self.dropped, "queued": self.q.qsize()}
+
+
+class _Pusher:
+    """Push mode: one outbound connection to a listening collector.
+
+    Chunks queue while the target is down and a chunk whose send failed is resent after the
+    reconnect, so a collector restart costs nothing unless it outlasts the queue.
+    """
+
+    def __init__(self, host: str, port: int, on_sent: Any, on_error: Any) -> None:
+        self.host, self.port, self._on_sent, self._on_error = host, port, on_sent, on_error
+        self.q: queue.Queue[tuple[bytes, int]] = queue.Queue(maxsize=CLIENT_QUEUE_CHUNKS)
+        self.sock: socket.socket | None = None
+        self.connected_at: float | None = None
+        self.lines = self.bytes = self.dropped = 0
+        self.alive = True
+        self.thread = threading.Thread(target=self._run, daemon=True, name=f"supply-push-{host}:{port}")
+        self.thread.start()
+
+    def offer(self, data: bytes, n: int) -> int:
+        try:
+            self.q.put_nowait((data, n))
+            return 0
+        except queue.Full:
+            self.dropped += n
+            return n
+
+    def _disconnect(self) -> None:
+        if self.sock:
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+        self.sock, self.connected_at = None, None
+
+    def _run(self) -> None:
+        backoff, pending = 1.0, None
+        while self.alive:
+            if self.sock is None:
+                try:
+                    self.sock = socket.create_connection((self.host, self.port), timeout=5)
+                    self.sock.settimeout(SEND_TIMEOUT_S)
+                    self.connected_at, backoff = time.time(), 1.0
+                    self._on_error("")
+                    log.info("supply stream connected to %s:%s", self.host, self.port)
+                except OSError as exc:
+                    self._on_error(f"Cannot reach {self.host}:{self.port}: {exc.strerror or exc}. Retrying.")
+                    end = time.monotonic() + backoff
+                    while self.alive and time.monotonic() < end:
+                        time.sleep(0.1)
+                    backoff = min(backoff * 2, 30.0)
+                    continue
+            if pending is None:
+                try:
+                    pending = self.q.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+            try:
+                self.sock.sendall(pending[0])
+            except OSError as exc:
+                self._on_error(f"Lost {self.host}:{self.port}: {exc.strerror or exc}. Reconnecting.")
+                self._disconnect()
+                continue
+            self.lines += pending[1]
+            self.bytes += len(pending[0])
+            self._on_sent(pending[1], len(pending[0]))
+            pending = None
+        self._disconnect()
+
+    def close(self) -> None:
+        self.alive = False
+        self._disconnect()                              # unblocks a sendall stuck on a dead peer
+
+    def view(self) -> dict[str, Any]:
+        return {"addr": f"{self.host}:{self.port}", "connected": self.sock is not None, "connected_at": self.connected_at,
+                "lines": self.lines, "bytes": self.bytes, "dropped": self.dropped, "queued": self.q.qsize()}
+
+
+def parse_target(target: str) -> tuple[str, int]:
+    """'host:port' or '[v6]:port' -> (host, port)."""
+    t = (target or "").strip()
+    host, sep, port = t.rpartition(":")
+    host = host.strip("[]")
+    if not sep or not host or not port.isdigit() or not 0 < int(port) < 65536:
+        raise SupplyError(f"target must be host:port, e.g. siem.example.com:514 (got {t!r})", 422)
+    return host, int(port)
+
+
+def _encode(fmt: str, source_id: str, entries: list[tuple[int, str, str]]) -> bytes:
+    out: list[bytes] = []
+    for ts_ns, line, sev in entries:
+        if fmt == "raw":
+            out.append(line.encode("utf-8") + b"\n")
+        elif fmt == "tagged":
+            out.append(f"[{source_id}] [{sev.upper()}] {line}\n".encode("utf-8"))
+        else:
+            rec = raw_record(source_id, ts_ns, line, sev)
+            if fmt == "json":
+                out.append(json.dumps(rec, ensure_ascii=False).encode("utf-8") + b"\n")
+            elif fmt == "syslog":
+                out.append(lf.octet_frame(lf.to_syslog5424(rec, "raw")))
+            else:
+                out.append(lf.to_cef(rec, "raw").encode("utf-8") + b"\n")
+    return b"".join(out)
+
+
+class LogSupplyServer:
+    """Centralized log streaming server on a dedicated TCP port."""
+
+    def __init__(self, port: int = 9099, enabled: bool = False, log_type: str = "raw", source_id: str = "",
+                 host: str = "127.0.0.1", allow: list[str] | None = None, brokers: str = "",
+                 mode: str = "listen", target: str = "") -> None:
+        self.port, self.host, self.log_type, self.source_id = port, host, log_type, source_id
+        self.mode, self.target = mode, target
+        self._pusher: _Pusher | None = None
+        self.allow: list[str] = []
+        self._nets: list[Any] = []
+        self.set_allow(allow or [])
+        self.brokers = brokers
+        self.enabled = False
+        self.last_error = ""
+        self._server_socket: socket.socket | None = None
+        self._clients: list[_Client] = []
+        self._lock = threading.Lock()
+        self._running = False
+        self._threads: list[threading.Thread] = []
+        self.lines_sent = self.bytes_sent = self.dropped_lines = self.refused = 0
+        self.started_at: float | None = None
+        if enabled:
             self.start()
 
+    # ------------------------------------------------------------ lifecycle
+    def set_allow(self, allow: list[str]) -> None:
+        nets = []
+        for a in (x.strip() for x in allow):
+            if not a:
+                continue
+            try:
+                nets.append(ipaddress.ip_network(a, strict=False))
+            except ValueError as exc:
+                raise SupplyError(f"{a!r} is not an IP address or CIDR range", 422) from exc
+        self.allow, self._nets = [str(n) for n in nets], nets
+
     def start(self) -> bool:
-        """Start the background TCP supply listener."""
+        """Bind and start serving. On failure `last_error` says why and the server stays off."""
         with self._lock:
             if self._running:
                 return True
-            try:
-                srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                srv.bind(("0.0.0.0", self.port))
-                srv.listen(10)
-                srv.settimeout(0.5)
-                self._server_socket = srv
-                self._running = True
-                self.enabled = True
-                self.started_at = time.time()
-                self._thread = threading.Thread(target=self._accept_loop, daemon=True)
-                self._thread.start()
-                log.info(f"LogSupplyServer started on port {self.port}")
-                return True
-            except Exception as exc:
-                log.error(f"Failed to start LogSupplyServer on port {self.port}: {exc}")
-                self._running = False
+            if self.log_type == "ocsf" and not self.brokers:
+                self.last_error = "The OCSF stream reads normalized events from the event bus, and no bus is configured."
                 self.enabled = False
-                if self._server_socket:
-                    try:
-                        self._server_socket.close()
-                    except Exception:
-                        pass
-                    self._server_socket = None
                 return False
+            if self.mode == "push":
+                return self._start_push()
+            fam = socket.AF_INET6 if ":" in self.host else socket.AF_INET
+            srv = socket.socket(fam, socket.SOCK_STREAM)
+            try:
+                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                srv.bind((self.host, self.port))
+                srv.listen(16)
+                srv.settimeout(0.5)
+            except OSError as exc:
+                srv.close()
+                self.last_error = f"Cannot listen on {self.host}:{self.port}: {exc.strerror or exc}"
+                self.enabled = False
+                log.error("supply stream: %s", self.last_error)
+                return False
+            self._server_socket, self._running, self.enabled = srv, True, True
+            self.last_error, self.started_at = "", time.time()
+            self._threads = [threading.Thread(target=self._accept_loop, daemon=True, name="supply-accept")]
+            if self.log_type == "ocsf":
+                self._threads.append(threading.Thread(target=self._bus_loop, daemon=True, name="supply-bus"))
+            for t in self._threads:
+                t.start()
+            log.info("supply stream on %s:%s (%s)", self.host, self.port, self.log_type)
+            return True
+
+    def _start_push(self) -> bool:
+        """Caller holds the lock. Connecting happens in the background; failures show in last_error."""
+        try:
+            host, port = parse_target(self.target)
+        except SupplyError as exc:
+            self.last_error, self.enabled = str(exc), False
+            return False
+        self._running, self.enabled, self.last_error, self.started_at = True, True, "", time.time()
+        self._pusher = _Pusher(host, port, self._count, self._set_error)
+        self._threads = [threading.Thread(target=self._bus_loop, daemon=True, name="supply-bus")] if self.log_type == "ocsf" else []
+        for t in self._threads:
+            t.start()
+        log.info("supply stream pushing to %s:%s (%s)", host, port, self.log_type)
+        return True
+
+    def _set_error(self, msg: str) -> None:
+        self.last_error = msg
 
     def stop(self) -> None:
-        """Stop the supply server and disconnect all clients."""
         with self._lock:
             self._running = False
             self.enabled = False
+            if self._pusher:
+                self._pusher.close()
+                self._pusher = None
             if self._server_socket:
                 try:
                     self._server_socket.close()
-                except Exception:
+                except OSError:
                     pass
                 self._server_socket = None
-            for client in list(self._clients):
-                try:
-                    client.close()
-                except Exception:
-                    pass
-            self._clients.clear()
-            log.info("LogSupplyServer stopped")
+            clients, self._clients = self._clients, []
+            threads, self._threads = self._threads, []
+        for c in clients:
+            c.close()
+        for t in threads:
+            if t is not threading.current_thread():
+                t.join(timeout=2)
 
-    def configure(self, enabled: bool | None = None, port: int | None = None,
-                  log_type: str | None = None, source_id: str | None = None) -> dict[str, Any]:
-        """Update supply server options and restart listener if port or state changes."""
-        restart_needed = False
-        if port is not None and port != self.port:
-            self.port = port
-            restart_needed = True
-        if log_type is not None:
-            self.log_type = log_type
-        if source_id is not None:
-            self.source_id = source_id
+    def configure(self, enabled: bool | None = None, port: int | None = None, log_type: str | None = None,
+                  source_id: str | None = None, host: str | None = None, allow: list[str] | None = None,
+                  mode: str | None = None, target: str | None = None) -> dict[str, Any]:
+        """Apply options; a change to where or what it serves restarts a running server.
 
-        if enabled is not None:
-            if enabled and not self._running:
-                self.start()
-            elif not enabled and self._running:
-                self.stop()
-        elif restart_needed and self._running:
+        Raises SupplyError for invalid options or when the server cannot start.
+        """
+        if log_type is not None and log_type not in STREAM_FORMATS:
+            raise SupplyError(f"format must be one of {', '.join(STREAM_FORMATS)}", 422)
+        if host is not None:
+            try:
+                ipaddress.ip_address(host.strip())
+            except ValueError as exc:
+                raise SupplyError(f"{host!r} is not an IP address to listen on (use 127.0.0.1 or 0.0.0.0)", 422) from exc
+        if mode is not None and mode not in STREAM_MODES:
+            raise SupplyError(f"mode must be one of {', '.join(STREAM_MODES)}", 422)
+        if target:
+            parse_target(target)
+        if (mode or self.mode) == "push" and enabled and not (target if target is not None else self.target):
+            raise SupplyError("push mode needs a target, the collector's host:port", 422)
+        if allow is not None:
+            self.set_allow(allow)
+        rebind = any(v is not None and v != cur for v, cur in
+                     ((port, self.port), (host and host.strip(), self.host), (log_type, self.log_type),
+                      (mode, self.mode), (target and target.strip(), self.target)))
+        self.mode = mode if mode is not None else self.mode
+        self.target = target.strip() if target is not None else self.target
+        self.port = port if port is not None else self.port
+        self.host = host.strip() if host is not None else self.host
+        self.log_type = log_type if log_type is not None else self.log_type
+        self.source_id = source_id if source_id is not None else self.source_id
+        want = self._running if enabled is None else enabled
+        if self._running and (rebind or not want):
             self.stop()
-            self.start()
-
+        if want and not self._running and not self.start():
+            raise SupplyError(self.last_error)
         return self.status()
+
+    # ------------------------------------------------------------ serving
+    def _count(self, n: int, size: int) -> None:
+        with self._lock:
+            self.lines_sent += n
+            self.bytes_sent += size
 
     def _accept_loop(self) -> None:
         while self._running and self._server_socket:
             try:
-                client, addr = self._server_socket.accept()
-                client.settimeout(1.0)
-                with self._lock:
-                    self._clients.add(client)
-                log.info(f"Supply client connected from {addr}")
+                sock, addr = self._server_socket.accept()
             except socket.timeout:
                 continue
-            except Exception:
-                if self._running:
-                    log.debug("Supply accept socket closed or errored")
+            except OSError:
                 break
+            ip = ipaddress.ip_address(addr[0])
+            ip = getattr(ip, "ipv4_mapped", None) or ip       # dual-stack binds report IPv4 as ::ffff:a.b.c.d
+            if self._nets and not any(ip in n for n in self._nets):
+                self.refused += 1
+                log.warning("supply stream refused %s (not in allowlist)", addr[0])
+                sock.close()
+                continue
+            with self._lock:
+                self._clients.append(_Client(sock, addr[:2], self._count))
+            log.info("supply client connected from %s:%s", addr[0], addr[1])
+
+    def _fanout(self, data: bytes, n: int) -> None:
+        with self._lock:
+            self._clients = [c for c in self._clients if c.alive]
+            clients: list[Any] = list(self._clients) + ([self._pusher] if self._pusher else [])
+        dropped = sum(c.offer(data, n) for c in clients)
+        if dropped:
+            with self._lock:
+                self.dropped_lines += dropped
 
     def broadcast(self, source_id: str, entries: list[tuple[int, str, str]]) -> None:
-        """Send new log entries to all connected clients."""
-        if not self._running or not self._clients:
+        """Called by the ingest pipeline for every stored chunk of raw lines."""
+        if not self._running or not (self._clients or self._pusher) or self.log_type == "ocsf":
             return
         if self.source_id and self.source_id != source_id:
             return
+        if entries:
+            self._fanout(_encode(self.log_type, source_id, entries), len(entries))
 
-        payload_lines = []
-        for ts_ns, raw_line, sev in entries:
-            if self.log_type == "ocsf":
-                entry = json.dumps({"source": source_id, "timestamp_ns": ts_ns, "severity": sev, "message": raw_line}) + "\n"
-            else:
-                entry = f"[{source_id}] [{sev.upper()}] {raw_line}\n"
-            payload_lines.append(entry.encode("utf-8"))
-
-        if not payload_lines:
+    def _bus_loop(self) -> None:
+        """Tail `normalized` from now on under a private group, so every stream sees every event."""
+        try:
+            from confluent_kafka import Consumer
+            c = Consumer({"bootstrap.servers": self.brokers, "group.id": f"studio-supply-{uuid.uuid4().hex[:12]}",
+                          "auto.offset.reset": "latest", "enable.auto.commit": False})
+            c.subscribe([NORMALIZED_TOPIC])
+        except Exception as exc:                                             # noqa: BLE001
+            self.last_error = f"Cannot read the event bus: {exc}"
+            log.error("supply stream: %s", self.last_error)
             return
-
-        data = b"".join(payload_lines)
-        dead_clients = set()
-        with self._lock:
-            clients_snapshot = list(self._clients)
-
-        for client in clients_snapshot:
-            try:
-                client.sendall(data)
-            except Exception:
-                dead_clients.add(client)
-
-        if dead_clients:
-            with self._lock:
-                for c in dead_clients:
-                    self._clients.discard(c)
-                    try:
-                        c.close()
-                    except Exception:
-                        pass
-
-        with self._lock:
-            self.lines_sent += len(entries)
-            self.bytes_sent += len(data)
+        try:
+            while self._running:
+                batch = []
+                for m in c.consume(1000, timeout=0.5):
+                    if m.error() or not m.value():
+                        continue
+                    if self.source_id and (m.key() or b"").decode("utf-8", "replace") != self.source_id:
+                        continue
+                    batch.append(m.value().rstrip(b"\n") + b"\n")
+                if batch and (self._clients or self._pusher):
+                    self._fanout(b"".join(batch), len(batch))
+        finally:
+            c.close()
 
     def status(self) -> dict[str, Any]:
-        """Return supply server operational status and stats."""
         with self._lock:
+            clients = [c.view() for c in self._clients if c.alive] + ([self._pusher.view()] if self._pusher else [])
             return {
-                "active": self._running,
-                "enabled": self.enabled,
-                "port": self.port,
-                "log_type": self.log_type,
-                "source_id": self.source_id,
-                "clients_count": len(self._clients),
-                "lines_sent": self.lines_sent,
-                "bytes_sent": self.bytes_sent,
-                "started_at": self.started_at,
+                "active": self._running, "enabled": self.enabled, "mode": self.mode, "target": self.target,
+                "host": self.host, "port": self.port,
+                "log_type": self.log_type, "source_id": self.source_id, "allow": self.allow,
+                "clients_count": sum(1 for c in clients if c.get("connected", True)), "clients": clients,
+                "lines_sent": self.lines_sent, "bytes_sent": self.bytes_sent,
+                "dropped_lines": self.dropped_lines, "refused": self.refused,
+                "started_at": self.started_at, "last_error": self.last_error,
+                "bus": bool(self.brokers), "formats": list(STREAM_FORMATS), "modes": list(STREAM_MODES),
             }
+
+
+def raw_record(source_id: str, ts_ns: int, line: str, severity: str) -> dict[str, Any]:
+    """One raw line as exported and streamed: the verbatim text plus the hash that proves it."""
+    return {"time": lf.iso_ns(ts_ns), "timestamp_ns": ts_ns, "source_id": source_id, "severity": severity,
+            "sha256": hashlib.sha256(line.encode("utf-8")).hexdigest(), "line": line}
 
 
 # --------------------------------------------------------------------------- Report Exporters
 def build_report_data(st: Any, source_id: str = "", window_s: int = 300, categories: list[str] | None = None) -> dict[str, Any]:
-    """Collect system overview, stats, sources, and metrics into a report dictionary."""
+    """Collect system overview, stats, sources, and metrics into a report dictionary.
+
+    The report is a snapshot of the live overview: rates cover its fixed 5-minute window and totals
+    cover everything since Studio started. With `source_id`, per-source figures replace the fleet ones.
+    """
     from ..api.stats import overview as get_overview
     ov = get_overview()
     now_ts = int(time.time())
+    src_row = next((s for s in ov.get("sources", []) if s.get("id") == source_id), None) if source_id else None
+    if source_id and src_row is None:
+        raise ExportError(f"unknown source {source_id!r}", 404)
 
     categories_set = set(categories or ["kpis", "sources", "severity", "normalized", "usage", "history", "insights", "traffic", "storage"])
 
@@ -200,22 +463,25 @@ def build_report_data(st: Any, source_id: str = "", window_s: int = 300, categor
         "title": "Aletheia Centralized Log Pipeline Report",
         "generated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now_ts)),
         "epoch_seconds": now_ts,
-        "window_s": window_s,
+        "window_s": ov.get("window_s", window_s),
+        "scope": source_id or "all sources",
     }
 
     if "kpis" in categories_set:
-        report["kpis"] = ov.get("kpis", {})
+        report["kpis"] = dict(ov.get("kpis", {}))
+        if src_row:
+            report["kpis"].update({"lines": src_row.get("lines", 0), "bytes": src_row.get("bytes", 0),
+                                   "eps": src_row.get("eps", 0), "errors": src_row.get("errors", 0), "sources": 1,
+                                   "connected": int(src_row.get("status") in ("connected", "passive") and bool(src_row.get("enabled")))})
         report["kpis"]["store_backend"] = ov.get("store")
         report["kpis"]["bus_enabled"] = ov.get("bus")
 
     if "sources" in categories_set:
-        srcs = ov.get("sources", [])
-        if source_id:
-            srcs = [s for s in srcs if s.get("id") == source_id]
-        report["sources"] = srcs
+        report["sources"] = [src_row] if src_row else ov.get("sources", [])
 
     if "severity" in categories_set:
-        report["by_severity"] = ov.get("by_severity", {})
+        by = src_row.get("by_severity", {}) if src_row else ov.get("by_severity", {})
+        report["by_severity"] = {k: by.get(k, 0) for k in ("info", "notice", "warn", "risk")}
 
     if "normalized" in categories_set:
         report["normalized_ocsf"] = ov.get("normalized", {})
@@ -229,7 +495,8 @@ def build_report_data(st: Any, source_id: str = "", window_s: int = 300, categor
         }
 
     if "history" in categories_set:
-        report["history"] = ov.get("history", [])
+        hist = ov.get("history", [])
+        report["history"] = [h for h in hist if h.get("source") == source_id] if source_id else hist
 
     ins = ov.get("insights", {})
     if "insights" in categories_set:
@@ -467,7 +734,8 @@ def generate_reportlab_pdf(report_data: dict[str, Any]) -> bytes:
                             title=report_data.get("title", "Aletheia Report"), author="Aletheia")
     r = report_data
     story: list[Any] = [Paragraph(esc(r.get("title", "Aletheia Report")), title_style),
-                        Paragraph(f"Generated {esc(r.get('generated_at', ''))} &nbsp;|&nbsp; Window {r.get('window_s', 0)}s", sub)]
+                        Paragraph(f"Generated {esc(r.get('generated_at', ''))} &nbsp;|&nbsp; Scope: {esc(r.get('scope', 'all sources'))}"
+                                  f" &nbsp;|&nbsp; Rates over the last {r.get('window_s', 300) // 60} min", sub)]
 
     k = r.get("kpis")
     if k:
@@ -484,8 +752,8 @@ def generate_reportlab_pdf(report_data: dict[str, Any]) -> bytes:
     if r.get("sources"):
         story.append(Paragraph(f"Log Sources ({len(r['sources'])})", h2))
         rows = [["Source", "Type", "State", "Status", "Lines", "KB", "Errors", "EPS"]]
-        rows += [[s.get("id"), s.get("type"), s.get("state"), s.get("status"), f"{s.get('lines', 0):,}",
-                  f"{s.get('bytes', 0) / 1024:.1f}", s.get("errors", 0), s.get("eps", 0)] for s in r["sources"]]
+        rows += [[s.get("id"), s.get("type"), s.get("state"), s.get("status"), f"{(s.get('lines') or 0):,}",
+                  f"{(s.get('bytes') or 0) / 1024:.1f}", s.get("errors") or 0, s.get("eps") or 0] for s in r["sources"]]
         story.append(table(rows, [110, 60, 65, 70, 65, 55, 45, 40]))
 
     if r.get("by_severity"):
@@ -582,7 +850,7 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
     elif fmt in ("md", "markdown"):
         lines = [
             f"# {report_data.get('title', 'Aletheia Pipeline Report')}",
-            f"**Generated:** {report_data.get('generated_at', '')}\n",
+            f"**Generated:** {report_data.get('generated_at', '')} · **Scope:** {report_data.get('scope', 'all sources')}\n",
         ]
         if "kpis" in report_data:
             lines.append("## Executive Summary (KPIs)")
@@ -594,12 +862,12 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
             lines.append("| Source ID | Type | State | Status | Lines | Bytes | Errors | EPS |")
             lines.append("| --- | --- | --- | --- | --- | --- | --- | --- |")
             for s in report_data["sources"]:
-                lines.append(f"| `{s.get('id')}` | {s.get('type')} | {s.get('state')} | {s.get('status')} | {s.get('lines'):,} | {s.get('bytes'):,} | {s.get('errors')} | {s.get('eps')} |")
+                lines.append(f"| `{s.get('id')}` | {s.get('type')} | {s.get('state')} | {s.get('status')} | {(s.get('lines') or 0):,} | {(s.get('bytes') or 0):,} | {s.get('errors')} | {s.get('eps')} |")
             lines.append("")
         if "by_severity" in report_data:
             lines.append("## Severity Distribution")
             for k, v in report_data["by_severity"].items():
-                lines.append(f"- **{k.upper()}:** {v:,}")
+                lines.append(f"- **{k.upper()}:** {(v or 0):,}")
             lines.append("")
         if "normalized_ocsf" in report_data:
             lines.append("## OCSF Normalization Status")
@@ -630,7 +898,8 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
         return pdf_bytes, "application/pdf", "pdf"
 
     elif fmt == "html":
-        title = report_data.get("title", "Aletheia Pipeline Report")
+        import html as _h
+        title = _h.escape(report_data.get("title", "Aletheia Pipeline Report"))
         gen_at = report_data.get("generated_at", "")
         kpis = report_data.get("kpis", {})
         sources = report_data.get("sources", [])
@@ -638,7 +907,7 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
         norm = report_data.get("normalized_ocsf", {})
 
         src_rows = "".join([
-            f"<tr><td><code>{s.get('id')}</code></td><td>{s.get('type')}</td><td><span class='badge'>{s.get('state')}</span></td><td>{s.get('status')}</td><td>{s.get('lines'):,}</td><td>{s.get('bytes'):,}</td><td>{s.get('errors')}</td><td>{s.get('eps')}</td></tr>"
+            f"<tr><td><code>{s.get('id')}</code></td><td>{s.get('type')}</td><td><span class='badge'>{s.get('state')}</span></td><td>{s.get('status')}</td><td>{(s.get('lines') or 0):,}</td><td>{(s.get('bytes') or 0):,}</td><td>{s.get('errors')}</td><td>{s.get('eps')}</td></tr>"
             for s in sources
         ])
         kpi_cards = "".join([
@@ -646,11 +915,10 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
             for k, v in kpis.items()
         ])
         sev_items = "".join([
-            f"<div class='sev-item'><strong>{k.upper()}:</strong> {v:,}</div>"
+            f"<div class='sev-item'><strong>{k.upper()}:</strong> {(v or 0):,}</div>"
             for k, v in sev.items()
         ])
 
-        import html as _h
         extra = ""
         for btitle, kind, payload in analytics_blocks(report_data):
             e = _h.escape
@@ -692,7 +960,7 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
 </head>
 <body>
     <h1>{title}</h1>
-    <div class="sub">Generated at {gen_at}</div>
+    <div class="sub">Generated at {gen_at} · Scope: {_h.escape(str(report_data.get("scope", "all sources")))}</div>
     
     <h2>System Key Performance Indicators</h2>
     <div class="grid">{kpi_cards}</div>
@@ -717,97 +985,182 @@ def format_report(report_data: dict[str, Any], fmt: str = "pdf") -> tuple[bytes 
 
 
 # --------------------------------------------------------------------------- Logs Exporters
-def export_logs_data(st: Any, log_type: str = "raw", fmt: str = "json",
-                     source_id: str = "", severity: str = "", q: str = "", limit: int = 200) -> tuple[str, str, str]:
-    """Fetch logs according to log_type and format them for export.
+DATASETS = ("raw", "ocsf", "system")
+LOG_FORMATS: dict[str, tuple[str, str]] = {
+    "json": ("application/json", "json"), "jsonl": ("application/x-ndjson", "jsonl"),
+    "csv": ("text/csv", "csv"), "tsv": ("text/tab-separated-values", "tsv"), "text": ("text/plain", "log"),
+    "syslog": ("text/plain", "syslog"), "cef": ("text/plain", "cef"), "leef": ("text/plain", "leef"),
+    "xml": ("application/xml", "xml"),
+}
+MAX_EXPORT = 50_000
+_RAW_PAGE = 5_000            # Loki's default max_entries_limit_per_query
+# Ingest severity words against OCSF severity_id (CONTRACTS §5 maps syslog PRI the same way).
+_OCSF_SEV = {"info": "severity_id <= 1", "notice": "severity_id = 2", "warn": "severity_id = 3", "risk": "severity_id >= 4"}
 
-    Returns: (content_string, media_type, file_extension)
+
+class ExportError(Exception):
+    """A request the exporter cannot serve; `status` is the HTTP code to answer with."""
+
+    def __init__(self, msg: str, status: int = 422) -> None:
+        super().__init__(msg)
+        self.status = status
+
+
+def _raw_paged(store: Any, sid: str, limit: int, text: str | None, severity: str | None,
+               start_ns: int | None, end_ns: int | None) -> list[dict[str, Any]]:
+    """Newest-first lines for one source, paging past the store's per-query cap.
+
+    Each page ends at the oldest timestamp seen so far (inclusive), and lines already returned at
+    that boundary are skipped, so equal timestamps are neither lost nor duplicated.
     """
-    limit = max(1, min(int(limit or 200), 10000))
-    records: list[dict[str, Any]] = []
+    out: list[dict[str, Any]] = []
+    end, seen = end_ns, set()
+    while len(out) < limit:
+        ask = min(_RAW_PAGE, limit - len(out) + len(seen))
+        page = store.query(sid, limit=ask, text=text, severity=severity, start_ns=start_ns, end_ns=end)
+        fresh = [r for r in page if (r["ts_ns"], r["line"]) not in seen]
+        out += fresh
+        if not fresh or len(page) < ask:
+            break
+        last = page[-1]["ts_ns"]
+        end = last + 1
+        seen = {(r["ts_ns"], r["line"]) for r in page if r["ts_ns"] <= end}
+    return out[:limit]
 
-    if log_type == "raw":
-        # Fetch from rawstore
-        sources_to_query = [source_id] if source_id else st.raw.sources()
-        for sid in sources_to_query:
-            if len(records) >= limit:
-                break
-            lines = st.raw.query(sid, limit=limit - len(records), text=q or None, severity=severity or None)
-            for item in lines:
-                records.append({
-                    "source_id": sid,
-                    "timestamp_ns": item.get("ts_ns"),
-                    "severity": item.get("severity", "info"),
-                    "line": item.get("line", ""),
-                })
 
-    elif log_type == "ocsf":
-        # Fetch from ClickHouse or fallback
-        from .. import main as m
-        if m._ch_up():
-            where = ["1"]
-            if source_id:
-                where.append(f"source_id = '{m._esc(source_id)}'")
-            if severity:
-                where.append(f"parse_status = '{m._esc(severity)}'")
-            if q:
-                where.append(f"(source_id ILIKE '%{m._esc(q)}%' OR template_id ILIKE '%{m._esc(q)}%')")
-            cond = " AND ".join(where)
-            rows = m._ch(f"""SELECT event_uid, toString(event_time) AS event_time, source_id, template_id,
-                pack_version, storage_mode, parse_status, class_uid, activity_id, severity_id,
-                toString(src_ip) AS src_ip, src_port, toString(dst_ip) AS dst_ip, dst_port, protocol,
-                action_id, user_name, unmapped, ocsf_extra, merkle_batch, vars, raw_verbatim
-                FROM events FINAL WHERE {cond} ORDER BY recv_time DESC LIMIT {limit} FORMAT JSON""")
-            records = [m._row_to_event(r) for r in rows]
-        else:
-            records = []
+def _raw_records(st: Any, source_id: str, severity: str, q: str, limit: int,
+                 start_ns: int | None, end_ns: int | None) -> list[dict[str, Any]]:
+    rows: list[tuple[str, dict[str, Any]]] = []
+    for sid in [source_id] if source_id else st.raw.sources():
+        rows += [(sid, r) for r in _raw_paged(st.raw, sid, limit, q or None, severity or None, start_ns, end_ns)]
+    rows.sort(key=lambda x: x[1]["ts_ns"], reverse=True)
+    return [raw_record(sid, r["ts_ns"], r["line"], r.get("severity", "info")) for sid, r in rows[:limit]]
 
-    elif log_type == "system":
-        # System audit & dev log summary
-        srcs = st.registry.list()
-        for s in srcs:
-            if source_id and s.id != source_id:
+
+def _ocsf_records(source_id: str, severity: str, q: str, limit: int,
+                  start_ns: int | None, end_ns: int | None) -> list[dict[str, Any]]:
+    from .. import main as m
+    if not m._ch_up():
+        raise ExportError("The event store (ClickHouse) is not reachable, so normalized events cannot be exported.", 503)
+    where = ["1"]
+    if source_id:
+        where.append(f"source_id = '{m._esc(source_id)}'")
+    if severity:
+        if severity not in _OCSF_SEV:
+            raise ExportError(f"severity must be one of {', '.join(_OCSF_SEV)}")
+        where.append(_OCSF_SEV[severity])
+    if q:
+        n = m._esc(q)
+        # Template-mode events keep their text in `vars`, not raw_verbatim: search both.
+        where.append(f"""(positionCaseInsensitiveUTF8(ifNull(raw_verbatim, ''), '{n}') > 0
+            OR arrayExists(v -> positionCaseInsensitiveUTF8(v, '{n}') > 0, vars)
+            OR positionCaseInsensitiveUTF8(source_id, '{n}') > 0 OR positionCaseInsensitiveUTF8(template_id, '{n}') > 0
+            OR positionCaseInsensitiveUTF8(ifNull(user_name, ''), '{n}') > 0
+            OR position(toString(src_ip), '{n}') > 0 OR position(toString(dst_ip), '{n}') > 0)""")
+    if start_ns:
+        where.append(f"recv_time >= fromUnixTimestamp64Milli(toInt64({int(start_ns) // 1_000_000}))")
+    if end_ns:
+        where.append(f"recv_time <= fromUnixTimestamp64Milli(toInt64({int(end_ns) // 1_000_000}))")
+    rows = m._ch(f"""SELECT event_uid, toString(event_time) AS event_time, source_id, template_id, envelope_id,
+        pack_version, storage_mode, parse_status, class_uid, activity_id, severity_id,
+        toString(src_ip) AS src_ip, src_port, toString(dst_ip) AS dst_ip, dst_port, protocol,
+        action_id, user_name, unmapped, ocsf_extra, merkle_batch, vars, raw_verbatim,
+        hex(raw_sha256) AS raw_sha256_hex
+        FROM events FINAL WHERE {" AND ".join(where)}
+        ORDER BY recv_time DESC, event_uid DESC LIMIT {limit} FORMAT JSON""", timeout=120)
+    out = []
+    for r in rows:
+        ev = m._row_to_event(r)
+        # OCSF `raw_data`: the original bytes rebuilt from template + vars, hash-checked in `verified`.
+        ev["raw_data"] = m._verify_row(r)[1]
+        ev["aletheia"]["raw_sha256"] = str(ev["aletheia"].get("raw_sha256") or "").lower()   # as sha256sum prints it
+        out.append(ev)
+    return out
+
+
+def _system_records(st: Any, source_id: str, q: str, limit: int,
+                    start_ns: int | None, end_ns: int | None) -> list[dict[str, Any]]:
+    """Audit log (approvals, rejections, exports, stream changes, Lyra SQL) plus source lifecycle."""
+    recs: list[dict[str, Any]] = []
+    for a in st.repo.audit_list(max(limit, 1000)):
+        at, detail = a.get("at"), a.get("detail") or {}
+        if isinstance(detail, str):
+            try:
+                detail = json.loads(detail)
+            except json.JSONDecodeError:
+                detail = {"text": detail}
+        ts = at.timestamp() if hasattr(at, "timestamp") else float(at or 0)
+        recs.append({"time": lf.iso_ns(int(ts * 1e9)), "actor": a.get("actor"), "action": a.get("action"),
+                     "subject": a.get("subject") or "", "detail": detail, "_ts": ts})
+    for s in st.registry.list():
+        for h in s.history:
+            if h.get("action") in ("approved", "rejected"):      # already in the audit log
                 continue
-            for h in s.history:
-                records.append({
-                    "source_id": s.id,
-                    "at": h.get("at"),
-                    "action": h.get("action"),
-                    "actor": h.get("actor"),
-                    "reason": h.get("reason", ""),
-                    "feedback": h.get("feedback", ""),
-                })
-        records.sort(key=lambda x: x.get("at", 0), reverse=True)
-        records = records[:limit]
+            extra = {k: v for k, v in h.items() if k not in ("at", "action", "actor")}
+            recs.append({"time": lf.iso_ns(int(h.get("at", 0) * 1e9)), "actor": h.get("actor"),
+                         "action": f"source.{h.get('action')}", "subject": s.id, "detail": extra, "_ts": h.get("at", 0)})
+    lo, hi = (start_ns or 0) / 1e9, (end_ns / 1e9) if end_ns else float("inf")
+    ql = q.lower()
+    recs = [r for r in recs if lo <= r["_ts"] <= hi and (not source_id or r["subject"] == source_id)
+            and (not ql or ql in json.dumps(r, default=str).lower())]
+    recs.sort(key=lambda r: r["_ts"], reverse=True)
+    return [{k: v for k, v in r.items() if k != "_ts"} for r in recs[:limit]]
 
-    # Format the collected records
+
+def collect_records(st: Any, log_type: str = "raw", source_id: str = "", severity: str = "", q: str = "",
+                    limit: int = 200, start_ns: int | None = None, end_ns: int | None = None) -> list[dict[str, Any]]:
+    if log_type not in DATASETS:
+        raise ExportError(f"dataset must be one of {', '.join(DATASETS)}")
+    limit = max(1, min(int(limit or 200), MAX_EXPORT))
+    if log_type == "raw":
+        return _raw_records(st, source_id, severity, q, limit, start_ns, end_ns)
+    if log_type == "ocsf":
+        return _ocsf_records(source_id, severity, q, limit, start_ns, end_ns)
+    return _system_records(st, source_id, q, limit, start_ns, end_ns)
+
+
+def _text_line(r: dict[str, Any], log_type: str) -> str:
+    """Plain text is the original log line, exactly as received, so the file can be re-ingested."""
+    if log_type == "raw":
+        return r["line"]
+    if log_type == "ocsf":
+        return r.get("raw_data", "")
+    return f"{r['time']} {r['actor']} {r['action']} {r['subject'] or '-'} {json.dumps(r['detail'], default=str)}"
+
+
+def render_records(records: list[dict[str, Any]], log_type: str, fmt: str,
+                   meta: dict[str, Any] | None = None) -> tuple[str, str, str]:
+    """Returns (content, media_type, file_extension)."""
     fmt = fmt.lower()
-    if fmt in ("jsonl", "ndjson"):
-        content = "\n".join(json.dumps(r) for r in records)
-        return content, "application/x-ndjson", "jsonl"
-
+    if fmt == "ndjson":
+        fmt = "jsonl"
+    if fmt not in LOG_FORMATS:
+        raise ExportError(f"format must be one of {', '.join(LOG_FORMATS)}")
+    mime, ext = LOG_FORMATS[fmt]
+    if fmt == "json":
+        content = json.dumps(records, indent=2, ensure_ascii=False, default=str)
+    elif fmt == "jsonl":
+        content = "".join(json.dumps(r, ensure_ascii=False, default=str) + "\n" for r in records)
     elif fmt == "csv":
-        buf = io.StringIO()
-        if records:
-            keys = list(records[0].keys())
-            writer = csv.DictWriter(buf, fieldnames=keys)
-            writer.writeheader()
-            for r in records:
-                # Stringify complex dicts or lists for CSV compatibility
-                flat_r = {k: (json.dumps(v) if isinstance(v, (dict, list)) else v) for k, v in r.items()}
-                writer.writerow(flat_r)
-        return buf.getvalue(), "text/csv", "csv"
-
+        content = lf.to_csv(records)
+    elif fmt == "tsv":
+        content = lf.to_tsv(records)
     elif fmt == "text":
-        lines = []
-        for r in records:
-            if log_type == "raw":
-                lines.append(f"[{r.get('source_id')}] [{r.get('severity', 'info').upper()}] {r.get('line')}")
-            elif log_type == "system":
-                lines.append(f"[{r.get('source_id')}] {r.get('action')} by {r.get('actor')} at {r.get('at')}: {r.get('reason') or r.get('feedback')}")
-            else:
-                lines.append(f"[{r.get('aletheia', {}).get('source_id', 'unknown')}] {r.get('metadata', {}).get('uid', '')} class={r.get('class_uid')} {r.get('message', '')}")
-        return "\n".join(lines), "text/plain", "log"
+        content = "".join(_text_line(r, log_type) + "\n" for r in records)
+    elif fmt == "syslog":
+        content = lf.lines(records, lf.to_syslog5424, log_type)
+    elif fmt == "cef":
+        content = lf.lines(records, lf.to_cef, log_type)
+    elif fmt == "leef":
+        content = lf.lines(records, lf.to_leef, log_type)
+    else:
+        content = lf.to_xml(records, log_type, {"dataset": log_type, "count": len(records), **(meta or {})})
+    return content, mime, ext
 
-    else:  # json
-        return json.dumps(records, indent=2), "application/json", "json"
+
+def export_logs_data(st: Any, log_type: str = "raw", fmt: str = "json", source_id: str = "", severity: str = "",
+                     q: str = "", limit: int = 200, start_ns: int | None = None,
+                     end_ns: int | None = None) -> tuple[str, str, str]:
+    """Fetch logs for `log_type` and render them. Returns (content, media_type, file_extension)."""
+    recs = collect_records(st, log_type, source_id, severity, q, limit, start_ns, end_ns)
+    return render_records(recs, log_type, fmt)

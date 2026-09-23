@@ -1,0 +1,310 @@
+/* ---- Lyra chat full page unboxed layout ---- */
+.content:has(.lyra) {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.page:has(.lyra) {
+  max-width: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex: 1;
+}
+
+.lyra {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.lyra-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px 10px 48px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+  flex-shrink: 0;
+  min-height: 56px;
+}
+
+.lyra-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lyra-brand-mark {
+  width: 44px;
+  height: 44px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.lyra-brand-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lyra-brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-heading);
+}
+
+.lyra-brand-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+
+.lyra-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hide-mobile {
+  display: inline-block;
+}
+
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none;
+  }
+}
+
+.lyra-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Vertical Book/Folder Spine Bookmark Tab */
+.lyra-bookmark-tab {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 6px;
+  width: 32px;
+  min-width: 32px;
+  height: 130px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.08);
+  z-index: 20;
+  color: var(--text-muted);
+}
+
+.lyra-bookmark-tab:hover {
+  background: var(--surface-hover, rgba(28, 88, 201, 0.08));
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 3px 0 14px rgba(28, 88, 201, 0.18);
+}
+
+.lyra-bookmark-tab.open {
+  background: var(--surface-inset);
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 3px 0 12px rgba(0, 0, 0, 0.1);
+}
+
+.lyra-bookmark-label {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.lyra-bookmark-badge {
+  font-size: 9px;
+  font-weight: 700;
+  background: var(--accent);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 1px 5px;
+}
+
+/* Sliding Overlapping History Sidebar / Drawer & Blurred Backdrop */
+.lyra-backdrop {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  background: rgba(15, 23, 42, 0.4);
+  z-index: 25;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.lyra-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lyra-sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0 12px 12px 0;
+  padding: var(--s3);
+  gap: var(--s2);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+  box-shadow: 8px 0 32px rgba(0, 0, 0, 0.2);
+  z-index: 30;
+}
+
+.lyra-sidebar.collapsed {
+  transform: translateX(-105%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lyra-sidebar.expanded {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lyra-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: var(--fw-semibold);
+  color: var(--text-heading);
+  font-size: var(--fs-sm);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.lyra-sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 6px 10px;
+  background: var(--surface-inset);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  font-size: var(--fs-xs);
+}
+
+.lyra-sidebar-search input {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  color: var(--text);
+  font-size: var(--fs-xs);
+}
+
+.lyra-history-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 2px;
+}
+
+.lyra-history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.lyra-history-item:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+  color: var(--text);
+}
+
+.lyra-history-item.active {
+  background: var(--surface-inset);
+  border-color: var(--accent);
+  color: var(--text-heading);
+  font-weight: var(--fw-medium);
+}
+
+.lyra-history-info {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lyra-history-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-history-meta {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.lyra-del-btn {
+  opacity: 0.4;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.lyra-del-btn:hover {
+  opacity: 1;
+  color: var(--danger, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+}

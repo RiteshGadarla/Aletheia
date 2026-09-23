@@ -44,7 +44,11 @@ What this does automatically:
 1. Verifies Docker Desktop is running.
 2. Creates local secret configuration (`deploy/secrets/aletheia.env`) from template.
 3. Builds and launches the complete containerized stack (`deploy/docker-compose.yml`).
-4. Serves the **Aletheia UI on `http://localhost:8080`**, Studio API through the UI proxy, and Grafana on `http://localhost:3000`.
+4. Serves the **Aletheia UI on `http://localhost:8080`** (dashboard at `/dashboard`), the Studio API through the UI proxy (it is not published on its own port), Grafana on `http://localhost:3000` (also `http://localhost:8080/grafana/`), and syslog on `5514` UDP/TCP and `6514` TLS.
+
+To enable the AI assistant (onboarding mappings and the Lyra chat), put a Gemini key in
+`deploy/secrets/aletheia.env` before running it, or set it later in **Settings** at
+`http://localhost:8080/dashboard/settings`. See [Local configuration](#5-local-configuration-deploysecretsaletheiaenv).
 
 ---
 
@@ -66,11 +70,11 @@ setup.bat native
 ```
 
 What this does automatically:
-1. Creates Python `.venv` virtual environment and installs backend dependencies (`backend/studio/requirements.txt`).
+1. Creates Python `.venv` virtual environment and installs backend dependencies (`backend/studio/requirements-dev.txt`).
 2. Installs frontend Node modules (`frontend/node_modules`).
 3. Compiles Go engine binaries into `bin/aletheia.exe` and `bin/aletheia-worker.exe` (if Go is installed).
 4. Generates local secrets (`deploy/secrets/aletheia.env`).
-5. Starts backing datastores (PostgreSQL, ClickHouse, Redpanda, MinIO) via Docker (`deploy/docker-compose.services.yml`).
+5. Starts backing services (PostgreSQL, ClickHouse, Redpanda, Loki, Grafana, Prometheus, and a small Vector that ships normalized events to Loki) via Docker (`deploy/docker-compose.services.yml`).
 6. Verifies all parser packs with an offline golden sample check.
 
 #### 2. Developing in VS Code
@@ -89,14 +93,22 @@ Pre-configured IDE tasks and debug configurations are included in `.vscode/`:
 **Step 1: Start Backing Datastores in Docker**
 ```powershell
 docker compose -f deploy/docker-compose.services.yml up -d
+# Create the bus topics once Redpanda is healthy (make services does this on Linux)
+foreach ($t in "raw","quarantine","normalized","control","dlq") { docker exec aletheia-services-redpanda-1 rpk topic create $t -p 4 -r 1 }
 ```
 
 **Step 2: Start Studio Backend API (Port 8081 with Hot Reload)**
 ```powershell
 $env:ALETHEIA_MODE="lite"
 $env:ALETHEIA_PG_DSN="postgres://aletheia:aletheia@127.0.0.1:5432/aletheia"
+$env:ALETHEIA_BUS_BROKERS="127.0.0.1:9092"
+# AI provider: optional; can also be set from Settings in the UI. Only gemini-* models are accepted.
+$env:ALETHEIA_LLM_PROVIDER="gemini"
+$env:ALETHEIA_LLM_MODEL="gemini-3.5-flash-lite"
+$env:ALETHEIA_LLM_API_KEY="<your Gemini key>"
 # Alerting + logs (docs/alerting.md). Leave ALETHEIA_GRAFANA_URL unset to use local alert evaluation.
 $env:ALETHEIA_GRAFANA_URL="http://127.0.0.1:3000"
+$env:ALETHEIA_GRAFANA_PUBLIC_URL="http://localhost:3000"
 $env:ALETHEIA_LOKI_URL="http://127.0.0.1:3100"
 $env:ALETHEIA_PROMETHEUS_URL="http://127.0.0.1:9090"
 $env:ALETHEIA_ALERT_RECEIVER_URL="http://host.docker.internal:8081"
@@ -110,7 +122,21 @@ cd frontend
 npm run dev
 ```
 
-Open your browser at **`http://localhost:5173`**.
+**Step 4 (optional): Start the Engine Worker**
+Approved sources only reach Events, Lineage and the Grafana dashboards while the worker runs
+(needs Go; `setup.ps1 -Mode Native` builds it). In a third terminal:
+```powershell
+$env:ALETHEIA_PACKS_DIR="backend/packs"
+$env:ALETHEIA_OCSF_DIR="backend/ocsf"
+$env:ALETHEIA_CLICKHOUSE_ADDR="127.0.0.1:9000"
+$env:ALETHEIA_CLICKHOUSE_USER="aletheia"
+$env:ALETHEIA_CLICKHOUSE_PASSWORD="aletheia"
+$env:ALETHEIA_PG_DSN="postgres://aletheia:aletheia@127.0.0.1:5432/aletheia"
+$env:ALETHEIA_BUS_BROKERS="127.0.0.1:9092"
+.\bin\aletheia-worker.exe
+```
+
+Open your browser at **`http://localhost:5173`** (landing page) or **`http://localhost:5173/dashboard`**.
 
 ---
 
@@ -130,21 +156,32 @@ export PATH=$HOME/.local/go/bin:$PATH
 
 ### Step 3: Run Automated Linux Setup
 ```bash
-make setup
-make check
+make setup      # .venv, npm install, and deploy/secrets/aletheia.env from the example
+make check      # offline: packs + engine + studio + frontend
 ```
+
+Optionally put your Gemini key in `deploy/secrets/aletheia.env` (`ALETHEIA_LLM_API_KEY=`); `make studio`,
+`make worker` and `make seed` read it, so nothing has to be typed into the UI.
 
 ### Step 4: Run Application
 ```bash
-# Datastores in Docker
+# Backing services in Docker (ClickHouse, PostgreSQL, Redpanda, Loki, Grafana, Prometheus) + topics
 make services
 
-# Native engine + Studio + Frontend
+# Optional fresh demo: wipes data, sets Gemini as the LLM, connects two demo log servers,
+# seeds alert rules. Needs the key above. Run it before `make dev`.
+make seed
+
+# Native engine worker + Studio + Frontend (also starts services if they are not up)
 make dev
 ```
 
+Then open the dashboard at `http://localhost:5173/dashboard`, the Studio API at
+`http://localhost:8081`, and Grafana at `http://localhost:3000` (admin / `aletheia`).
+`make help` lists every target; `make doctor` shows what is installed.
+
 `make services` also starts Loki, Prometheus and a Loki-only Vector, so Grafana's logs dashboard
-(`/d/aletheia-logs`) fills once the worker runs. Alerting rules, contact points and policies are on
+(`/d/aletheia-logs`) and the overview (`/d/aletheia-overview`) fill once the worker runs. Alerting rules, contact points and policies are on
 the dashboard's **Alerting** page; `make studio` already points Studio at Grafana, Loki and
 Prometheus. Email needs `ALETHEIA_SMTP_*` before `make services`. With `ufw` active, allow Grafana
 to call Studio back — see [docs/alerting.md](docs/alerting.md#troubleshooting).
@@ -153,24 +190,53 @@ to call Studio back — see [docs/alerting.md](docs/alerting.md#troubleshooting)
 
 ## 4. Service Endpoints & Port Map
 
+Container mode is `deploy/docker-compose.yml` (Option A, `make up`); native mode is
+`deploy/docker-compose.services.yml` plus the native Studio, frontend and worker (Option B, `make dev`).
+
 | Component | Container Mode URL | Native Dev Mode URL | Description |
 | :--- | :--- | :--- | :--- |
-| **Frontend Web App** | `http://localhost:8080` | `http://localhost:5173` | React + Vite UI |
-| **Studio API Server** | `http://localhost:8081` | `http://localhost:8081` | FastAPI Control Plane & Studio |
+| **Frontend Web App** | `http://localhost:8080` | `http://localhost:5173` | React + Vite UI (landing page) |
+| **Dashboard** | `http://localhost:8080/dashboard` | `http://localhost:5173/dashboard` | Overview, Events, Lineage, Lyra, Sources, Export, Alerting, Demo, Settings |
+| **Studio API Server** | via UI proxy (`:8080/api/`) | `http://localhost:8081` | FastAPI Control Plane & Studio |
 | **ClickHouse HTTP** | `http://localhost:8123` | `http://localhost:8123` | Log & Event Columnar Database |
-| **ClickHouse Native** | `localhost:9000` | `localhost:9000` | Native TCP interface |
-| **PostgreSQL** | `localhost:5432` | `localhost:5432` | Source & Pack Metadata database |
-| **Redpanda Kafka API** | `localhost:9092` | `localhost:9092` | Log Message Bus |
-| **MinIO Console** | `http://localhost:9001` | `http://localhost:9001` | Parquet / Object Archive Storage |
-| **Grafana Dashboard** | `http://localhost:3000` (also `:8080/grafana/`) | `http://localhost:3000` | Observability & Metrics (admin / `aletheia`) |
-| **Grafana Logs Dashboard** | `http://localhost:3000/d/aletheia-logs` | `http://localhost:3000/d/aletheia-logs` | Normalized events + raw lines in Loki |
-| **Loki** | internal | `http://localhost:3100` | Log store behind the logs dashboard |
+| **ClickHouse Native** | internal | `localhost:9000` | Native TCP interface (used by the worker) |
+| **PostgreSQL** | internal | `localhost:5432` | Source & Pack Metadata database |
+| **Redpanda Kafka API** | internal | `localhost:9092` | Log Message Bus |
+| **MinIO** | internal | not started | Parquet / Object Archive Storage |
+| **Grafana** | `http://localhost:3000` (also `:8080/grafana/`) | `http://localhost:3000` | Dashboards and alert evaluation (admin / `aletheia`) |
+| **Grafana Dashboards** | `/d/aletheia-overview`, `/d/aletheia-logs`, `/d/aletheia-event`, `/d/aletheia-events`, `/d/aletheia-pipeline` | same | Overview, Loki logs, single event, storage & integrity, pipeline health |
+| **Loki** | internal | `http://localhost:3100` | Log store behind the logs dashboards |
 | **Prometheus** | internal | `http://localhost:9090` | Worker metrics, pipeline dashboard |
-| **Syslog Listener** | `udp://localhost:5514` | `udp://localhost:5514` | Log Ingestion Port |
+| **Engine Worker Metrics** | internal | `http://localhost:9108` | Prometheus scrape target |
+| **Syslog Listener** | `udp/tcp://localhost:5514`, TLS `:6514` | not started | Log Ingestion Port (Vector) |
+| **Supply Stream** | off by default | `127.0.0.1:9099` when enabled | TCP feed to a SIEM/collector, configured on the Export page |
+| **Demo Log Servers** | — | `:9101-9106` (`make gens`) | Live generator servers to connect as sources |
 
 ---
 
-## 5. Troubleshooting for Windows Users
+## 5. Local configuration (`deploy/secrets/aletheia.env`)
+
+Created from `deploy/secrets/aletheia.env.example` by `make setup` / `make secrets` / `setup.ps1`.
+It is gitignored; never commit the filled copy. Values set in the UI's **Settings** page override it.
+
+| Variable | Example default | Effect |
+| :--- | :--- | :--- |
+| `ALETHEIA_LLM_PROVIDER` | `gemini` | `none` (heuristics only), `gemini`, or `local` (Ollama, vLLM, llama.cpp, LM Studio) |
+| `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` | On `gemini`, only `gemini-*` models are accepted; anything else falls back to this default |
+| `ALETHEIA_LLM_API_KEY` / `_FILE` | empty | Gemini key, inline or from a mounted file (the file is preferred) |
+| `ALETHEIA_LLM_BASE_URL` | unset | Required for `local`, e.g. `http://localhost:11434/v1` |
+| `ALETHEIA_LLM_SEND_SAMPLES` | `masked` | `masked`, `none`, or `raw` (local providers only) |
+| `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud providers |
+| `ALETHEIA_SECRET` | generated | AES-GCM key for settings stored via the UI |
+
+Alerting and Grafana variables (`ALETHEIA_GRAFANA_URL`, `ALETHEIA_GRAFANA_PUBLIC_URL`,
+`ALETHEIA_LOKI_URL`, `ALETHEIA_PROMETHEUS_URL`, `ALETHEIA_ALERT_RECEIVER_URL`, `ALETHEIA_SMTP_*`) are
+set by `make studio` / `make services` with the defaults shown in the Windows manual Step 2 above; see
+[docs/alerting.md](docs/alerting.md).
+
+---
+
+## 6. Troubleshooting for Windows Users
 
 ### 1. PowerShell Script Execution Error
 If PowerShell says `...script cannot be loaded because running scripts is disabled on this system`

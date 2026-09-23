@@ -52,6 +52,25 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
+_CH_WRITE = ("truncate", "drop", "delete", "alter", "insert", "optimize", "rename", "create")
+
+
+@pytest.fixture(autouse=True)
+def no_datastore_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The suite reads the developer's live ClickHouse; it must never wipe it (e.g. via /settings/reset)."""
+    from studio import main as studio_main
+
+    real = studio_main._ch
+
+    def guarded(sql: str, *a: Any, **kw: Any) -> list[dict[str, Any]]:
+        if sql.lstrip().split(None, 1)[0].lower() in _CH_WRITE:
+            return []
+        return real(sql, *a, **kw)
+
+    monkeypatch.setattr(studio_main, "_ch", guarded)
+    monkeypatch.setattr(studio_main, "_demo", lambda *a, **kw: (0, "demo disabled in tests"))
+
+
 @pytest.fixture
 def state(clean_env: None) -> Iterator[AppState]:
     """A fresh in-memory AppState installed as the process singleton the routes read."""

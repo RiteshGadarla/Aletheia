@@ -52,6 +52,7 @@ class AppState:
         self.bus = ControlPublisher(str(self.settings.get("bus.brokers") or ""))
         self.registry = SourceRegistry(self.repo)
         self.forwarder = RawForwarder(str(self.settings.get("bus.brokers") or ""))
+        self.supply_server.brokers = str(self.settings.get("bus.brokers") or "")
 
         def forward(sid, entries):
             if self.supply_server and self.supply_server.enabled:

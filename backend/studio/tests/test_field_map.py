@@ -219,3 +219,39 @@ def test_real_asa_template_flips_endpoints_on_direction(
     inbound = build_field_map(hit[1], {**values, "direction": "inbound"}, {})
     assert inbound["src_endpoint.ip"] == "ip_a"
     assert inbound["dst_endpoint.ip"] == "ip_b"
+
+
+# ------------------------------------------------------------------ Studio-approved (repo) packs
+_REPO_YAML = """pack: proposed_x
+version: 1
+envelopes: [bare]
+templates:
+- id: repo_tpl
+  body: [{lit: "X "}, {slot: who, type: word}]
+  ocsf: {class_uid: 4001, activity_id: 1, map: {who: user.name}}
+"""
+
+
+def test_attached_repo_packs_resolve_templates(fixture_packs) -> None:
+    reg = PackRegistry(fixture_packs)
+    assert reg.template("repo_tpl", 1) is None
+    reg.attach(lambda: [{"pack": "src_x_1", "version": 5, "yaml": _REPO_YAML}])
+    name, tpl = reg.template("repo_tpl", 1)
+    assert name == "src_x_1"
+    assert build_field_map(tpl, {"who": "alice"}, {"who": "word"})["user.name"] == "who"
+    assert reg.spliced("repo_tpl", 1) == [tpl["body"]]
+
+
+def test_disk_packs_win_over_repo_packs(fixture_packs) -> None:
+    shadow = _REPO_YAML.replace("repo_tpl", "fx_conn")
+    reg = PackRegistry(fixture_packs)
+    reg.attach(lambda: [{"pack": "src_shadow", "version": 9, "yaml": shadow}])
+    assert reg.template("fx_conn", 3)[0] == "fixture"
+
+
+def test_a_failing_repo_loader_keeps_disk_packs(fixture_packs) -> None:
+    def boom() -> list[dict[str, Any]]:
+        raise RuntimeError("db down")
+    reg = PackRegistry(fixture_packs)
+    reg.attach(boom)
+    assert reg.template("fx_conn", 3)[0] == "fixture"

@@ -1,0 +1,516 @@
+/* Sources page: KPI strip, filter toolbar, source card grid and the connect dialog's type picker.
+   Loaded by SourcesPage only. Tokens come from tokens.css; nothing here hard-codes a colour. */
+
+/* ---------------------------------------------------------------- banners */
+.ready-banner.pipe-down {
+  border-color: var(--bad-border);
+  background: var(--bad-soft);
+}
+
+/* ---------------------------------------------------------------- KPI strip */
+.kpis.src-kpis {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* ---------------------------------------------------------------- toolbar */
+.src-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.src-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 280px;
+  min-width: 200px;
+  color: var(--text-faint);
+}
+
+.src-search svg {
+  position: absolute;
+  left: var(--s3);
+  pointer-events: none;
+}
+
+.src-search input {
+  padding-left: 34px;
+}
+
+/* Segmented control: one pill track, the selected option lifted onto the surface. */
+.seg {
+  display: inline-flex;
+  gap: var(--s-1);
+  padding: var(--s-1);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.seg button {
+  min-height: 30px;
+  padding: var(--s1) var(--s3);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+
+.seg button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+
+.seg button.on,
+.seg button.on:hover:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+
+.seg-n {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--neutral-soft);
+  color: var(--text-muted);
+  font-size: var(--fs-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+}
+
+.seg button.on .seg-n {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.src-view {
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------------- card grid */
+.src-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--s4);
+}
+
+.src-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color var(--t-med), box-shadow var(--t-med), transform var(--t-med);
+}
+
+.src-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.src-card.ready {
+  border-color: var(--accent-border);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.src-card.ready:hover {
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-md);
+}
+
+.src-card.paused .sn-metrics,
+.src-card.paused .sn-block {
+  opacity: 0.6;
+}
+
+.sn-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+}
+
+.sn-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sn-name {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--text);
+  line-height: var(--lh-tight);
+}
+
+.sn-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s-1);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.sn-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.sn-metrics>div {
+  padding: 0 var(--s3);
+  border-left: 1px solid var(--border-soft);
+}
+
+.sn-metrics>div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.sn-metrics dt {
+  font-size: var(--fs-2xs);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.sn-metrics dd {
+  margin: var(--s1) 0 0;
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semi);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.sn-metrics dd small {
+  margin-left: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-normal);
+  color: var(--text-muted);
+}
+
+.sn-metrics dd.bad {
+  color: var(--bad);
+}
+
+.sn-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.sn-block-h {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
+.sn-block .progress {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--r-sm);
+}
+
+.sn-legend {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: space-between;
+  gap: var(--s1) var(--s2);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.sn-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.sn-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.sn-legend b {
+  font-weight: var(--fw-semi);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sn-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin-top: auto;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border-soft);
+  cursor: default;
+}
+
+.sn-foot .btn-sm,
+.src-actions .btn-sm {
+  min-height: 30px;
+}
+
+/* The "add another" tile sits in the grid so the next step is where the eye already is. */
+.src-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-height: 220px;
+  padding: var(--s5);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--r-xl);
+  background: transparent;
+  color: var(--text-muted);
+  white-space: normal;
+  text-align: center;
+}
+
+.src-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sa-plus {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--accent);
+}
+
+.src-add:hover .sa-plus {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.sa-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- connection dot */
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.conn i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.conn.ok i {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+}
+
+.conn.warn {
+  color: var(--warn);
+}
+
+.conn.warn i {
+  background: var(--sev-warn);
+}
+
+/* ---------------------------------------------------------------- list view */
+.src-actions {
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------- connect dialog */
+/* One size whatever the type or the open list: the body is fixed and the list floats inside it. */
+.modal.src-connect {
+  max-width: 560px;
+}
+
+.modal.src-connect .modal-body {
+  height: min(488px, calc(88vh - 150px));
+  flex: none;
+}
+
+.type-dd {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.type-dd.open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-md);
+}
+
+.type-dd-btn,
+.type-dd-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--s3);
+  padding: var(--s2) var(--s3);
+  min-height: 52px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  white-space: normal;
+}
+
+.type-dd-btn {
+  border-radius: var(--r-md);
+}
+
+.type-dd-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.type-dd-caret {
+  flex: none;
+  color: var(--text-muted);
+  transform: rotate(90deg);
+  transition: transform var(--t-fast);
+}
+
+.type-dd.open .type-dd-caret {
+  transform: rotate(-90deg);
+}
+
+.type-dd-menu {
+  position: absolute;
+  top: calc(100% + var(--s1));
+  left: -1px;
+  right: -1px;
+  z-index: 5;
+  max-height: 232px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: var(--s1);
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.type-dd-menu button {
+  min-height: 48px;
+  border-radius: 6px;
+}
+
+.type-dd-menu button:hover:not(:disabled),
+.type-dd-menu button:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.type-dd-menu button.on,
+.type-dd-menu button.on:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.type-dd-menu button.on .tt-icon {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.tt-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+
+.type-dd-btn .tt-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tt-label {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--text);
+}
+
+.tt-help {
+  display: block;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-normal);
+  color: var(--text-muted);
+}
+
+.cfg-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s4);
+}
+
+/* ---------------------------------------------------------------- responsive */
+@media (max-width: 1100px) {
+  .kpis.src-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .src-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .src-add {
+    min-height: 120px;
+  }
+
+  .src-search {
+    flex: 1 1 100%;
+  }
+
+  .src-view {
+    margin-left: 0;
+  }
+
+  .seg {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}

@@ -1,0 +1,131 @@
+/* ---------------------------------------------------------------- overview charts */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s4);
+}
+
+.kpi {
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  padding: var(--s4);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.kpi .k-label {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.kpi .k-value {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi .k-sub {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--s5);
+}
+
+@media (max-width: 1100px) {
+  .viz-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.chart {
+  position: relative;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart .axis-t {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+.chart .tip {
+  position: absolute;
+  pointer-events: none;
+  padding: 6px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border-strong, var(--border));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+  transform: translate(-50%, -110%);
+  z-index: 2;
+}
+
+.legend {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary, var(--text-muted));
+}
+
+.legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.sbar {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sbar i {
+  display: block;
+  min-width: 2px;
+}
+
+.sbar i:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.sbar i:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.sbar-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 64px;
+  gap: var(--s3);
+  align-items: center;
+  padding: 5px 0;
+}
+
+.sbar-row .n {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}

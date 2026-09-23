@@ -155,6 +155,11 @@ def _propose_context_slot(slot: SlotInfo) -> FieldMapping | None:
     )
 
 
+# Enum word tables in ocsf/enums.yaml and the OCSF path each one feeds, most specific first.
+_ENUM_TABLES = (("status", "status_id"), ("action", "action_id"),
+                ("direction", "connection_info.direction_id"))
+
+
 def _propose_slot(slot: SlotInfo) -> FieldMapping | None:
     """One slot -> at most one FieldMapping, evidence-ordered per spec §8.8."""
     ts = _timestamp_mapping(slot)
@@ -172,12 +177,20 @@ def _propose_slot(slot: SlotInfo) -> FieldMapping | None:
         if slot.type == "enum" and table_name:
             canon = _canonical_enum_mapping(slot, [(table_name, path)])
             if canon:
-                fm = fm.model_copy(update={"enum": canon.enum,
-                                           "evidence": fm.evidence + canon.evidence})
+                return fm.model_copy(update={"enum": canon.enum,
+                                             "evidence": fm.evidence + canon.evidence})
+            # The key names a table its values do not fit (outcome=success|failure is a status,
+            # not an action). Use the table that does fit; if none does, a forced path could
+            # never convert and would make every event partial, so leave the slot unmapped.
+            other = _canonical_enum_mapping(slot, [t for t in _ENUM_TABLES if t[1] != path])
+            if other:
+                return other.model_copy(update={"evidence": [
+                    f"key name {key!r} suggests {path}, but its values fit {other.path}",
+                    *other.evidence]})
+            return None
         return fm
     if slot.type == "enum":
-        canon = _canonical_enum_mapping(
-            slot, [("action", "action_id"), ("direction", "connection_info.direction_id")])
+        canon = _canonical_enum_mapping(slot, list(_ENUM_TABLES))
         if canon:
             return canon
         proto = _protocol_mapping(slot)

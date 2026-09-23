@@ -1,0 +1,358 @@
+/* =========================================================================
+   Lineage viewer — the signature screen
+   ========================================================================= */
+
+.proof {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--ok-border);
+  background: var(--ok-soft);
+  border-radius: var(--r-md);
+  min-width: 0;
+}
+
+.proof.bad {
+  border-color: var(--bad-border);
+  background: var(--bad-soft);
+}
+
+.proof .seal {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: var(--ok);
+}
+
+.proof.bad .seal {
+  color: var(--bad);
+}
+
+.proof .proof-text {
+  min-width: 0;
+}
+
+.proof .proof-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--ok);
+}
+
+.proof.bad .proof-title {
+  color: var(--bad);
+}
+
+.proof .hash {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.proof .hash .full {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 44ch;
+}
+
+/* Independent browser-side re-hash, shown under the server's own verdict. */
+.proof .recheck {
+  margin-top: var(--s1);
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+}
+
+.proof .recheck.match {
+  color: var(--ok);
+}
+
+.proof .recheck.mismatch {
+  color: var(--bad);
+  font-weight: var(--fw-semi);
+}
+
+.lineage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: var(--s5);
+  align-items: start;
+}
+
+.raw {
+  padding: var(--s4);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 2;
+  word-break: break-word;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+  overflow-x: auto;
+}
+
+.raw .lit {
+  color: var(--text-faint);
+}
+
+.raw .slot {
+  border-radius: var(--r-sm);
+  padding: var(--s-1) var(--s1);
+  cursor: pointer;
+  color: var(--slot-c, var(--t-word));
+  background: color-mix(in srgb, var(--slot-c, var(--t-word)) 12%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--slot-c, var(--t-word)) 45%, transparent);
+}
+
+.raw .slot:hover {
+  background: color-mix(in srgb, var(--slot-c, var(--t-word)) 22%, transparent);
+}
+
+.raw .slot.hit {
+  background: var(--hl-bg);
+  box-shadow: 0 0 0 2px var(--hl-border);
+  color: var(--text);
+}
+
+.raw .slot.dim {
+  opacity: 0.32;
+}
+
+.raw.plain .slot {
+  cursor: default;
+}
+
+.slot-ip {
+  --slot-c: var(--t-ip);
+}
+
+.slot-num {
+  --slot-c: var(--t-num);
+}
+
+.slot-ts {
+  --slot-c: var(--t-ts);
+}
+
+.slot-enum {
+  --slot-c: var(--t-enum);
+}
+
+.slot-host {
+  --slot-c: var(--t-host);
+}
+
+.slot-text {
+  --slot-c: var(--t-text);
+}
+
+.slot-word {
+  --slot-c: var(--t-word);
+}
+
+.slot-ws {
+  --slot-c: var(--t-ws);
+}
+
+/* Capped so a deep OCSF object scrolls in place instead of stretching the page. */
+.tree {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.9;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.tree .node {
+  padding-left: var(--s4);
+  border-left: 1px solid var(--border-soft);
+  margin-left: var(--s1);
+}
+
+.tree .leaf {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: 0 var(--s1);
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+
+.tree .leaf .key {
+  color: var(--text-muted);
+  flex: none;
+}
+
+.tree .leaf .key.group {
+  color: var(--text);
+  font-weight: var(--fw-semi);
+}
+
+.tree .leaf .val {
+  word-break: break-all;
+  min-width: 0;
+}
+
+.tree .leaf .val.str {
+  color: var(--t-host);
+}
+
+.tree .leaf .val.num {
+  color: var(--t-num);
+}
+
+.tree .leaf .val.bool {
+  color: var(--t-enum);
+}
+
+.tree .leaf .val.null {
+  color: var(--text-faint);
+}
+
+.tree .leaf.linked {
+  cursor: pointer;
+}
+
+.tree .leaf.linked .key {
+  color: var(--accent);
+  font-weight: var(--fw-semi);
+}
+
+.tree .leaf.linked:hover {
+  background: var(--surface-hover);
+}
+
+.tree .leaf.hit {
+  background: var(--hl-bg);
+  box-shadow: 0 0 0 1px var(--hl-border);
+}
+
+.tree .leaf.hit .key,
+.tree .leaf.hit .val {
+  color: var(--text);
+}
+
+.tree .slotref {
+  margin-left: auto;
+  font-size: var(--fs-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tree .leaf.hit .slotref {
+  color: var(--text-secondary);
+}
+
+.tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 2;
+  padding: var(--s4);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.tokens .lit {
+  color: var(--text-faint);
+  white-space: pre-wrap;
+}
+
+.tokens .slot {
+  padding: var(--s-1) var(--s1);
+  border-radius: var(--r-sm);
+  color: var(--slot-c, var(--t-word));
+  background: color-mix(in srgb, var(--slot-c, var(--t-word)) 14%, transparent);
+  font-weight: var(--fw-medium);
+}
+
+.tokens .slot.hit {
+  background: var(--hl-bg);
+  box-shadow: 0 0 0 2px var(--hl-border);
+  color: var(--text);
+}
+
+.tokens .slot .ty {
+  opacity: 0.65;
+  font-weight: var(--fw-normal);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s4);
+  font-size: var(--fs-2xs);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--text-muted);
+}
+
+.legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+/* =========================================================================
+   Selectable lists (lineage picker, studio clusters)
+   ========================================================================= */
+
+.pick-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.pick-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s1);
+  padding: var(--s3) var(--s5);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  width: 100%;
+}
+
+.pick-item:hover {
+  background: var(--surface-hover);
+}
+
+.pick-item.on {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+
+.pick-item .t {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text);
+}
+
+.pick-item .m {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

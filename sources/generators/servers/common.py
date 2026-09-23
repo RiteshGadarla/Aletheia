@@ -70,6 +70,7 @@ class Feed:
         self.set_center(rate)
         self.cur = self.center
         self._sec, self._sec_n, self.eps_now = int(time.time()), 0, 0
+        self.on_shutdown = None  # set by serve.py; POST /shutdown calls it once the reply is out
 
     def set_center(self, rate: float) -> None:
         """Mean rate. Inside 40-80 the steering band is 44-76, so real per-second counts (which jitter a few
@@ -221,6 +222,11 @@ def _control(feed: Feed, method: str, path: str, q: dict, body: bytes):
         except (ValueError, TypeError):
             return 400, {"error": "bad json"}
         return 200, feed.stats()
+    if path == "/shutdown" and method == "POST":
+        if feed.on_shutdown is None:
+            return 404, {"error": "shutdown not supported"}
+        asyncio.get_running_loop().call_later(0.1, feed.on_shutdown)
+        return 200, {"status": "stopping", "name": feed.name}
     if path == "/logs":
         after, limit = int(q.get("after", ["0"])[0]), min(int(q.get("limit", ["500"])[0]), 2000)
         items = [{"cursor": s, "ts": ts, "severity": sv, "line": ln}

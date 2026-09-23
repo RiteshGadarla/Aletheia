@@ -274,7 +274,7 @@ export function EventsPage() {
                             >
                               Inspect →
                             </button>
-                            <GrafanaEventLink eventUid={ev.aletheia.event_uid} />
+                            <GrafanaEventLink eventUid={ev.aletheia.event_uid} event={ev.aletheia} plain />
                           </div>
                         </td>
                       </tr>

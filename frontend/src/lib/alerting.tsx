@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ReactNode, SVGProps } from 'react';
 import { IconExternal } from '../components/Icons';
+import grafanaIcon from '../assets/grafana-icon.webp';
 import { api, errMessage } from './api';
 import type { AlertingStatus, AlertOp, AlertRule, NotificationPolicy, PolicyRoute } from './types';
 
@@ -42,10 +43,30 @@ export function useAlertingStatus(): StatusSnap {
 
 const trimSlash = (u: string) => u.replace(/\/+$/, '');
 
-/** CONTRACTS 13.5. Null when Grafana is not configured, so no dead links are shown. */
-export function grafanaEventUrl(s: AlertingStatus | null, eventUid: string): string | null {
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/** Receive time in epoch ms from an event_uid: its first 10 chars are the ULID's 48-bit timestamp. */
+export function ulidMs(uid: string): number | null {
+  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/i.test(uid)) return null;
+  let ms = 0;
+  for (const c of uid.slice(0, 10).toUpperCase()) ms = ms * 32 + CROCKFORD.indexOf(c);
+  return ms;
+}
+
+/** What the event dashboard needs beyond the uid; without it the raw line panel stays empty. */
+export type GrafanaEventRef = { source_id?: string; raw_sha256?: string };
+
+const EVENT_WINDOW_MS = 2 * 60_000;
+
+/** CONTRACTS 13.5: the single-event dashboard, over two minutes either side of receipt. Null when Grafana is not configured. */
+export function grafanaEventUrl(s: AlertingStatus | null, eventUid: string, ref?: GrafanaEventRef): string | null {
   if (!s?.grafana.url || !s.grafana.public_url) return null;
-  return `${trimSlash(s.grafana.public_url)}/d/aletheia-logs/aletheia-logs?var-event_uid=${encodeURIComponent(eventUid)}`;
+  const q = new URLSearchParams({ 'var-event_uid': eventUid });
+  if (ref?.source_id) q.set('var-source_id', ref.source_id);
+  if (ref?.raw_sha256) q.set('var-raw_sha256', ref.raw_sha256.toLowerCase());
+  const t = ulidMs(eventUid);
+  if (t !== null) { q.set('from', String(t - EVENT_WINDOW_MS)); q.set('to', String(t + EVENT_WINDOW_MS)); }
+  return `${trimSlash(s.grafana.public_url)}/d/aletheia-event/aletheia-event?${q}`;
 }
 
 export const grafanaAlertingUrl = (s: AlertingStatus): string => `${trimSlash(s.grafana.public_url)}/alerting/list`;
@@ -58,17 +79,27 @@ export const grafanaRuleUrl = (s: AlertingStatus | null, id: string): string | n
 export const grafanaLogsUrl = (s: AlertingStatus | null): string | null =>
   s?.grafana.url ? `${trimSlash(s.grafana.public_url)}/d/aletheia-logs/aletheia-logs` : null;
 
-/** Small "Open in Grafana" link for one event; renders nothing when status is unavailable. */
-export function GrafanaEventLink({ eventUid, label = 'Grafana', className = 'btn ghost sm' }: {
-  eventUid: string; label?: string; className?: string;
+/** The Overview page's Grafana twin, from Loki and Prometheus; null when Grafana is not configured. */
+export const grafanaOverviewUrl = (s: AlertingStatus | null): string | null =>
+  s?.grafana.url ? `${trimSlash(s.grafana.public_url)}/d/aletheia-overview/aletheia-overview` : null;
+
+/** Grafana's mark, bundled so it loads offline; decorative, the link text names Grafana. */
+export function GrafanaLogo({ size = 16 }: { size?: number }) {
+  return <img className="grafana-logo" src={grafanaIcon} width={size} height={size} alt="" aria-hidden="true" />;
+}
+
+/** Small "Open in Grafana" link for one event; renders nothing when status is unavailable.
+ *  `plain` drops the Grafana mark for a bare redirect icon, for dense rows where the brand mark is noise. */
+export function GrafanaEventLink({ eventUid, event, label = 'Grafana', className = 'btn ghost sm', plain = false }: {
+  eventUid: string; event?: GrafanaEventRef; label?: string; className?: string; plain?: boolean;
 }) {
   const { status } = useAlertingStatus();
-  const href = grafanaEventUrl(status, eventUid);
+  const href = grafanaEventUrl(status, eventUid, event);
   if (!href) return null;
   return (
     <a className={className} href={href} target="_blank" rel="noopener noreferrer"
-      title="Open this event's raw log in the Grafana Loki dashboard" onClick={(e) => e.stopPropagation()}>
-      <IconExternal size={13} />{label}
+      title="Open this event in Grafana: its fields, raw line and what its source sent around it" onClick={(e) => e.stopPropagation()}>
+      {plain ? <IconExternal size={13} /> : <GrafanaLogo size={14} />}{label}
     </a>
   );
 }

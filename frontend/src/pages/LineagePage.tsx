@@ -197,7 +197,7 @@ export function LineagePage() {
         title="Lineage Viewer"
         right={
           <div className="row-tight" style={{ gap: 'var(--s3)' }}>
-            {eventUid && <GrafanaEventLink eventUid={eventUid} label="Open in Grafana" />}
+            {eventUid && <GrafanaEventLink eventUid={eventUid} event={d?.event?.aletheia} label="Open in Grafana" />}
             {d && (
               <button
                 type="button"

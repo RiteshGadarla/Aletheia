@@ -48,26 +48,34 @@ will not reach `healthy`.)
 
 ## 3. Run it on this machine (no Docker for the app)
 
-Docker is used **only for the four datastores**. The engine, Studio and frontend run natively.
+Docker is used **only for the backing services** (ClickHouse, PostgreSQL, Redpanda, Loki, Grafana,
+Prometheus). The engine worker, Studio and frontend run natively.
 
 ```bash
-make setup        # venv, npm install, local LLM config
+make setup        # venv, npm install, local LLM config (deploy/secrets/aletheia.env, gitignored)
 make doctor       # what is installed, what each target needs
 make check        # packs + engine + studio + frontend, with nothing running
-make services     # ClickHouse, PostgreSQL, Redpanda in Docker
-make run          # services + engine/Studio/frontend natively
+make services     # backing services in Docker, then creates the Redpanda topics
+make seed         # optional: fresh demo — wipes data, sets Gemini, connects 2 demo servers, seeds alerts
+make dev          # services + engine worker + Studio + frontend natively (`make run` is the same)
 ```
+
+Other targets: `make studio`, `make frontend` and `make worker` run one piece; `make gens` starts six
+live log generator servers (:9101-9106); `make worker-smoke` checks bus → worker → ClickHouse;
+`make seal` seals Merkle batches for events loaded without the bus; `make services-down` stops the
+Docker side. `make help` lists everything.
 
 | | |
 |---|---|
 | Product landing page | <http://localhost:5173> |
-| Dashboard (Overview, Events, Lyra, Sources, Export, Demo, Settings) | <http://localhost:5173/dashboard> |
+| Dashboard (Overview, Events, Lineage, Lyra, Sources, Export, Alerting, Demo, Settings) | <http://localhost:5173/dashboard> |
 | Studio API | <http://localhost:8081> |
-| Grafana (admin / `aletheia`) | <http://localhost:3000> · logs dashboard `/d/aletheia-logs` |
-| ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 · Loki :3100 · Prometheus :9090 |
+| Grafana (admin / `aletheia`) | <http://localhost:3000> · dashboards `/d/aletheia-overview`, `/d/aletheia-logs`, `/d/aletheia-event`, `/d/aletheia-events`, `/d/aletheia-pipeline` |
+| ClickHouse | :8123 (native :9000) · PostgreSQL :5432 · Redpanda :9092 · Loki :3100 · Prometheus :9090 |
+| Engine worker metrics | :9108 |
 
 `make services` also runs a small Vector that ships the `normalized` topic to Loki, so the Grafana
-logs dashboard fills as soon as the worker runs. Alerting (rules, contact points, notification
+dashboards fill as soon as the worker runs. Alerting (rules, contact points, notification
 policies) lives in the dashboard's Alerting page; Grafana evaluates, Studio owns the configuration.
 See [docs/alerting.md](docs/alerting.md).
 
@@ -114,15 +122,16 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 
 | Port | Service |
 |---|---|
-| 6156 | Aletheia UI — product landing, Overview dashboard, Events explorer, Lyra chat assistant, Sources & onboarding, Export & Supply, Demo Console, Settings |
+| 6156 | Aletheia UI — product landing, Overview dashboard, Events explorer, byte Lineage, Lyra chat assistant, Sources & onboarding, Export & Supply, Alerting, Demo Console, Settings |
 | 3000 | Grafana — dashboards over ClickHouse, Loki and Prometheus |
 | 5514 UDP/TCP | Syslog input — send your own logs |
+| 5515 TCP | Syslog with RFC 6587 octet counting (optional) |
 | 6514 | Syslog over TLS (optional) |
 | 8123 | ClickHouse HTTP, read-only demo user (optional) |
 
 ## 5. Guided evaluation
 
-Open the **Demo Console** at <http://localhost:6156/demo> and run the scenarios in order. Each card
+Open the **Demo Console** at <http://localhost:6156/dashboard/demo> and run the scenarios in order. Each card
 states what is being proven and what success looks like, and shows the equivalent CLI command.
 
 | # | Scenario | Proves |
@@ -203,6 +212,8 @@ demo. Use `-v aletheia-data:/data` to persist across restarts.
 | `ALETHEIA_SECRET` | generated at first start | Key material for secrets stored via the UI |
 | `ALETHEIA_SMTP_ENABLED` / `_HOST` / `_USER` / `_PASSWORD` / `_FROM_ADDRESS` | off | Grafana SMTP, for email alert contact points ([docs/alerting.md](docs/alerting.md)) |
 | `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://localhost:3000` | Grafana as the browser reaches it, for alert and event deep links |
+| `ALETHEIA_SUPPLY_ENABLED` / `_HOST` / `_PORT` / `_FORMAT` / `_MODE` / `_TARGET` / `_ALLOW` | off, `127.0.0.1`, `9099`, `raw`, `listen` | Log supply stream defaults; normally set from the Export page and saved |
+| `ALETHEIA_LLM_*` | see §11 | AI provider, model, key and what is sent |
 
 ## 10. Lyra — data assistant
 
@@ -224,12 +235,21 @@ It never writes, deletes or changes settings; every SQL query and its result are
 Sinks: ClickHouse (system of record), Grafana Loki, Kafka topic `normalized`, Splunk HEC,
 and CEF re-emit over syslog.
 
+The **Export** page adds two ways out. Log export downloads raw lines, OCSF events or the audit
+trail as JSON, JSONL, CSV, TSV, text, RFC 5424 syslog, CEF, LEEF or XML; reports come as PDF, HTML,
+Markdown, CSV or JSON. The **supply stream** feeds a SIEM or collector over TCP (`raw`, `tagged`,
+`json`, `syslog`, `cef` or `ocsf`), either listening on `127.0.0.1:9099` (optional IP/CIDR
+allowlist) or pushing to a collector's `host:port`. Raw lines are always carried whole, so a
+receiver can re-check the SHA-256.
+
 ## 11. AI assistant (optional)
 
-Aletheia works **fully without any AI.** The Onboarding Studio always runs its heuristics first.
-An AI model is an optional second opinion during onboarding only — **it never touches a live event**,
-and any suggestion it makes must still pass the byte-exact reconstruction gate, the replay diff and
-human approval. The image ships **no model weights and no inference runtime**.
+Aletheia works **fully without any AI.** Templates are always derived deterministically. When a
+provider is configured, onboarding maps each unique format with the AI first (one request per
+format, never per event) and the heuristic rules fill any slot it left unmapped; when the AI is off,
+fails or its mapping fails the gate, the rules stand in. The AI is used during onboarding and by
+Lyra only — **it never touches a live event**, and any mapping must still pass the byte-exact
+reconstruction gate, the replay diff and human approval. The image ships **no model weights and no inference runtime**.
 
 Three modes:
 
@@ -249,8 +269,8 @@ immediately — no restart. The UI only ever displays the last four characters o
 ### Configuring it by environment instead
 
 ```bash
-cp deploy/secrets/aletheia.env.example deploy/secrets/aletheia.env
-# edit it, then:
+cp deploy/secrets/aletheia.env.example deploy/secrets/aletheia.env   # or: make secrets
+# set ALETHEIA_LLM_API_KEY (the example defaults to gemini / gemini-3.5-flash-lite), then:
 docker run -d --name aletheia --env-file deploy/secrets/aletheia.env \
   -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
   docker.io/ritesh2006/aletheia:1.0.0
@@ -262,13 +282,18 @@ A mounted secret file is preferred over `-e`, which leaves the key visible in `d
 -v ./llm.key:/run/secrets/llm_key:ro -e ALETHEIA_LLM_API_KEY_FILE=/run/secrets/llm_key
 ```
 
-Precedence is **UI setting > environment variable > default**.
+Precedence is **UI setting > environment variable > default**. On the `gemini` provider only
+`gemini-*` models are accepted: Settings refuses any other model, and a stale one from the
+environment or an older saved setting falls back to `gemini-3.5-flash-lite`.
+
+For native development, `make studio` and `make worker` read `deploy/secrets/aletheia.env`
+automatically, so the key never has to be typed into the UI.
 
 ### Tested at release
 
 | Provider | Model | Notes |
 |---|---|---|
-| `gemini` | **`gemini-3.5-flash-lite`** (default) | Fast, reliable cloud model used for both onboarding proposals and Lyra. `gemma-4-31b-it` is also supported but slower (~34-50 s/call) and less reliable (~50% success rate on free tier). |
+| `gemini` | **`gemini-3.5-flash-lite`** (default) | Fast, reliable cloud model used for both onboarding proposals and Lyra. Only `gemini-*` models are accepted. |
 | `local` | any instruction-following model, e.g. `qwen2.5-coder:7b` | Ollama, vLLM, llama.cpp or LM Studio — they share one API, so the base URL is what picks the server. Air-gap friendly; a 4-bit 7–8B model runs on CPU in ~5–8 GB RAM. |
 
 Provider quirks we measured and handle (retries, thinking-part filtering, JSON-schema mode) are
@@ -307,15 +332,19 @@ Repository layout is described in [`docs/technical-specification.md`](docs/techn
 backend/engine    Go — the deterministic hot path and the CLI
 backend/studio    Python FastAPI — clustering, derivation, gate, replay diff, LLM adapters
   studio/chat     Lyra chat agent, SQL guard, session store
-  studio/api      REST endpoints: chat, stats, sources, samples, export, settings
+  studio/api      REST endpoints: chat, stats, sources, samples, export, alerting, settings
+  studio/ingest   connectors, onboarding, supply stream, export wire formats (logformats.py)
+  studio/alerting Grafana-backed alert rules, contact points, notification policies
 backend/packs     parser packs + golden tests
 backend/ocsf      pinned OCSF subset and validator
 frontend          React + Vite + TypeScript
-  pages           HomePage (landing), OverviewPage (dashboard), EventsPage, LyraPage,
-                  SourcesPage (unified onboarding), ExportPage, DemoPage, SettingsPage
+  pages           HomePage (landing), OverviewPage (dashboard), EventsPage, LineagePage, LyraPage,
+                  SourcesPage (unified onboarding), ExportPage, AlertRulesPage, ContactPointsPage,
+                  NotificationPoliciesPage, DemoPage, SettingsPage
   components      Layout, Insights (posture gauge, donut, ranked bars, timeline, findings),
-                  LineageModal, Icons, Bits
-deploy            compose, Vector, Redpanda, ClickHouse, Postgres, Grafana, Prometheus, offline
+                  LineageModal, OcsfTree, TemplateView, RawLine, Modal, Icons, Bits
+deploy            compose, Vector, Redpanda, ClickHouse, Postgres, Loki, Grafana (dashboards,
+                  provisioning), Prometheus, offline
 docker            all-in-one evaluation image (s6-overlay) and per-component images
 sources           seeded log generators and corpora
 bench             benchmark harness (spec §17 methodology)
@@ -361,6 +390,8 @@ Honest scope and known limitations are in
 | Apple Silicon warnings | The image is multi-arch; make sure you pulled the `arm64` variant. |
 | Container cannot reach Ollama on Linux | Needs `--add-host=host.docker.internal:host-gateway`, and Ollama must listen beyond `127.0.0.1` (`OLLAMA_HOST=0.0.0.0`). Restrict with the host firewall. |
 | "AI suggestion unavailable" | Expected fallback. Heuristic proposals still work. Check Settings → Test connection. |
+| Settings rejects the model, or it silently becomes `gemini-3.5-flash-lite` | The `gemini` provider accepts only `gemini-*` models (e.g. Gemma is refused). |
+| Sources registered by `make seed` do not appear | Studio loads sources at startup. Run `make seed` before `make dev`, or restart Studio. |
 | Alerts fire in Grafana but never reach the browser (`make run`) | Grafana cannot reach Studio on the host. See [docs/alerting.md](docs/alerting.md#troubleshooting) (usually the host firewall). |
 
 ---

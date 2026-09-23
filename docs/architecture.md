@@ -54,11 +54,37 @@ The reconstruction is hashed and compared with the SHA-256 taken at arrival. Equ
              Kafka consumers / CEF re-emit · periodic Parquet export → MinIO
 ```
 
+### Studio, observability and alerting
+
+```
+ sources (tcp, udp, http stream, websocket, Loki pull, REST cursor, HTTP/Loki push)
+        │
+        ▼
+ STUDIO (FastAPI) ── raw store: every line verbatim ──▶ Loki  {source, severity, format} + sha256
+        │           ── forward to Redpanda "raw" once the source is approved
+        │           ── onboarding: cluster → template → AI-first mapping → gate → human approval
+        │           ── export & supply (JSON/CSV/TSV/XML/syslog/CEF/LEEF, TCP push or listen)
+        │           ── Lyra: guarded read-only SQL ──▶ ClickHouse
+        │           ── alerting: rules, contact points, policy tree (Postgres alerting_objects)
+        │                    │ provisioning API                ▲ webhook /alerting/receive
+        ▼                    ▼                                 │
+ Redpanda "normalized" ─▶ Vector ─▶ Loki  {vendor, product, source_id, ocsf_class, parse_status}
+                                         │
+ ClickHouse · Loki · Prometheus ─────────┴──▶ GRAFANA  dashboards + unified alerting
+                                                    ──▶ browser / webhook / email / Slack
+```
+
+Without Grafana (`make dev`), Studio evaluates the same rules itself (`mode: local`); without
+Loki, the raw store falls back to memory. Neither is required for the main data path.
+
 Supporting services: **Merkle sealer** (closes batches, chains roots), **parser registry**
 (Git + PostgreSQL, hot reload via the `control` topic), **Onboarding Studio** (Python),
 **replay engine**, **verify tool**, **Lyra** (guarded chat assistant, read-only SQL over
-ClickHouse), **UI** (product landing, Overview dashboard, Events explorer, Lyra, Sources
-& onboarding, Export & Supply, Demo Console, Settings).
+ClickHouse), **Loki** (raw-line store and normalized-event log search), **Grafana** (dashboards
+and the unified-alerting engine), **Prometheus** (pipeline metrics), **alerting service** (in
+Studio: rules, contact points, notification policies, pushed to Grafana), **UI** (product
+landing, Overview dashboard, Events explorer, Lyra, Sources & onboarding, Export & Supply,
+Alerting, Demo Console, Settings).
 
 ### The universal schema
 
@@ -118,10 +144,23 @@ approving packs — lives on a single **Sources** page (`/dashboard/sources`).
   stored with the approval.
 - **Hot reload** — workers compile the new index in the background and swap an atomic pointer.
   No restart, no downtime, no dropped events.
+- **AI-first mapping, rules as the safety net.** With a provider configured, each unique format
+  (cluster) gets one LLM request, two in flight at a time; the allow-list of OCSF paths is per
+  class. Rules fill slots the AI left unmapped, and replace the AI mapping when the provider is
+  off, the call fails, or the AI mapping fails the gate while the rules mapping passes. Each
+  cluster records why rules were used. A reviewer's retry feedback goes to the model verbatim.
 - **AI is optional and never trusted.** No model weights ship in the image. An operator may point
   Aletheia at a Gemini API key or a self-hosted local model (Ollama, vLLM, llama.cpp, LM Studio);
   suggestions are constrained to an allow-list of OCSF paths, pass the same gate, and **can never
-  approve**. No LLM ever touches a live event. Only three providers: `none`, `gemini`, `local`.
+  approve**. No LLM ever touches a live event. Only three providers: `none`, `gemini`, `local`;
+  on `gemini` only `gemini-*` models are accepted.
+
+Sources connect by pull (`tcp`, `http_stream`, `websocket`, `loki_pull`, `rest_cursor`), listen
+(`udp_listen`), or push (`POST /api/v1/ingest/{id}`, or a Loki-compatible
+`/api/v1/ingest/loki/push` so Vector, Fluent Bit or Logstash can point at Aletheia). A source
+moves `collecting → review → approved | rejected`; after 100 lines a proposal is generated
+automatically. On approval the pack is published on `control` and the source's collected lines
+are backfilled onto the bus.
 
 ### Lyra — data assistant
 
@@ -133,6 +172,37 @@ approving packs — lives on a single **Sources** page (`/dashboard/sources`).
 - Chat sessions are persisted, searchable and exportable (PDF, Markdown, JSON, text).
 - Uses the configured LLM provider; a separate `llm.chat_model` setting can point it at a
   faster model (default: `gemini-3.5-flash-lite`).
+
+### Observability and alerting (Grafana + Loki)
+
+- **Loki** holds two streams. Studio writes every raw line verbatim, labelled
+  `source`/`severity`/`format` with the line's SHA-256 as structured metadata. Vector tails
+  `normalized` and writes OCSF JSON labelled `vendor`/`product`/`source_id`/`ocsf_class`/
+  `parse_status`. `event_uid`, `template_id` and `merkle_batch` go in structured metadata, never
+  labels. Retention is 7 days.
+- **Grafana** is provisioned with ClickHouse, Loki and Prometheus datasources and five
+  dashboards: `aletheia-overview`, `aletheia-event` (one event: raw line, OCSF, integrity),
+  `aletheia-events`, `aletheia-logs`, `aletheia-pipeline`. The UI deep-links into them, and a
+  Loki `event_uid` opens the single-event dashboard.
+- **Alerting.** Studio stores the rules, contact points and notification policy tree in Postgres
+  (`alerting_objects`), then pushes them to Grafana's provisioning API, where they stay editable.
+  A rule is one LogQL, PromQL or ClickHouse query reduced to a number and compared with a
+  threshold. Contact points: browser (Grafana webhook back to Studio, shown as in-app toasts),
+  webhook, email, Slack. First start seeds a `Browser` point, a critical route, and starter
+  rules for reconstruction mismatch, format drift, consumer lag and a `raw_only` surge. If
+  Grafana is unreachable, Studio's own evaluator runs the same rules.
+
+### Export and log supply
+
+- **Export** downloads raw lines, OCSF events or the system audit trail as JSON, JSONL, CSV,
+  TSV, XML, RFC 5424 syslog, CEF, LEEF or the original text. Every file carries its SHA-256 in a
+  response header, and every record carries the SHA-256 of its original line. The renderers
+  live in `ingest/logformats.py` and are shared with the supply stream. Reports cover the
+  Overview snapshot (PDF, HTML, Markdown, CSV, JSON), optionally for one source.
+- **Supply stream** feeds a SIEM over TCP: `listen` serves receivers behind an IP allow-list,
+  and `push` dials a collector and buffers while it is down. Formats: raw, syslog (RFC 6587
+  octet counting), CEF, JSON, tagged, or live OCSF from the bus. A slow receiver drops its own
+  backlog and never stalls ingest. The settings persist and are restored at startup.
 
 ### Overview dashboard
 
@@ -161,7 +231,16 @@ approving packs — lives on a single **Sources** page (`/dashboard/sources`).
 | **Evaluation** | one all-in-one image, `docker run`, s6-overlay supervising every service, multi-arch (amd64 + arm64) |
 | **Production** | per-component images via Docker Compose or Helm; workers scale by replica count; Redpanda and ClickHouse as clusters |
 
-Both build from the same repository and run the same engine binary and parser packs.
+Both build from the same repository and run the same engine binary and parser packs. The
+Compose stack adds Loki, Prometheus and Grafana (port 3000) beside the core services.
+
+**Demo seeding.** `make seed` resets the services stack, starts the Cisco ASA (TCP) and web-proxy
+(Loki pull) sample generators, writes Gemini as the LLM provider with the key from
+`deploy/secrets/aletheia.env` (sealed into Postgres), registers both as sources, and seeds and
+syncs the alerting objects. `ARGS=--no-reset` keeps existing data. Studio loads sources at
+startup, so start or restart it afterwards (`make dev`). The Demo Console can also start nine
+sample servers (ASA, FortiGate, web proxy, VPN, CEF/LEEF WAF, app telemetry, online store,
+defense network, LLM cluster), each with a one-click Sources preset.
 **Air-gapped:** `docker save` → verify checksum → `docker load`. Nothing is fetched at install or
 run time — no packages, no models, no fonts, no update checks; telemetry is disabled in every
 bundled component at build time.
@@ -187,6 +266,8 @@ small provenance block.
 | `/dashboard/events` | Events explorer | Searchable OCSF event table with lineage modal |
 | `/dashboard/lyra` | Lyra | Guarded chat assistant over ClickHouse |
 | `/dashboard/sources` | Sources & onboarding | Connect sources, collect samples, review proposals, approve packs |
+| `/dashboard/lineage/:eventUid` | Lineage | Byte-level lineage from an OCSF field to its source bytes |
 | `/dashboard/export` | Export & Supply | Reports (PDF/JSON/CSV/MD/HTML), log export, live supply stream |
+| `/dashboard/alerting/{rules,contact-points,policies}` | Alerting | Alert rules, contact points, notification policy tree (Grafana-backed) |
 | `/dashboard/demo` | Demo Console | Guided evaluation scenarios with sample servers |
-| `/dashboard/settings` | Settings | LLM provider, air-gap mode, connection test |
+| `/dashboard/settings` | Settings | LLM provider, air-gap mode, connection test, full data reset |

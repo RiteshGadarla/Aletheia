@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -33,12 +34,22 @@ def packs_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "packs"
 
 
+# Studio-approved packs live in Postgres, not on disk; re-read them at most this often.
+REPO_TTL_S = 5.0
+
+
 class PackRegistry:
-    """Pack YAML cache keyed by directory mtime, so an edited pack is picked up on next call."""
+    """Pack YAML cache keyed by directory mtime, so an edited pack is picked up on next call.
+
+    Packs approved in Studio exist only in the repo, so an attached loader adds them; disk wins.
+    """
 
     def __init__(self, directory: Path | str | None = None) -> None:
         self._dir = Path(directory) if directory else None
-        self._stamp: tuple[str, float] | None = None
+        self._stamp: tuple[Any, ...] | None = None
+        self._loader: Callable[[], list[dict[str, Any]]] | None = None
+        self._repo_rows: list[dict[str, Any]] = []
+        self._repo_at = 0.0
         self._by_template: dict[tuple[str, int], tuple[str, dict[str, Any]]] = {}
         self._envelopes: dict[str, list[dict[str, Any]]] = {}
         self._pack_envelopes: dict[tuple[str, int], list[str]] = {}
@@ -46,12 +57,30 @@ class PackRegistry:
     def _root(self) -> Path:
         return self._dir or packs_dir()
 
+    def attach(self, loader: Callable[[], list[dict[str, Any]]] | None) -> None:
+        """`loader` returns approved pack rows ({pack, version, yaml}) from the repo."""
+        self._loader, self._repo_at, self._stamp = loader, 0.0, None
+
+    def _repo_packs(self) -> list[dict[str, Any]]:
+        if self._loader is None:
+            return []
+        now = time.monotonic()
+        if now - self._repo_at >= REPO_TTL_S:
+            self._repo_at = now
+            try:
+                self._repo_rows = [r for r in self._loader() if r.get("yaml")]
+            except Exception as exc:                                # noqa: BLE001
+                log.warning("cannot read approved packs from repo (%s)", type(exc).__name__)
+        return self._repo_rows
+
     def _reload_if_stale(self) -> None:
         root = self._root()
+        repo = self._repo_packs()
         try:
-            stamp = (str(root), root.stat().st_mtime)
+            mtime = root.stat().st_mtime
         except OSError:
-            stamp = (str(root), -1.0)
+            mtime = -1.0
+        stamp = (str(root), mtime, tuple((r.get("pack"), int(r.get("version") or 0)) for r in repo))
         if stamp == self._stamp:
             return
         self._stamp = stamp
@@ -71,6 +100,21 @@ class PackRegistry:
                 tid = str(tpl.get("id") or "")
                 if tid:
                     by_template[(tid, version)] = (name, tpl)
+                    pack_envelopes[(tid, version)] = declared
+        # Oldest repo row first, so the newest approval of a template wins; disk packs win over all.
+        on_disk = {tid for tid, _ in by_template}
+        for row in sorted(repo, key=lambda r: int(r.get("version") or 0)):
+            try:
+                doc = yaml.safe_load(row["yaml"]) or {}
+            except yaml.YAMLError:
+                log.warning("cannot parse repo pack %s v%s", row.get("pack"), row.get("version"))
+                continue
+            version = int(doc.get("version") or 0)
+            declared = [str(e) for e in (doc.get("envelopes") or ["bare"])]
+            for tpl in doc.get("templates") or []:
+                tid = str(tpl.get("id") or "")
+                if tid and tid not in on_disk:
+                    by_template[(tid, version)] = (str(row.get("pack") or doc.get("pack") or ""), tpl)
                     pack_envelopes[(tid, version)] = declared
         self._by_template = by_template
 

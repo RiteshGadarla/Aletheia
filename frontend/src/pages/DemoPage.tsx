@@ -132,7 +132,7 @@ function SampleCard({ s, busy, onStart, onStop, onAttack, onConnect, onLogs }: {
 
       <div className="btn-row">
         {s.running
-          ? <button onClick={onStop} disabled={busy || !s.managed} title={s.managed ? '' : 'Started outside Studio'}>Stop</button>
+          ? <button onClick={onStop} disabled={busy}>Stop</button>
           : <button className="primary" onClick={onStart} disabled={busy}>{busy ? 'Starting…' : 'Start'}</button>}
         <button className={s.running ? 'primary' : ''} onClick={onConnect} disabled={!s.running}>Connect</button>
         <button onClick={onLogs} disabled={!s.running}>Live logs</button>
@@ -159,7 +159,7 @@ function SampleServers() {
     try {
       for (const s of q.data?.samples ?? []) {
         if (start && !s.running) await api.startSample(s.id);
-        if (!start && s.running && s.managed) await api.stopSample(s.id);
+        if (!start && s.running) await api.stopSample(s.id);
       }
       reload();
     } catch (e) { setErr(errMessage(e)); } finally { setBusy(null); }

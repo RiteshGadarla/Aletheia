@@ -1,0 +1,228 @@
+/* =========================================================================
+   Demo console
+   ========================================================================= */
+
+/* At most two columns, so cards keep a readable width instead of tiling. */
+.demo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s5);
+  align-items: stretch;
+}
+
+.scenario {
+  display: flex;
+  flex-direction: column;
+}
+
+.scenario>.panel-body {
+  flex: 1;
+  gap: var(--s5);
+}
+
+.scenario .num {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+}
+
+.scenario.done .num {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.scenario.failed .num {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.scenario .explain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  flex: 1;
+}
+
+.scenario .explain .blk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.scenario .explain .lbl {
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: var(--fw-semi);
+}
+
+.scenario .explain .txt {
+  font-size: var(--fs-md);
+  color: var(--text-secondary);
+  line-height: var(--lh-loose);
+}
+
+.scenario .explain .txt.expect {
+  color: var(--text);
+}
+
+.scenario .actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+.run-result {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.run-result .rr-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semi);
+}
+
+.run-result.ok {
+  border-color: var(--ok-border);
+}
+
+.run-result.ok .rr-head {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-bottom-color: var(--ok-border);
+}
+
+.run-result.bad {
+  border-color: var(--bad-border);
+}
+
+.run-result.bad .rr-head {
+  background: var(--bad-soft);
+  color: var(--bad);
+  border-bottom-color: var(--bad-border);
+}
+
+.run-result .rr-head .t {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: var(--fw-normal);
+}
+
+/* A long result scrolls inside the card; it can never blow the layout out. */
+.run-result pre.out {
+  border: none;
+  border-radius: 0;
+  max-height: 200px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+  transform-origin: center;
+}
+
+/* =========================================================================
+   Layout helpers used by pages
+   ========================================================================= */
+
+.grid-side {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: var(--s5);
+  align-items: start;
+}
+
+.stat {
+  padding: var(--s4) var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+
+.stat .k {
+  font-size: var(--fs-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: var(--fw-semi);
+}
+
+.stat .v {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semi);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  margin-top: var(--s1);
+}
+
+.stat .v.ok {
+  color: var(--ok);
+}
+
+.stat .v.warn {
+  color: var(--warn);
+}
+
+.stat .v.bad {
+  color: var(--bad);
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s2) var(--s4);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.kv dt {
+  color: var(--text-muted);
+  font-weight: var(--fw-semi);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--text-secondary);
+  min-width: 0;
+  word-break: break-word;
+}
+
+.blocking {
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--bad-border);
+  border-left-width: 3px;
+  background: var(--bad-soft);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.blocking h4 {
+  color: var(--bad);
+  font-size: var(--fs-sm);
+}

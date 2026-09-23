@@ -1,0 +1,330 @@
+/* =========================================================================
+   Panels — the only box. One border, one radius, one padding. No nesting.
+   ========================================================================= */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.panel>header {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4) var(--s5);
+  border-bottom: 1px solid var(--border-soft);
+  min-height: 52px;
+}
+
+.panel>header .panel-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.panel>header .panel-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-weight: var(--fw-normal);
+}
+
+.panel>header .panel-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.panel>.panel-body {
+  padding: var(--s5);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.panel>.panel-body.flush {
+  padding: 0;
+  gap: 0;
+}
+
+/* Restores the standard panel padding for one child inside a flush panel. */
+.panel-pad {
+  padding: var(--s5);
+}
+
+/* A panel nested in a panel is visual noise: drop its chrome. */
+.panel .panel {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* A secondary area that stays collapsed, so a page can carry detail without showing it. */
+.panel-details {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.panel-details>summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s4) var(--s5);
+  cursor: pointer;
+  list-style: none;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+}
+
+.panel-details>summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-details>summary::before {
+  content: '›';
+  font-size: var(--fs-lg);
+  line-height: 1;
+  color: var(--text-faint);
+  transition: transform var(--t-fast);
+}
+
+.panel-details[open]>summary::before {
+  transform: rotate(90deg);
+}
+
+.panel-details>summary:hover {
+  color: var(--text);
+}
+
+.panel-details .details-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: 0 var(--s5) var(--s5);
+}
+
+/* =========================================================================
+   Buttons
+   ========================================================================= */
+
+button,
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  min-height: 36px;
+  font: inherit;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+
+button:hover:not(:disabled),
+.btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  text-decoration: none;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary,
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+button.primary:hover:not(:disabled),
+.btn.primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-fg);
+}
+
+button.danger {
+  background: var(--bad-soft);
+  border-color: var(--bad-border);
+  color: var(--bad);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: var(--text-inverse);
+}
+
+button.ghost,
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  padding: var(--s1) var(--s2);
+  min-height: 28px;
+  font-size: var(--fs-xs);
+}
+
+button.ghost:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+button.icon {
+  padding: var(--s1);
+  min-height: 28px;
+  width: 28px;
+}
+
+/* A link that has to sit in a button row without pretending to be a button. */
+.btn-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 36px;
+  padding: var(--s2) 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+}
+
+.btn-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+
+/* =========================================================================
+   Form controls
+   ========================================================================= */
+
+input,
+select,
+textarea {
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  min-height: 36px;
+  font: inherit;
+  font-size: var(--fs-md);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+}
+
+select {
+  cursor: pointer;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.field>.lbl {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.field>.help {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: var(--lh-normal);
+}
+
+/* Only the value is monospace; the label and help stay in the UI font. */
+.field.code input {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+
+/* A single-column form at reading width — used by Settings. */
+.form-narrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+  max-width: 520px;
+}
+
+.filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s4);
+  align-items: end;
+}
+
+.filter-bar .search {
+  grid-column: span 2;
+}
+
+/* Links out to Grafana: the bundled logo, and one prominent variant for page headers. */
+.grafana-logo {
+  display: block;
+  flex: none;
+}
+
+.btn.btn-grafana {
+  gap: var(--s2);
+  padding: var(--s2) var(--s4) var(--s2) var(--s3);
+  background: var(--grafana-soft);
+  border-color: var(--grafana-border);
+  color: var(--text);
+  font-weight: var(--fw-semi);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn.btn-grafana:hover {
+  background: var(--grafana-soft-hover);
+  border-color: var(--grafana);
+  color: var(--text);
+}
+
+.btn-grafana .bg-ext {
+  color: var(--text-muted);
+}
+
+.btn-grafana:hover .bg-ext {
+  color: var(--grafana);
+}

@@ -46,8 +46,8 @@ class AIResult:
 
 
 def build_user_prompt(template: TemplateProposal, slots: list[SlotInfo], send_mode: str,
-                      masker: Masker | None, allowed_paths: list[str],
-                      validation_errors: list[str] | None = None) -> str:
+                      masker: Masker | None, allowed_paths: dict[int, list[str]] | list[str],
+                      validation_errors: list[str] | None = None, feedback: str = "") -> str:
     masker = masker or Masker()
     lines = [
         "Parser template (ordered tokens; `lit` is a byte-exact literal, `slot` is a captured value):",
@@ -69,7 +69,10 @@ def build_user_prompt(template: TemplateProposal, slots: list[SlotInfo], send_mo
         lines.append(json.dumps(row, ensure_ascii=False))
     lines += [
         "",
-        f"Allowed OCSF paths ({len(allowed_paths)}); any other path is invalid:",
+        ("Allowed OCSF paths per class_uid. Use ONLY paths listed under the class_uid you choose; "
+         "map leaf fields (e.g. src_endpoint.ip, user.name), never whole objects:"
+         if isinstance(allowed_paths, dict) else
+         f"Allowed OCSF paths ({len(allowed_paths)}); any other path is invalid:"),
         json.dumps(allowed_paths, ensure_ascii=False),
         "",
         "Task: choose the OCSF class_uid and activity_id, map each meaningful slot to one allowed "
@@ -77,6 +80,9 @@ def build_user_prompt(template: TemplateProposal, slots: list[SlotInfo], send_mo
         "where a slot holds action/direction/status words, and list any slot that should be split "
         "into smaller slots. Leave vendor-specific slots unmapped rather than forcing a path.",
     ]
+    if feedback.strip():
+        lines += ["", "A human reviewer rejected the previous mapping with this feedback; apply it:",
+                  json.dumps(feedback.strip()[:1000], ensure_ascii=False)]
     if validation_errors:
         lines += ["", "Your previous answer failed validation. Fix exactly these problems:",
                   json.dumps(validation_errors, ensure_ascii=False)]
@@ -84,7 +90,8 @@ def build_user_prompt(template: TemplateProposal, slots: list[SlotInfo], send_mo
 
 
 def ask_ai(template: TemplateProposal, cfg: LLMConfig, *, provider: Provider | None = None,
-           counter: UsageCounter | None = None, class_hint: int | None = None) -> AIResult:
+           counter: UsageCounter | None = None, class_hint: int | None = None,
+           feedback: str = "") -> AIResult:
     """One request per cluster plus at most one validation retry. Never raises."""
     origin = origin_tag(cfg)
     slots = template.slots or []
@@ -109,14 +116,14 @@ def ask_ai(template: TemplateProposal, cfg: LLMConfig, *, provider: Provider | N
 
     classes = [class_hint] if class_hint else schema_mod.supported_classes()
     json_schema = schema_mod.build_schema(slot_names, classes)
-    allowed = sorted({p for c in classes for p in schema_mod.allow_list(c)})
+    allowed = {c: schema_mod.allow_list(c) for c in classes}          # per class, as validated
     masker = Masker()
 
     errors: list[str] | None = None
     attempts = 0
     for attempt in (1, 2):                                   # one request + one retry
         attempts = attempt
-        user_prompt = build_user_prompt(template, slots, send_mode, masker, allowed, errors)
+        user_prompt = build_user_prompt(template, slots, send_mode, masker, allowed, errors, feedback)
         try:
             raw = prov.complete_json(SYSTEM_PROMPT, user_prompt, json_schema)
         except LLMError as exc:
@@ -128,8 +135,10 @@ def ask_ai(template: TemplateProposal, cfg: LLMConfig, *, provider: Provider | N
         usage = dict(getattr(prov, "last_usage", {}) or {})
         if counter is not None:
             counter.record(origin, usage, ok=True)
-        obj = schema_mod.coerce_result(raw if isinstance(raw, dict) else {})
-        errors = schema_mod.validate(obj, json_schema)
+        # Validate the reply as sent (class_uid is a string enum in the schema), then coerce.
+        reply = raw if isinstance(raw, dict) else {}
+        errors = schema_mod.validate(reply, json_schema)
+        obj = schema_mod.coerce_result(reply)
         if not errors:
             return AIResult(ok=True, proposal=_to_proposal(obj, origin), origin=origin,
                             notes=str(obj.get("notes") or "") or None,

@@ -35,6 +35,8 @@ limits_config:
   ingestion_burst_size_mb: 128
   max_label_names_per_series: 12       # guard rail: the five allowed labels + slack
   max_streams_per_user: 10000
+  # The Grafana overview groups by IP and port (parsed, not labels) before topk; 500 is too few.
+  max_query_series: 20000
   volume_enabled: true
   retention_period: 168h
 

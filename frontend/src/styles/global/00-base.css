@@ -1,0 +1,115 @@
+/* =========================================================================
+   Base
+   ========================================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: var(--fw-semi);
+  line-height: var(--lh-tight);
+}
+
+h1 {
+  font-size: var(--fs-2xl);
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  font-size: var(--fs-xl);
+  letter-spacing: -0.01em;
+}
+
+h3 {
+  font-size: var(--fs-lg);
+}
+
+h4 {
+  font-size: var(--fs-md);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-radius: var(--r-sm);
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code,
+.mono,
+pre {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Scrollbars, themed so dark mode does not show a white gutter. */
+* {
+  scrollbar-color: var(--text-faint) transparent;
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The thumb sits on panels painted --surface, so it cannot be bordered with --bg: that drew a
+   halo and left a 4px sliver that was invisible in light theme, which made a table that merely
+   scrolls look like a table with its last column cut off. */
+*::-webkit-scrollbar-thumb {
+  background: var(--text-faint);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: var(--r-pill);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
+}

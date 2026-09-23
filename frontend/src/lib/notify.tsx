@@ -26,6 +26,15 @@ const saveSeen = (s: Set<string>) => { try { sessionStorage.setItem(SEEN_KEY, JS
 
 let nextId = 0;
 
+// A toast that survives a full page reload, shown once by the next NotifyProvider mount.
+const FLASH_KEY = 'aletheia.flash';
+
+/** Reload the app at `to` (fresh state, no stale pollers) and show `t` once it is back. */
+export function reloadWithToast(t: ToastIn, to: string = window.location.pathname): void {
+  try { sessionStorage.setItem(FLASH_KEY, JSON.stringify(t)); } catch { /* private mode: reload anyway */ }
+  window.location.replace(to);
+}
+
 // Alert deliveries to the Browser contact point (CONTRACTS 13.3). The last seen id survives reloads
 // in this tab, so old alerts are never replayed.
 const ALERT_KEY = 'aletheia.alerting.lastId';
@@ -56,6 +65,15 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
     setToasts((x) => [...x, { ...t, id }].slice(-3));
     if (!t.sticky) setTimeout(() => dismiss(id), 6000);
   }, [dismiss]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(FLASH_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(FLASH_KEY);
+      toast(JSON.parse(raw) as ToastIn);
+    } catch { /* unreadable flash: skip it */ }
+  }, [toast]);
 
   useEffect(() => {
     let alive = true;
