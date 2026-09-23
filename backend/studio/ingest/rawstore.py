@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -15,6 +16,8 @@ from collections import defaultdict, deque
 from typing import Any, Protocol
 
 import httpx
+
+log = logging.getLogger("studio.rawstore")
 
 Entry = tuple[int, str, str]          # (ts_ns, raw line, severity)
 
@@ -105,8 +108,19 @@ class LokiRawStore:
 
 
 def build_rawstore() -> RawStore:
+    """Loki only when /ready answers: the Makefile always sets ALETHEIA_LOKI_URL, even when
+    `make dev` runs without the services stack."""
     url = os.environ.get("ALETHEIA_LOKI_URL", "").strip()
-    return LokiRawStore(url, os.environ.get("ALETHEIA_LOKI_TENANT") or None) if url else MemoryRawStore()
+    if not url:
+        return MemoryRawStore()
+    try:
+        # Any answer counts: a starting Loki says 503 "waiting for 15s" but is the right store.
+        httpx.get(url.rstrip("/") + "/ready", timeout=1.0)
+    except httpx.HTTPError as exc:
+        log.warning("Loki at %s unreachable (%s); raw lines are kept in memory only",
+                    url, type(exc).__name__)
+        return MemoryRawStore()
+    return LokiRawStore(url, os.environ.get("ALETHEIA_LOKI_TENANT") or None)
 
 
 _LEVEL = re.compile(r'"level"\s*:\s*"(\w+)"', re.I)

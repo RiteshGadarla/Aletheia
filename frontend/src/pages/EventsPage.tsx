@@ -7,6 +7,7 @@ import { IconExport, IconInbox, IconSearch, IconSources } from '../components/Ic
 import { Pagination } from '../components/Pagination';
 import { LineageModal } from '../components/LineageModal';
 import { api } from '../lib/api';
+import { GrafanaEventLink } from '../lib/alerting';
 import { useAsync } from '../lib/useAsync';
 import type { Endpoint, EventQuery, NormalizedEvent, ParseStatus } from '../lib/types';
 
@@ -262,16 +263,19 @@ export function EventsPage() {
                           <span className="clamp2">{summaryOf(ev) || <span className="dim">—</span>}</span>
                         </td>
                         <td className="nowrap">
-                          <button
-                            type="button"
-                            className="primary btn-sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectEventUid(ev.aletheia.event_uid);
-                            }}
-                          >
-                            Inspect →
-                          </button>
+                          <div className="row-tight row-nowrap">
+                            <button
+                              type="button"
+                              className="primary btn-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setInspectEventUid(ev.aletheia.event_uid);
+                              }}
+                            >
+                              Inspect →
+                            </button>
+                            <GrafanaEventLink eventUid={ev.aletheia.event_uid} />
+                          </div>
                         </td>
                       </tr>
                     );

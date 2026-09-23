@@ -32,12 +32,18 @@ datasources:
     jsonData:
       maxLines: 1000
       # Link a Loki line back to the full record via structured metadata (spec §11.3).
+      # `$$` escapes provisioning's env expansion; no datasourceUid, so these are plain URLs.
       derivedFields:
         - name: event_uid
           matcherType: label
           matcherRegex: event_uid
-          url: /d/aletheia-events/aletheia-events?var-event_uid=${__value.raw}
-          datasourceUid: aletheia-clickhouse
+          url: /d/aletheia-events/aletheia-events?var-event_uid=$${__value.raw}
+          urlDisplayLabel: Full record (ClickHouse)
+        - name: event_logs
+          matcherType: label
+          matcherRegex: event_uid
+          url: /d/aletheia-logs/aletheia-logs?var-event_uid=$${__value.raw}
+          urlDisplayLabel: Log lines for this event
     editable: false
 
   - name: Prometheus

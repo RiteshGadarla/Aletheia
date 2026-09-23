@@ -6,6 +6,14 @@ exec 2>&1
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:5432 120
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:8123 120
 export ALETHEIA_SECRET="$(cat /data/secret 2>/dev/null || true)"
+# Alerting (CONTRACTS §13.1): everything is on loopback here, Grafana included.
+export ALETHEIA_GRAFANA_URL="${ALETHEIA_GRAFANA_URL:-http://127.0.0.1:3000}"
+export ALETHEIA_GRAFANA_PUBLIC_URL="${ALETHEIA_GRAFANA_PUBLIC_URL:-http://localhost:3000}"
+export ALETHEIA_GRAFANA_USER="${ALETHEIA_GRAFANA_USER:-admin}"
+export ALETHEIA_GRAFANA_PASSWORD="${ALETHEIA_GRAFANA_PASSWORD:-${ALETHEIA_ADMIN_PASSWORD:-aletheia}}"
+export ALETHEIA_LOKI_URL="${ALETHEIA_LOKI_URL:-http://127.0.0.1:3100}"
+export ALETHEIA_PROMETHEUS_URL="${ALETHEIA_PROMETHEUS_URL:-http://127.0.0.1:9090}"
+export ALETHEIA_ALERT_RECEIVER_URL="${ALETHEIA_ALERT_RECEIVER_URL:-http://127.0.0.1:8081}"
 cd /app
 exec s6-setuidgid aletheia /venv/bin/uvicorn studio.main:app \
   --host 127.0.0.1 --port 8081 --no-server-header

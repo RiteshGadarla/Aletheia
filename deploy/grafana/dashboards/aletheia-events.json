@@ -5,6 +5,9 @@
   "tags": ["aletheia", "events"],
   "timezone": "browser",
   "editable": false,
+  "links": [
+    {"type": "dashboards", "tags": ["aletheia"], "title": "Aletheia", "asDropdown": false, "includeVars": false, "keepTime": true}
+  ],
   "schemaVersion": 39,
   "version": 1,
   "refresh": "30s",

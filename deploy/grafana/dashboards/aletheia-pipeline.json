@@ -5,6 +5,9 @@
   "tags": ["aletheia", "pipeline"],
   "timezone": "browser",
   "editable": false,
+  "links": [
+    {"type": "dashboards", "tags": ["aletheia"], "title": "Aletheia", "asDropdown": false, "includeVars": false, "keepTime": true}
+  ],
   "schemaVersion": 39,
   "version": 1,
   "refresh": "10s",
@@ -200,6 +203,20 @@
         {"refId": "A", "expr": "sum(rate(aletheia_merkle_sealed_total[5m])) * 60", "legendFormat": "batches/min"},
         {"refId": "B", "expr": "max(aletheia_merkle_seal_delay_seconds)", "legendFormat": "seal delay"}
       ]
+    },
+    {"id": 40, "type": "row", "title": "Alerting", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36}, "panels": []},
+    {
+      "id": 41,
+      "type": "alertlist",
+      "title": "Firing and pending alerts",
+      "description": "Grafana-managed rules. Studio owns them (Alerting page) and files them in folder Aletheia.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 37},
+      "options": {
+        "viewMode": "list", "groupMode": "default", "groupBy": [], "maxItems": 20, "sortOrder": 1,
+        "dashboardAlerts": false, "alertName": "", "alertInstanceLabelFilter": "", "datasource": "grafana",
+        "stateFilter": {"firing": true, "pending": true, "noData": true, "normal": false, "error": true, "recovering": false},
+        "showInstances": true
+      }
     }
   ]
 }

@@ -9,6 +9,8 @@ import type {
   ApprovalState, AskAiResult, ConnTest, DemoRunResult, DemoScenario, EventPage, EventQuery,
   GateResult, LineageResponse, LlmSettings, LlmSettingsUpdate, MappingProposal, NormalizedEvent,
   PackProposal, QuarantineCluster, ReplayDiff, SlotType, Token,
+  AlertingStatus, AlertNotification, AlertOp, AlertPreview, AlertPreviewRequest, AlertRule, AlertRuleInput,
+  ContactPoint, ContactPointInput, NotificationPolicy, PolicyRoute, Sync,
 } from './types';
 import { isCloudProvider } from './types';
 
@@ -420,9 +422,288 @@ function demoOutput(id: string): { ok: boolean; output: string } {
   }
 }
 
+/* ---------------- alerting (CONTRACTS section 13), in-memory, seeded per 13.4 ---------------- */
+
+const isoAgo = (ms: number): string => new Date(Date.now() - ms).toISOString();
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const mockUid = (): string => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+/** Error carrying an HTTP-like status, as the real client's ApiError would. */
+const fail = (status: number, detail: string): Promise<never> =>
+  Promise.reject(Object.assign(new Error(detail), { status }));
+
+const SYNCED = (): Sync => ({ state: 'synced', at: isoAgo(40_000) });
+
+function seedRule(id: string, r: Partial<AlertRule> & Pick<AlertRule, 'name' | 'datasource' | 'query' | 'condition' | 'severity' | 'summary'>): AlertRule {
+  return {
+    id, group: 'aletheia', reducer: 'last', for: '0s', interval: '1m', labels: {}, description: '',
+    enabled: true, no_data_state: 'OK', created_at: isoAgo(86_400_000), updated_at: isoAgo(3_600_000),
+    sync: SYNCED(), state: 'normal', last_value: 0, last_eval: isoAgo(20_000), ...r,
+  };
+}
+
+const alerting = {
+  rules: [
+    seedRule('aletheia-reconstruct-mismatch', {
+      name: 'Reconstruction mismatch', datasource: 'prometheus', severity: 'critical',
+      query: 'sum(increase(aletheia_reconstruct_mismatch_total[5m]))', condition: { op: 'gt', threshold: 0 },
+      summary: 'Reconstruction mismatch detected, must always be zero',
+      description: 'Non-negotiable invariant: a reconstructed line differs from its raw bytes.',
+    }),
+    seedRule('aletheia-format-drift', {
+      name: 'Format drift', datasource: 'prometheus', severity: 'warning', for: '2m',
+      query: 'max(aletheia:quarantine_rate5m - (aletheia:quarantine_rate_baseline * 3 + 0.01))',
+      condition: { op: 'gt', threshold: 0 }, state: 'pending', last_value: 0.04,
+      summary: 'Quarantine rate above baseline, likely a firmware or config change',
+    }),
+    seedRule('aletheia-consumer-lag', {
+      name: 'Consumer lag growing', datasource: 'prometheus', severity: 'warning', for: '5m',
+      query: 'sum(aletheia_consumer_lag)', condition: { op: 'gt', threshold: 100000 }, last_value: 1240,
+      summary: 'Consumer lag growing: add workers or partitions',
+    }),
+    seedRule('aletheia-raw-only-spike', {
+      name: 'Raw-only lines spike', datasource: 'loki', severity: 'critical', reducer: 'last', for: '5m',
+      query: 'sum(count_over_time({parse_status="raw_only"}[5m]))', condition: { op: 'gt', threshold: 100 },
+      state: 'firing', last_value: 184, labels: { team: 'secops' },
+      summary: '{{ $values }} lines in 5m matched no template',
+      description: 'Stored verbatim, nothing lost, but a source may have changed format.',
+    }),
+  ] as AlertRule[],
+  points: [{
+    id: 'browser', name: 'Browser', type: 'browser', settings: {}, secure_fields: [],
+    disable_resolve_message: false, builtin: true, created_at: isoAgo(86_400_000), updated_at: isoAgo(86_400_000), sync: SYNCED(),
+  }] as ContactPoint[],
+  policy: {
+    receiver: 'browser', group_by: ['alertname'], group_wait: '30s', group_interval: '5m', repeat_interval: '4h',
+    routes: [{ id: 'route-critical', receiver: 'browser', matchers: [{ label: 'severity', op: '=', value: 'critical' }], continue: false, routes: [] }],
+  } as NotificationPolicy,
+  policySync: SYNCED(),
+  notes: [] as AlertNotification[],
+  nextNote: 1,
+  lastSync: isoAgo(40_000),
+};
+
+const MOCK_OPS: Record<AlertOp, (a: number, b: number) => boolean> = {
+  gt: (a, b) => a > b, gte: (a, b) => a >= b, lt: (a, b) => a < b, lte: (a, b) => a <= b, eq: (a, b) => a === b, ne: (a, b) => a !== b,
+};
+
+/** Deterministic pseudo-value for a query, so previews are stable while typing. */
+function mockValue(query: string): number {
+  let h = 0;
+  for (let i = 0; i < query.length; i++) h = (h * 31 + query.charCodeAt(i)) >>> 0;
+  return h % 250;
+}
+
+function mockNotify(n: Omit<AlertNotification, 'id' | 'received_at'>): void {
+  alerting.notes.push({ ...n, id: alerting.nextNote++, received_at: new Date().toISOString() });
+  if (alerting.notes.length > 500) alerting.notes.splice(0, alerting.notes.length - 500);
+}
+
+function checkRule(b: AlertRuleInput, selfId?: string): string | null {
+  if (!b.name?.trim()) return 'name is required';
+  if (alerting.rules.some((r) => r.name === b.name.trim() && r.id !== selfId)) return `a rule named "${b.name}" already exists`;
+  if (!b.query?.trim()) return 'query is required';
+  if (!Number.isFinite(b.condition?.threshold)) return 'threshold must be a number';
+  return null;
+}
+
+function checkPoint(b: ContactPointInput, selfId?: string): string | null {
+  if (!b.name?.trim()) return 'name is required';
+  if (alerting.points.some((p) => p.name === b.name.trim() && p.id !== selfId)) return `a contact point named "${b.name}" already exists`;
+  const s = b.settings ?? {};
+  if (b.type === 'webhook' && !String(s.url ?? '').trim()) return 'webhook url is required';
+  if (b.type === 'email' && !String(s.addresses ?? '').trim()) return 'at least one address is required';
+  return null;
+}
+
+const SECRET_KEYS = ['url', 'token'];
+
+/** Applies the secret rules: omitted keeps, "" clears, a value sets. Secrets are never returned. */
+function mergePoint(prev: ContactPoint | null, b: ContactPointInput): Pick<ContactPoint, 'settings' | 'secure_fields'> {
+  const settings = { ...b.settings };
+  if (b.type !== 'slack') return { settings, secure_fields: [] };
+  const secure = new Set(prev?.type === 'slack' ? prev.secure_fields : []);
+  for (const k of SECRET_KEYS) {
+    if (!(k in settings)) continue;
+    if (settings[k] === '') secure.delete(k); else secure.add(k);
+    delete settings[k];
+  }
+  return { settings, secure_fields: [...secure] };
+}
+
+function routeReceivers(routes: PolicyRoute[], out: Set<string>): Set<string> {
+  for (const r of routes) { out.add(r.receiver); routeReceivers(r.routes, out); }
+  return out;
+}
+
+function mockStatus(): AlertingStatus {
+  const live = alerting.rules.filter((r) => r.enabled);
+  return {
+    mode: 'grafana',
+    grafana: { url: 'http://grafana:3000', public_url: 'http://localhost:3000', reachable: true, version: '11.2.0' },
+    loki: { url: 'http://loki:3100', reachable: true },
+    prometheus: { url: 'http://prometheus:9090', reachable: true },
+    receiver_url: 'http://host.docker.internal:8081',
+    last_sync_at: alerting.lastSync, last_sync_error: null,
+    counts: {
+      rules: alerting.rules.length,
+      firing: live.filter((r) => r.state === 'firing').length,
+      pending: live.filter((r) => r.state === 'pending').length,
+      contact_points: alerting.points.length,
+    },
+  };
+}
+
+const alertingMocks = {
+  async alertingStatus(): Promise<AlertingStatus> { return delay(mockStatus(), 120); },
+  async alertingSync(): Promise<AlertingStatus> {
+    alerting.lastSync = new Date().toISOString();
+    for (const r of alerting.rules) r.sync = { state: 'synced', at: alerting.lastSync };
+    for (const p of alerting.points) p.sync = { state: 'synced', at: alerting.lastSync };
+    alerting.policySync = { state: 'synced', at: alerting.lastSync };
+    return delay(mockStatus(), 600);
+  },
+
+  async listAlertRules(): Promise<{ rules: AlertRule[] }> {
+    for (const r of alerting.rules) if (r.enabled && r.state !== 'error') r.last_eval = isoAgo(Math.floor(Math.random() * 50_000));
+    return delay({ rules: clone(alerting.rules) });
+  },
+  async getAlertRule(id: string): Promise<AlertRule> {
+    const r = alerting.rules.find((x) => x.id === id);
+    return r ? delay(clone(r)) : fail(404, `rule ${id} not found`);
+  },
+  async createAlertRule(b: AlertRuleInput): Promise<AlertRule> {
+    const bad = checkRule(b);
+    if (bad) return fail(422, bad);
+    const now = new Date().toISOString();
+    const v = mockValue(b.query);
+    const r: AlertRule = {
+      ...clone(b), name: b.name.trim(), id: mockUid(), created_at: now, updated_at: now, sync: { state: 'synced', at: now },
+      state: !b.enabled ? 'paused' : MOCK_OPS[b.condition.op](v, b.condition.threshold) ? 'pending' : 'normal',
+      last_value: b.enabled ? v : null, last_eval: b.enabled ? now : null,
+    };
+    alerting.rules.push(r);
+    return delay(clone(r), 300);
+  },
+  async updateAlertRule(id: string, b: AlertRuleInput): Promise<AlertRule> {
+    const i = alerting.rules.findIndex((x) => x.id === id);
+    if (i < 0) return fail(404, `rule ${id} not found`);
+    const bad = checkRule(b, id);
+    if (bad) return fail(422, bad);
+    const prev = alerting.rules[i];
+    const now = new Date().toISOString();
+    const v = prev.last_value ?? mockValue(b.query);
+    const next: AlertRule = {
+      ...prev, ...clone(b), name: b.name.trim(), updated_at: now, sync: { state: 'synced', at: now },
+      state: !b.enabled ? 'paused' : prev.state === 'paused' ? (MOCK_OPS[b.condition.op](v, b.condition.threshold) ? 'pending' : 'normal') : prev.state,
+    };
+    // Resuming or pausing a firing rule resolves it, and the browser point hears about it.
+    if (prev.state === 'firing' && next.state === 'paused') {
+      mockNotify({
+        status: 'resolved', source: 'local', rule_id: id, rule_name: next.name, severity: next.severity, summary: next.summary,
+        description: 'Rule paused.', labels: { ...next.labels, severity: next.severity }, value: prev.last_value,
+        contact_point_id: 'browser', contact_point_name: 'Browser', starts_at: prev.last_eval, ends_at: now, link: null,
+      });
+    }
+    alerting.rules[i] = next;
+    return delay(clone(next), 250);
+  },
+  async deleteAlertRule(id: string): Promise<null> {
+    if (!alerting.rules.some((r) => r.id === id)) return fail(404, `rule ${id} not found`);
+    alerting.rules = alerting.rules.filter((r) => r.id !== id);
+    return delay(null);
+  },
+  async previewAlertRule(b: AlertPreviewRequest): Promise<AlertPreview> {
+    const q = b.query.trim();
+    if (!q) return delay({ value: null, firing: false, error: 'query is empty', series: 0 }, 300);
+    if (b.datasource === 'clickhouse' && !/^\s*(select|with)\b/i.test(q)) {
+      return delay({ value: null, firing: false, error: 'ClickHouse query must be a SELECT returning one number', series: 0 }, 300);
+    }
+    if (b.datasource === 'loki' && !q.includes('{')) {
+      return delay({ value: null, firing: false, error: 'parse error: a LogQL metric query needs a {stream selector}', series: 0 }, 300);
+    }
+    const value = mockValue(q);
+    return delay({ value, firing: MOCK_OPS[b.condition.op](value, b.condition.threshold), series: 1 }, 450);
+  },
+
+  async listContactPoints(): Promise<{ contact_points: ContactPoint[] }> {
+    return delay({ contact_points: clone(alerting.points) });
+  },
+  async createContactPoint(b: ContactPointInput): Promise<ContactPoint> {
+    const bad = checkPoint(b);
+    if (bad) return fail(422, bad);
+    const now = new Date().toISOString();
+    const p: ContactPoint = {
+      id: mockUid(), name: b.name.trim(), type: b.type, disable_resolve_message: b.disable_resolve_message,
+      builtin: false, created_at: now, updated_at: now, sync: { state: 'synced', at: now }, ...mergePoint(null, b),
+    };
+    alerting.points.push(p);
+    return delay(clone(p), 250);
+  },
+  async updateContactPoint(id: string, b: ContactPointInput): Promise<ContactPoint> {
+    const i = alerting.points.findIndex((x) => x.id === id);
+    if (i < 0) return fail(404, `contact point ${id} not found`);
+    const prev = alerting.points[i];
+    if (prev.builtin && b.type !== prev.type) return fail(400, 'the builtin Browser contact point cannot change type');
+    const bad = checkPoint(b, id);
+    if (bad) return fail(422, bad);
+    const now = new Date().toISOString();
+    const next: ContactPoint = {
+      ...prev, name: b.name.trim(), type: b.type, disable_resolve_message: b.disable_resolve_message,
+      updated_at: now, sync: { state: 'synced', at: now }, ...mergePoint(prev, b),
+    };
+    alerting.points[i] = next;
+    return delay(clone(next), 250);
+  },
+  async deleteContactPoint(id: string): Promise<null> {
+    const p = alerting.points.find((x) => x.id === id);
+    if (!p) return fail(404, `contact point ${id} not found`);
+    if (p.builtin) return fail(409, 'the builtin Browser contact point cannot be deleted');
+    const used = routeReceivers(alerting.policy.routes, new Set([alerting.policy.receiver]));
+    if (used.has(id)) return fail(409, `contact point "${p.name}" is used by the notification policy tree; re-route it first`);
+    alerting.points = alerting.points.filter((x) => x.id !== id);
+    return delay(null);
+  },
+  async testContactPoint(id: string): Promise<{ ok: boolean; detail: string }> {
+    const p = alerting.points.find((x) => x.id === id);
+    if (!p) return fail(404, `contact point ${id} not found`);
+    if (p.type === 'browser') {
+      mockNotify({
+        status: 'firing', source: 'test', rule_id: null, rule_name: 'Test notification', severity: 'info',
+        summary: `Test delivery to ${p.name}`, description: 'If you can read this, browser notifications work.',
+        labels: { alertname: 'TestAlert' }, value: null, contact_point_id: p.id, contact_point_name: p.name,
+        starts_at: new Date().toISOString(), ends_at: null, link: null,
+      });
+      return delay({ ok: true, detail: 'Test notification queued; it appears within a few seconds.' }, 400);
+    }
+    if (p.type === 'slack' && !p.secure_fields.length) return delay({ ok: false, detail: 'slack: no webhook url or token configured' }, 500);
+    return delay({ ok: true, detail: `Test sent to ${p.name} (${p.type}); fixture mode, nothing left the browser.` }, 600);
+  },
+
+  async getPolicies(): Promise<{ policy: NotificationPolicy; sync: Sync }> {
+    return delay({ policy: clone(alerting.policy), sync: { ...alerting.policySync } });
+  },
+  async putPolicies(p: NotificationPolicy): Promise<{ policy: NotificationPolicy; sync: Sync }> {
+    const known = new Set(alerting.points.map((x) => x.id));
+    const unknown = [...routeReceivers(p.routes, new Set([p.receiver]))].find((r) => !known.has(r));
+    if (unknown !== undefined) return fail(400, `unknown receiver id "${unknown}"`);
+    alerting.policy = clone(p);
+    alerting.policySync = { state: 'synced', at: new Date().toISOString() };
+    return delay({ policy: clone(alerting.policy), sync: { ...alerting.policySync } }, 300);
+  },
+
+  async alertNotifications(after?: number, limit = 50): Promise<{ items: AlertNotification[]; last_id: number }> {
+    const n = Math.min(200, Math.max(1, limit));
+    const items = after === undefined ? alerting.notes.slice(-n) : alerting.notes.filter((x) => x.id > after).slice(0, n);
+    // Cursor = last id returned; with nothing new, the newest id (as the Studio feed does).
+    return delay({ items: clone(items), last_id: items.length ? items[items.length - 1].id : alerting.nextNote - 1 }, 80);
+  },
+};
+
 /* ---------------- handlers ---------------- */
 
 export const mockApi = {
+  ...alertingMocks,
+
   async listEvents(q: EventQuery): Promise<EventPage> {
     let rows = BUILT.map((b) => b.event);
     if (!state.driftTriggered) rows = rows.filter((e) => e.aletheia.parse_status !== 'raw_only');

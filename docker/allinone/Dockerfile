@@ -175,6 +175,7 @@ COPY deploy/clickhouse/config.d/         /etc/aletheia/clickhouse/config.d/
 COPY deploy/postgres/init.sql            /opt/aletheia/sql/postgres-init.sql
 COPY deploy/vector/ingest.toml           /etc/aletheia/vector/ingest.toml
 COPY deploy/vector/sinks.toml            /etc/aletheia/vector/sinks.toml
+COPY deploy/vector/loki.toml             /etc/aletheia/vector/loki.toml
 COPY deploy/vector/sources.csv           /etc/aletheia/vector/sources.csv
 COPY deploy/loki/loki.yml                /etc/aletheia/loki/loki.yml
 COPY deploy/prometheus/prometheus.yml    /etc/aletheia/prometheus/prometheus.yml

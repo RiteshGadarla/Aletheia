@@ -5,8 +5,9 @@ import { useSettings } from '../lib/settings';
 import { useTheme } from '../lib/theme';
 import { ErrorBoundary } from './ErrorBoundary';
 import { NotifyProvider, useNotify } from '../lib/notify';
+import { useAlertingStatus } from '../lib/alerting';
 import {
-  IconClose, IconDemo, IconEvents, IconExport, IconHome, IconInfo, IconLock, IconMenu, IconMoon,
+  IconBell, IconClose, IconDemo, IconEvents, IconExport, IconHome, IconInfo, IconLock, IconMenu, IconMoon,
   IconLyra, IconSettings, IconSources, IconSun,
 } from './Icons';
 
@@ -16,6 +17,7 @@ const NAV = [
   { to: '/dashboard/events', label: 'Events', desc: 'One OCSF table', Icon: IconEvents, end: false },
   { to: '/dashboard/lyra', label: 'Lyra', desc: 'Ask your data', Icon: IconLyra, end: false },
   { to: '/dashboard/sources', label: 'Sources', desc: 'Connect and approve', Icon: IconSources, end: false },
+  { to: '/dashboard/alerting', label: 'Alerting', desc: 'Rules, contacts, routing', Icon: IconBell, end: false },
   { to: '/dashboard/export', label: 'Export & Supply', desc: 'Reports, logs & stream', Icon: IconExport, end: false },
   { to: '/dashboard/demo', label: 'Demo', desc: 'Sample servers', Icon: IconDemo, end: false },
   { to: '/dashboard/settings', label: 'Setting', desc: 'LLM & air-gap', Icon: IconSettings, end: false },
@@ -83,6 +85,7 @@ export function Layout() {
 
 function LayoutInner() {
   const { pending } = useNotify();
+  const firing = useAlertingStatus().status?.counts.firing ?? 0;
   const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const location = useLocation();
@@ -134,6 +137,9 @@ function LayoutInner() {
               </span>
               {to === '/dashboard/sources' && pending.length > 0 && (
                 <span className="nav-badge" title={`${pending.length} ready for approval`}>{pending.length}</span>
+              )}
+              {to === '/dashboard/alerting' && firing > 0 && (
+                <span className="nav-badge bad" title={`${firing} alert rule${firing === 1 ? '' : 's'} firing`}>{firing}</span>
               )}
             </NavLink>
           ))}

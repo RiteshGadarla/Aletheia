@@ -63,7 +63,13 @@ make run          # services + engine/Studio/frontend natively
 | Product landing page | <http://localhost:5173> |
 | Dashboard (Overview, Events, Lyra, Sources, Export, Demo, Settings) | <http://localhost:5173/dashboard> |
 | Studio API | <http://localhost:8081> |
-| ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 |
+| Grafana (admin / `aletheia`) | <http://localhost:3000> · logs dashboard `/d/aletheia-logs` |
+| ClickHouse | :8123 · PostgreSQL :5432 · Redpanda :9092 · Loki :3100 · Prometheus :9090 |
+
+`make services` also runs a small Vector that ships the `normalized` topic to Loki, so the Grafana
+logs dashboard fills as soon as the worker runs. Alerting (rules, contact points, notification
+policies) lives in the dashboard's Alerting page; Grafana evaluates, Studio owns the configuration.
+See [docs/alerting.md](docs/alerting.md).
 
 Go is not required up front — `make install-go` drops Go 1.23 into `~/.local/go` without root.
 
@@ -195,6 +201,8 @@ demo. Use `-v aletheia-data:/data` to persist across restarts.
 | `ALETHEIA_ADMIN_PASSWORD` | documented demo value | UI and Grafana admin password |
 | `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud AI providers |
 | `ALETHEIA_SECRET` | generated at first start | Key material for secrets stored via the UI |
+| `ALETHEIA_SMTP_ENABLED` / `_HOST` / `_USER` / `_PASSWORD` / `_FROM_ADDRESS` | off | Grafana SMTP, for email alert contact points ([docs/alerting.md](docs/alerting.md)) |
+| `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://localhost:3000` | Grafana as the browser reaches it, for alert and event deep links |
 
 ## 10. Lyra — data assistant
 
@@ -353,6 +361,7 @@ Honest scope and known limitations are in
 | Apple Silicon warnings | The image is multi-arch; make sure you pulled the `arm64` variant. |
 | Container cannot reach Ollama on Linux | Needs `--add-host=host.docker.internal:host-gateway`, and Ollama must listen beyond `127.0.0.1` (`OLLAMA_HOST=0.0.0.0`). Restrict with the host firewall. |
 | "AI suggestion unavailable" | Expected fallback. Heuristic proposals still work. Check Settings → Test connection. |
+| Alerts fire in Grafana but never reach the browser (`make run`) | Grafana cannot reach Studio on the host. See [docs/alerting.md](docs/alerting.md#troubleshooting) (usually the host firewall). |
 
 ---
 

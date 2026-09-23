@@ -4,6 +4,8 @@ providers:
   - name: aletheia
     orgId: 1
     folder: Aletheia
+    # Fixed uid on fresh installs; Studio files alert rules in this folder, found by title.
+    folderUid: aletheia
     type: file
     disableDeletion: true
     updateIntervalSeconds: 30

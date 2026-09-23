@@ -330,3 +330,146 @@ data: {"type": "done", "available": true, "answer": "...", "blocks": [...], "ses
 | `sources` | Per-source stats with sparklines |
 | `normalized` | ClickHouse parse-status breakdown: `total`, `full`, `partial`, `raw_only`, `templates`, `normalized_pct` |
 | `history` | Recent approval/rejection activity |
+
+## 13. Alerting API contract (Grafana-backed)
+
+Grafana unified alerting is the engine. Studio is the store of truth for alert rules, contact
+points and the notification policy tree, and pushes them to Grafana's provisioning API
+(`X-Disable-Provenance: true`, so they stay editable in Grafana too). Grafana alerting objects
+are **not** file-provisioned: Studio owns them. When Grafana is not configured or unreachable,
+Studio's own evaluator runs the same rules (`mode: "local"`), so the feature works on `make dev`.
+
+### 13.1 Environment
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALETHEIA_GRAFANA_URL` | unset → local mode | Grafana base URL as Studio reaches it (`http://grafana:3000`, `http://127.0.0.1:3000`) |
+| `ALETHEIA_GRAFANA_PUBLIC_URL` | `ALETHEIA_GRAFANA_URL` or `http://localhost:3000` | Grafana URL as the browser reaches it (deep links) |
+| `ALETHEIA_GRAFANA_TOKEN` | unset | Service-account token; else basic auth below |
+| `ALETHEIA_GRAFANA_USER` / `ALETHEIA_GRAFANA_PASSWORD` | `admin` / `aletheia` | Basic auth fallback |
+| `ALETHEIA_ALERT_RECEIVER_URL` | `http://host.docker.internal:8081` | Studio base URL as **Grafana** reaches it, for the browser webhook |
+| `ALETHEIA_LOKI_URL` | unset | Loki base URL; raw store (only if `/ready` answers) and `loki` rule queries |
+| `ALETHEIA_PROMETHEUS_URL` | unset | Prometheus base URL for `prometheus` rule queries in local mode |
+
+### 13.2 Objects
+
+Server-owned fields (never accepted on create/update): `id`, `created_at`, `updated_at`, `sync`,
+`state`, `last_value`, `last_eval`, `builtin`, `secure_fields`. Times are ISO-8601 UTC strings.
+
+```ts
+type Sync = { state: 'synced' | 'pending' | 'error' | 'local'; error?: string; at?: string };
+
+interface AlertRule {
+  id: string;                       // also the Grafana rule uid
+  name: string;                     // unique
+  group: string;                    // default "aletheia"; Grafana rule group in folder "Aletheia"
+  datasource: 'loki' | 'prometheus' | 'clickhouse';
+  query: string;                    // LogQL metric query / PromQL / ClickHouse SQL returning one number
+  reducer: 'last' | 'mean' | 'max' | 'min' | 'sum' | 'count';           // default "last"
+  condition: { op: 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne'; threshold: number };
+  for: string;                      // pending period, Go duration: "0s", "2m"
+  interval: string;                 // evaluation interval, default "1m"
+  severity: 'critical' | 'warning' | 'info';                          // also sent as label severity
+  labels: Record<string, string>;
+  summary: string;                  // annotation; may use {{ $labels.x }} / {{ $values }}
+  description: string;
+  enabled: boolean;                 // false = paused
+  no_data_state: 'OK' | 'NoData' | 'Alerting';                        // default "OK"
+  created_at: string; updated_at: string; sync: Sync;
+  state: 'normal' | 'pending' | 'firing' | 'nodata' | 'error' | 'paused';
+  last_value: number | null; last_eval: string | null; last_error?: string;
+}
+
+interface ContactPoint {
+  id: string;
+  name: string;                     // unique; also the Grafana receiver name
+  type: 'browser' | 'webhook' | 'email' | 'slack';
+  settings: Record<string, unknown>;
+  //  browser: {}                                  -> Grafana webhook to Studio /alerting/receive
+  //  webhook: { url: string; http_method?: 'POST' | 'PUT' }
+  //  email:   { addresses: string; single_email?: boolean }   // ';' or ',' separated
+  //  slack:   { url?: string; recipient?: string; token?: string }  // url OR token+recipient
+  secure_fields: string[];          // secret keys that are set (slack url/token); values never returned
+  disable_resolve_message: boolean;
+  builtin: boolean;                 // the seeded "Browser" point: cannot be deleted
+  created_at: string; updated_at: string; sync: Sync;
+}
+// On update, an omitted secret key keeps its stored value; "" clears it.
+
+interface Matcher { label: string; op: '=' | '!=' | '=~' | '!~'; value: string }
+interface PolicyRoute {
+  id: string;                       // client-generated, stable within the tree
+  receiver: string;                 // ContactPoint.id
+  matchers: Matcher[];
+  continue: boolean;
+  group_by?: string[]; group_wait?: string; group_interval?: string; repeat_interval?: string;
+  routes: PolicyRoute[];            // nested
+}
+interface NotificationPolicy {      // the root / default policy
+  receiver: string;                 // ContactPoint.id
+  group_by: string[];               // default ["alertname"]
+  group_wait: string;               // default "30s"
+  group_interval: string;           // default "5m"
+  repeat_interval: string;          // default "4h"
+  routes: PolicyRoute[];
+}
+
+interface AlertNotification {       // one delivery to a *browser* contact point
+  id: number;                       // monotonic
+  received_at: string;
+  status: 'firing' | 'resolved';
+  source: 'grafana' | 'local' | 'test';
+  rule_id: string | null; rule_name: string;
+  severity: string; summary: string; description: string;
+  labels: Record<string, string>;
+  value: number | null;
+  contact_point_id: string; contact_point_name: string;
+  starts_at: string | null; ends_at: string | null;
+  link: string | null;              // Grafana link when known
+}
+
+interface AlertingStatus {
+  mode: 'grafana' | 'local';
+  grafana: { url: string | null; public_url: string; reachable: boolean; version?: string; error?: string };
+  loki: { url: string | null; reachable: boolean; error?: string };
+  prometheus: { url: string | null; reachable: boolean; error?: string };
+  receiver_url: string;
+  last_sync_at: string | null; last_sync_error: string | null;
+  counts: { rules: number; firing: number; pending: number; contact_points: number };
+}
+```
+
+### 13.3 Endpoints (prefix `/api/v1`)
+
+| Method & path | Body → Response |
+|---|---|
+| `GET /alerting/status` | → `AlertingStatus` |
+| `POST /alerting/sync` | full push to Grafana → `AlertingStatus` |
+| `GET /alerting/rules` | → `{ rules: AlertRule[] }` |
+| `POST /alerting/rules` | rule fields → `AlertRule` (201) |
+| `GET /alerting/rules/{id}` | → `AlertRule` |
+| `PUT /alerting/rules/{id}` | rule fields (full replace) → `AlertRule` |
+| `DELETE /alerting/rules/{id}` | → 204 |
+| `POST /alerting/rules/preview` | `{datasource, query, reducer, condition}` → `{ value: number \| null; firing: boolean; error?: string; series: number }` (evaluated by Studio against the datasource) |
+| `GET /alerting/contact-points` | → `{ contact_points: ContactPoint[] }` |
+| `POST /alerting/contact-points` | → `ContactPoint` (201) |
+| `GET/PUT/DELETE /alerting/contact-points/{id}` | → `ContactPoint` / `ContactPoint` / 204; DELETE of a point referenced by the policy tree or builtin → 409 |
+| `POST /alerting/contact-points/{id}/test` | → `{ ok: boolean; detail: string }`; browser: emits a `source:"test"` notification |
+| `GET /alerting/policies` | → `{ policy: NotificationPolicy; sync: Sync }` |
+| `PUT /alerting/policies` | `NotificationPolicy` → `{ policy, sync }`; unknown receiver id → 400 |
+| `GET /alerting/notifications?after=<id>&limit=<n≤200>` | → `{ items: AlertNotification[]; last_id: number }` (ascending id; `after` omitted → latest `limit`) |
+| `POST /alerting/receive?contact_point=<id>` | Grafana/Alertmanager webhook payload → 204 |
+
+Validation failures are 400/422 with `detail`. Unknown id → 404.
+
+### 13.4 Seed (first start, empty store)
+
+Contact point `Browser` (builtin, type `browser`); root policy → Browser with a route
+`severity=critical` → Browser; starter rules converted from `deploy/prometheus/rules`
+(reconstruction mismatch, format drift, consumer lag) plus a Loki rule
+`sum(count_over_time({parse_status="raw_only"}[5m]))` > 100.
+
+### 13.5 Grafana deep links
+
+Loki log dashboard uid `aletheia-logs`, variables `var-event_uid`, `var-source_id`, `var-vendor`.
+Event link: `${public_url}/d/aletheia-logs/aletheia-logs?var-event_uid=<uid>`.

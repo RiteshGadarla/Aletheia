@@ -7,6 +7,7 @@ import { IconCheck, IconClose, IconCopy, IconLineage } from './Icons';
 import { OcsfTree } from './OcsfTree';
 import { RawLine } from './RawLine';
 import { api } from '../lib/api';
+import { GrafanaEventLink } from '../lib/alerting';
 import { byteLen, sha256Hex } from '../lib/lineage';
 import { useAsync } from '../lib/useAsync';
 
@@ -67,6 +68,7 @@ export function LineageModal({ eventUid, onClose }: LineageModalProps) {
             </div>
           </div>
           <div className="row-tight" style={{ gap: 8 }}>
+            <GrafanaEventLink eventUid={eventUid} label="Open in Grafana" />
             {d && (
               <button
                 type="button"

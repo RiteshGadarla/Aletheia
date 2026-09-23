@@ -13,8 +13,10 @@ services:
       - --reserve-memory 0M
       - --node-id 0
       - --check=false
-      - --kafka-addr PLAINTEXT://0.0.0.0:9092
-      - --advertise-kafka-addr PLAINTEXT://localhost:9092
+      # External listener first: native clients and in-container rpk keep localhost:9092.
+      # Containers (vector-loki) use the internal one, since localhost means themselves.
+      - --kafka-addr external://0.0.0.0:9092,internal://0.0.0.0:29092
+      - --advertise-kafka-addr external://localhost:9092,internal://redpanda:29092
     ports: ["9092:9092", "9644:9644"]
     volumes: ["redpanda:/var/lib/redpanda/data"]
     healthcheck:
@@ -89,8 +91,17 @@ services:
       GF_ANALYTICS_FEEDBACK_LINKS_ENABLED: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
       GF_USAGE_STATS_ENABLED: "false"
+      # Email contact points (docs/alerting.md). Off unless ALETHEIA_SMTP_ENABLED=true.
+      GF_SMTP_ENABLED: ${ALETHEIA_SMTP_ENABLED:-false}
+      GF_SMTP_HOST: ${ALETHEIA_SMTP_HOST:-}
+      GF_SMTP_USER: ${ALETHEIA_SMTP_USER:-}
+      GF_SMTP_PASSWORD: ${ALETHEIA_SMTP_PASSWORD:-}
+      GF_SMTP_FROM_ADDRESS: ${ALETHEIA_SMTP_FROM_ADDRESS:-aletheia@aletheia.localhost}
       ALETHEIA_CH_PASSWORD: aletheia
+    # The "browser" contact point is a webhook to the natively running Studio (make studio).
+    extra_hosts: ["host.docker.internal:host-gateway"]
     volumes:
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
@@ -102,7 +113,45 @@ services:
       retries: 30
       start_period: 30s
 
+  # Scrapes the native worker on the host; feeds the pipeline dashboard and prometheus alert rules.
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.native.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus:/prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9090/-/healthy | grep -q Healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
+  # Topic `normalized` -> Loki only (no syslog listeners, no HEC/CEF), for the Grafana logs dashboard.
+  vector-loki:
+    image: timberio/vector:0.44.0-debian
+    depends_on:
+      redpanda: {condition: service_healthy}
+      loki: {condition: service_healthy}
+    command: ["--config", "/etc/vector/loki.toml"]
+    restart: on-failure
+    environment:
+      ALETHEIA_BUS_BROKERS: redpanda:29092
+      ALETHEIA_LOKI_ENDPOINT: http://loki:3100
+      VECTOR_LOG: warn
+    volumes:
+      - ./vector/loki.toml:/etc/vector/loki.toml:ro
+      - vector:/var/lib/vector
+
 volumes:
+  prometheus:
+  vector:
   loki:
   redpanda:
   clickhouse:

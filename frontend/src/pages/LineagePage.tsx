@@ -12,6 +12,7 @@ import { OcsfTree } from '../components/OcsfTree';
 import { Pagination } from '../components/Pagination';
 import { RawLine } from '../components/RawLine';
 import { api } from '../lib/api';
+import { GrafanaEventLink } from '../lib/alerting';
 import { byteLen, sha256Hex } from '../lib/lineage';
 import { useAsync } from '../lib/useAsync';
 
@@ -196,6 +197,7 @@ export function LineagePage() {
         title="Lineage Viewer"
         right={
           <div className="row-tight" style={{ gap: 'var(--s3)' }}>
+            {eventUid && <GrafanaEventLink eventUid={eventUid} label="Open in Grafana" />}
             {d && (
               <button
                 type="button"

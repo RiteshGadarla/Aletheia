@@ -3,7 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from './api';
-import type { SourceInfo } from './types';
+import type { AlertNotification, SourceInfo } from './types';
+import { notifSupported, refreshAlertingStatus } from './alerting';
 
 export interface ToastIn {
   kind?: 'ok' | 'info' | 'bad'; title: string; body?: string;
@@ -25,11 +26,29 @@ const saveSeen = (s: Set<string>) => { try { sessionStorage.setItem(SEEN_KEY, JS
 
 let nextId = 0;
 
+// Alert deliveries to the Browser contact point (CONTRACTS 13.3). The last seen id survives reloads
+// in this tab, so old alerts are never replayed.
+const ALERT_KEY = 'aletheia.alerting.lastId';
+const ALERTS_PAGE = '/dashboard/alerting/rules';
+const loadAlertId = (): number | null => {
+  try { const v = sessionStorage.getItem(ALERT_KEY); return v === null ? null : Number(v); } catch { return null; }
+};
+const saveAlertId = (id: number) => { try { sessionStorage.setItem(ALERT_KEY, String(id)); } catch { /* private mode */ } };
+
+const alertTitle = (n: AlertNotification): string =>
+  n.source === 'test' ? `Test: ${n.contact_point_name}`
+    : n.status === 'resolved' ? `Resolved: ${n.rule_name}` : `Firing: ${n.rule_name}`;
+const alertBody = (n: AlertNotification): string =>
+  n.summary || n.description || (n.value !== null ? `value ${n.value}` : n.severity);
+
 export function NotifyProvider({ children }: { children: ReactNode }) {
   const nav = useNavigate();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [pending, setPending] = useState<SourceInfo[]>([]);
   const seen = useRef<Set<string>>(loadSeen());
+  // navigate's identity can change per route; the poller must not restart because of it.
+  const navRef = useRef(nav);
+  navRef.current = nav;
 
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
   const toast = useCallback((t: ToastIn) => {
@@ -41,7 +60,56 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let alive = true;
     let t: number | undefined;
+    let alertId = loadAlertId();
+    let alertsOff = false;
+    let ticks = 0;
+    let alertBusy = false;
+
+    // Runs even while the tab is hidden: that is exactly when an OS notification matters. Tags dedupe across tabs.
+    const pollAlerts = async () => {
+      if (alertsOff) return;
+      try {
+        if (alertId === null || !Number.isFinite(alertId)) {
+          const base = await api.alertNotifications(undefined, 1);
+          alertId = base.last_id; saveAlertId(alertId);
+          return;
+        }
+        const d = await api.alertNotifications(alertId, 50);
+        if (!alive) return;
+        // Ids went backwards: the server's store was reset. Re-baseline instead of going silent.
+        if (d.last_id < alertId) { alertId = d.last_id; saveAlertId(alertId); return; }
+        if (!d.items.length) return;
+        alertId = Math.max(d.last_id, ...d.items.map((n) => n.id)); saveAlertId(alertId);
+        // The stack holds three toasts; leave room for the summary when there are more.
+        const shown = d.items.slice(d.items.length > 3 ? -2 : -3);
+        for (const n of shown) {
+          const critical = n.status === 'firing' && n.severity === 'critical' && n.source !== 'test';
+          toast({
+            kind: n.status === 'resolved' ? 'ok' : critical ? 'bad' : 'info', sticky: critical,
+            title: alertTitle(n), body: alertBody(n), action: { label: 'Open alert rules', to: ALERTS_PAGE },
+          });
+          if (notifSupported() && Notification.permission === 'granted') {
+            try {
+              const os = new Notification(alertTitle(n), { body: alertBody(n), tag: String(n.id) });
+              os.onclick = () => { window.focus(); navRef.current(ALERTS_PAGE); os.close(); };
+            } catch { /* some mobile browsers only allow notifications from a service worker */ }
+          }
+        }
+        if (d.items.length > shown.length) {
+          toast({ kind: 'info', title: `${d.items.length - shown.length} more alert notifications`, action: { label: 'Open alert rules', to: ALERTS_PAGE } });
+        }
+        void refreshAlertingStatus();
+      } catch (e) {
+        // An older backend without alerting: stop asking. Anything else: try again next tick.
+        if ((e as { status?: number })?.status === 404) alertsOff = true;
+      }
+    };
+
     const tick = async () => {
+      // Not awaited: a slow alerting endpoint must not delay the source-review watcher.
+      if (!alertBusy) { alertBusy = true; void pollAlerts().finally(() => { alertBusy = false; }); }
+      // Keeps the sidebar's firing badge current without a poller of its own.
+      if (!alertsOff && !document.hidden && ++ticks % 6 === 0) void refreshAlertingStatus();
       if (document.hidden) { t = window.setTimeout(() => void tick(), 4000); return; }
       try {
         const d = await api.listSources();

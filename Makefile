@@ -55,7 +55,7 @@ help:
 	@echo "  lite            dockerless end-to-end over files"
 	@echo "  cli ARGS='...'  run the aletheia CLI, e.g. ARGS='test-pack --help'"
 	@echo
-	@echo "  services        start ONLY the datastores in Docker (CH, PG, Redpanda, Loki, Grafana)"
+	@echo "  services        start ONLY the datastores in Docker (CH, PG, Redpanda, Loki, Grafana, Prometheus)"
 	@echo "  run             services in Docker + engine/studio/frontend natively"
 	@echo "  up / down       optional: the entire stack in Docker"
 	@echo "  install-go      install Go $(GO_VERSION) into ~/.local/go (no root)"
@@ -156,12 +156,19 @@ frontend-check:
 ## ---------------------------------------------------------------- run, no Docker
 
 # Studio reads the gitignored local config, so the LLM key is already set: nothing to type.
+# Grafana/Loki/Prometheus come from `make services`; unreachable ones fall back to local mode.
+# Grafana (in Docker) reaches this Studio for browser alerts via host.docker.internal:8081.
 studio:
 	@[ -d $(VENV) ] || { echo "run make setup first"; exit 1; }
 	@set -a; [ -f $(SECRETS) ] && . $(SECRETS); set +a; \
 	 cd $(ROOT)/backend && ALETHEIA_MODE=lite \
 	   ALETHEIA_PG_DSN=$${ALETHEIA_PG_DSN:-postgres://aletheia:aletheia@127.0.0.1:5432/aletheia} \
 	   ALETHEIA_BUS_BROKERS=$${ALETHEIA_BUS_BROKERS:-127.0.0.1:9092} \
+	   ALETHEIA_GRAFANA_URL=$${ALETHEIA_GRAFANA_URL:-http://127.0.0.1:3000} \
+	   ALETHEIA_GRAFANA_PUBLIC_URL=$${ALETHEIA_GRAFANA_PUBLIC_URL:-http://localhost:3000} \
+	   ALETHEIA_LOKI_URL=$${ALETHEIA_LOKI_URL:-http://127.0.0.1:3100} \
+	   ALETHEIA_PROMETHEUS_URL=$${ALETHEIA_PROMETHEUS_URL:-http://127.0.0.1:9090} \
+	   ALETHEIA_ALERT_RECEIVER_URL=$${ALETHEIA_ALERT_RECEIVER_URL:-http://host.docker.internal:8081} \
 	   $(VENV)/bin/uvicorn studio.main:app --reload --host 0.0.0.0 --port 8081
 
 # Engine worker: raw topic -> parse, verify, OCSF -> ClickHouse. Approved sources reach Events and
@@ -233,13 +240,14 @@ services:
 	@echo "waiting for health..."
 	@for i in $$(seq 1 60); do \
 	  n=$$(docker compose -f $(SERVICES) ps --format '{{.Health}}' | grep -c '^healthy$$' || true); \
-	  [ "$$n" -ge 5 ] && { echo "all 5 services healthy"; break; }; sleep 2; \
+	  [ "$$n" -ge 6 ] && { echo "all 6 services healthy"; break; }; sleep 2; \
 	done
 	@docker compose -f $(SERVICES) ps --format 'table {{.Service}}\t{{.Status}}'
 	@echo
 	@$(MAKE) --no-print-directory topics
 	@echo
 	@echo "ClickHouse :8123   PostgreSQL :5432   Redpanda :9092   Grafana :3000"
+	@echo "Loki :3100   Prometheus :9090   logs dashboard: http://localhost:3000/d/aletheia-logs"
 
 # Topics are part of a usable stack, so create them once the bus is healthy.
 topics:

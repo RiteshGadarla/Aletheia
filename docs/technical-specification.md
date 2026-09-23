@@ -1435,7 +1435,7 @@ aletheia/
 ├── deploy/
 │   ├── docker-compose.yml          # production mode (multi-image)
 │   ├── helm/                       # optional
-│   ├── vector/                     # ingest.toml (sources -> raw), sinks.toml (normalized -> Loki/HEC/CEF)
+│   ├── vector/                     # ingest.toml (sources -> raw), loki.toml (normalized -> Loki), sinks.toml (-> HEC/CEF)
 │   ├── redpanda/                   # topic definitions
 │   ├── clickhouse/init.sql
 │   ├── postgres/init.sql

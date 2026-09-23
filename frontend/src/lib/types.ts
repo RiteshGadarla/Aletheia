@@ -471,3 +471,118 @@ export interface ChatSession {
   messages: ChatMessage[];
 }
 export type ChatExportFormat = 'pdf' | 'markdown' | 'json' | 'text';
+
+/* Alerting, CONTRACTS section 13 (Grafana-backed; Studio is the store of truth) */
+export type SyncState = 'synced' | 'pending' | 'error' | 'local';
+export interface Sync { state: SyncState; error?: string; at?: string }
+
+export type AlertDatasource = 'loki' | 'prometheus' | 'clickhouse';
+export type AlertReducer = 'last' | 'mean' | 'max' | 'min' | 'sum' | 'count';
+export type AlertOp = 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne';
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+export type AlertNoData = 'OK' | 'NoData' | 'Alerting';
+export type AlertState = 'normal' | 'pending' | 'firing' | 'nodata' | 'error' | 'paused';
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  group: string;
+  datasource: AlertDatasource;
+  query: string;
+  reducer: AlertReducer;
+  condition: { op: AlertOp; threshold: number };
+  for: string;
+  interval: string;
+  severity: AlertSeverity;
+  labels: Record<string, string>;
+  summary: string;
+  description: string;
+  enabled: boolean;
+  no_data_state: AlertNoData;
+  created_at: string;
+  updated_at: string;
+  sync: Sync;
+  state: AlertState;
+  last_value: number | null;
+  last_eval: string | null;
+  last_error?: string;
+}
+
+/** Fields a client may send on create / full-replace update. */
+export type AlertRuleInput = Omit<AlertRule,
+  'id' | 'created_at' | 'updated_at' | 'sync' | 'state' | 'last_value' | 'last_eval' | 'last_error'>;
+
+export interface AlertPreviewRequest {
+  datasource: AlertDatasource; query: string; reducer: AlertReducer; condition: AlertRule['condition'];
+}
+export interface AlertPreview { value: number | null; firing: boolean; error?: string; series: number }
+
+export type ContactPointType = 'browser' | 'webhook' | 'email' | 'slack';
+export interface ContactPoint {
+  id: string;
+  name: string;
+  type: ContactPointType;
+  settings: Record<string, unknown>;
+  secure_fields: string[];
+  disable_resolve_message: boolean;
+  builtin: boolean;
+  created_at: string;
+  updated_at: string;
+  sync: Sync;
+}
+/** An omitted secret key keeps its stored value; "" clears it. */
+export interface ContactPointInput {
+  name: string; type: ContactPointType; settings: Record<string, unknown>; disable_resolve_message: boolean;
+}
+
+export type MatcherOp = '=' | '!=' | '=~' | '!~';
+export interface Matcher { label: string; op: MatcherOp; value: string }
+export interface PolicyRoute {
+  id: string;
+  receiver: string;
+  matchers: Matcher[];
+  continue: boolean;
+  group_by?: string[];
+  group_wait?: string;
+  group_interval?: string;
+  repeat_interval?: string;
+  routes: PolicyRoute[];
+}
+export interface NotificationPolicy {
+  receiver: string;
+  group_by: string[];
+  group_wait: string;
+  group_interval: string;
+  repeat_interval: string;
+  routes: PolicyRoute[];
+}
+
+export interface AlertNotification {
+  id: number;
+  received_at: string;
+  status: 'firing' | 'resolved';
+  source: 'grafana' | 'local' | 'test';
+  rule_id: string | null;
+  rule_name: string;
+  severity: string;
+  summary: string;
+  description: string;
+  labels: Record<string, string>;
+  value: number | null;
+  contact_point_id: string;
+  contact_point_name: string;
+  starts_at: string | null;
+  ends_at: string | null;
+  link: string | null;
+}
+
+export interface AlertingStatus {
+  mode: 'grafana' | 'local';
+  grafana: { url: string | null; public_url: string; reachable: boolean; version?: string; error?: string };
+  loki: { url: string | null; reachable: boolean; error?: string };
+  prometheus: { url: string | null; reachable: boolean; error?: string };
+  receiver_url: string;
+  last_sync_at: string | null;
+  last_sync_error: string | null;
+  counts: { rules: number; firing: number; pending: number; contact_points: number };
+}

@@ -9,6 +9,8 @@ import type {
   Overview, QuarantineCluster, RawLine, SampleList, SampleServer, ReplayDiff, SourceInfo, SourceList, SourceProposal,
   ExportReportParams, ExportLogsParams, SupplyStatus, SupplyConfigUpdate, ChatMessage, ChatReply,
   ChatSessionSummary, ChatSession, ChatExportFormat,
+  AlertingStatus, AlertRule, AlertRuleInput, AlertPreview, AlertPreviewRequest, ContactPoint, ContactPointInput,
+  NotificationPolicy, Sync, AlertNotification,
 } from './types';
 
 export const USE_MOCKS = import.meta.env.VITE_USE_MOCKS === '1';
@@ -257,6 +259,45 @@ export const api = {
 
   configureSupply: (b: SupplyConfigUpdate): Promise<SupplyStatus> =>
     USE_MOCKS ? mockApi.configureSupply(b) : http('/export/supply/configure', { method: 'POST', body: JSON.stringify(b) }),
+
+  /* alerting, CONTRACTS section 13 */
+  alertingStatus: (): Promise<AlertingStatus> =>
+    USE_MOCKS ? mockApi.alertingStatus() : http('/alerting/status'),
+  alertingSync: (): Promise<AlertingStatus> =>
+    USE_MOCKS ? mockApi.alertingSync() : http('/alerting/sync', { method: 'POST' }),
+
+  listAlertRules: (): Promise<{ rules: AlertRule[] }> =>
+    USE_MOCKS ? mockApi.listAlertRules() : http('/alerting/rules'),
+  getAlertRule: (id: string): Promise<AlertRule> =>
+    USE_MOCKS ? mockApi.getAlertRule(id) : http(`/alerting/rules/${encodeURIComponent(id)}`),
+  createAlertRule: (b: AlertRuleInput): Promise<AlertRule> =>
+    USE_MOCKS ? mockApi.createAlertRule(b) : http('/alerting/rules', { method: 'POST', body: JSON.stringify(b) }),
+  updateAlertRule: (id: string, b: AlertRuleInput): Promise<AlertRule> =>
+    USE_MOCKS ? mockApi.updateAlertRule(id, b) : http(`/alerting/rules/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
+  deleteAlertRule: (id: string): Promise<unknown> =>
+    USE_MOCKS ? mockApi.deleteAlertRule(id) : http(`/alerting/rules/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  previewAlertRule: (b: AlertPreviewRequest): Promise<AlertPreview> =>
+    USE_MOCKS ? mockApi.previewAlertRule(b) : http('/alerting/rules/preview', { method: 'POST', body: JSON.stringify(b) }),
+
+  listContactPoints: (): Promise<{ contact_points: ContactPoint[] }> =>
+    USE_MOCKS ? mockApi.listContactPoints() : http('/alerting/contact-points'),
+  createContactPoint: (b: ContactPointInput): Promise<ContactPoint> =>
+    USE_MOCKS ? mockApi.createContactPoint(b) : http('/alerting/contact-points', { method: 'POST', body: JSON.stringify(b) }),
+  updateContactPoint: (id: string, b: ContactPointInput): Promise<ContactPoint> =>
+    USE_MOCKS ? mockApi.updateContactPoint(id, b) : http(`/alerting/contact-points/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(b) }),
+  deleteContactPoint: (id: string): Promise<unknown> =>
+    USE_MOCKS ? mockApi.deleteContactPoint(id) : http(`/alerting/contact-points/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  testContactPoint: (id: string): Promise<{ ok: boolean; detail: string }> =>
+    USE_MOCKS ? mockApi.testContactPoint(id) : http(`/alerting/contact-points/${encodeURIComponent(id)}/test`, { method: 'POST' }),
+
+  getPolicies: (): Promise<{ policy: NotificationPolicy; sync: Sync }> =>
+    USE_MOCKS ? mockApi.getPolicies() : http('/alerting/policies'),
+  putPolicies: (p: NotificationPolicy): Promise<{ policy: NotificationPolicy; sync: Sync }> =>
+    USE_MOCKS ? mockApi.putPolicies(p) : http('/alerting/policies', { method: 'PUT', body: JSON.stringify(p) }),
+
+  /** Browser contact-point deliveries; `after` omitted returns the latest `limit`. */
+  alertNotifications: (after?: number, limit?: number): Promise<{ items: AlertNotification[]; last_id: number }> =>
+    USE_MOCKS ? mockApi.alertNotifications(after, limit) : http(`/alerting/notifications${qs({ after, limit })}`),
 };
 
 export const errMessage = (e: unknown): string =>

@@ -20,7 +20,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .api import chat as chat_api, export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
+from .api import alerting as alerting_api, chat as chat_api, export as export_api, samples as samples_api, sources as sources_api, stats as stats_api
 from .api.state import get_state
 from .cluster.engine import ClusterEngine
 from .core import packs
@@ -52,7 +52,9 @@ async def lifespan(_: FastAPI):
     await st.pipeline.start()
     st.connectors.start_all()
     watcher = asyncio.create_task(sources_api.auto_propose_loop())
+    await st.alerting.start()
     yield
+    await st.alerting.stop()
     watcher.cancel()
     samples_api.stop_all_managed()
     st.connectors.stop_all()
@@ -968,4 +970,5 @@ api.include_router(stats_api.router)
 api.include_router(samples_api.router)
 api.include_router(export_api.router)
 api.include_router(chat_api.router)
+api.include_router(alerting_api.router)
 app.include_router(api)

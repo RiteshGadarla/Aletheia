@@ -1,0 +1,66 @@
+# Redpanda topic `normalized` -> Loki. Standalone so `make services` can run it without the
+# HEC/CEF sinks; the full stack loads it next to sinks.toml, which reuses `normalized_bus`.
+
+[sources.normalized_bus]
+type = "kafka"
+bootstrap_servers = "${ALETHEIA_BUS_BROKERS:-redpanda:9092}"
+group_id = "aletheia-sinks"
+topics = ["normalized"]
+auto_offset_reset = "earliest"
+decoding.codec = "json"
+
+# ---------------------------------------------------------------- Loki
+
+# Label cardinality is the whole game here (spec §11.3). Labels are indexed and each
+# unique combination makes a stream, so ONLY these five may ever become labels.
+# IPs, ports, usernames and event_uid go to structured metadata instead.
+[transforms.loki_fields]
+type = "remap"
+inputs = ["normalized_bus"]
+source = '''
+.lbl_vendor       = to_string(.metadata.product.vendor_name) ?? "unknown"
+.lbl_product      = to_string(.metadata.product.name) ?? "unknown"
+.lbl_source_id    = to_string(.aletheia.source_id) ?? "unknown"
+.lbl_ocsf_class   = to_string(.class_uid) ?? "0"
+.lbl_parse_status = to_string(.aletheia.parse_status) ?? "raw_only"
+
+# High-cardinality identifiers: structured metadata only, never labels.
+.sm_event_uid   = to_string(.aletheia.event_uid) ?? ""
+.sm_template_id = to_string(.aletheia.template_id) ?? ""
+.sm_merkle_batch = to_string(.aletheia.merkle_batch) ?? ""
+.sm_storage_mode = to_string(.aletheia.storage_mode) ?? ""
+'''
+
+[sinks.loki]
+type = "loki"
+inputs = ["loki_fields"]
+endpoint = "${ALETHEIA_LOKI_ENDPOINT:-http://loki:3100}"
+out_of_order_action = "accept"
+remove_label_fields = true
+remove_structured_metadata_fields = true
+compression = "snappy"
+
+# ALLOWED LABELS — low cardinality only. Do not add to this list.
+[sinks.loki.labels]
+vendor = "{{ lbl_vendor }}"
+product = "{{ lbl_product }}"
+source_id = "{{ lbl_source_id }}"
+ocsf_class = "{{ lbl_ocsf_class }}"
+parse_status = "{{ lbl_parse_status }}"
+
+# Loki 3.x structured metadata: queryable, not indexed as streams.
+[sinks.loki.structured_metadata]
+event_uid = "{{ sm_event_uid }}"
+template_id = "{{ sm_template_id }}"
+merkle_batch = "{{ sm_merkle_batch }}"
+storage_mode = "{{ sm_storage_mode }}"
+
+# The line itself is the normalized OCSF JSON; LogQL `| json` filters it at query time.
+[sinks.loki.encoding]
+codec = "json"
+except_fields = ["lbl_vendor", "lbl_product", "lbl_source_id", "lbl_ocsf_class", "lbl_parse_status", "sm_event_uid", "sm_template_id", "sm_merkle_batch", "sm_storage_mode"]
+
+[sinks.loki.buffer]
+type = "disk"
+max_size = 1073741824
+when_full = "block"

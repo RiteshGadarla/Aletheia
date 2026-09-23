@@ -13,6 +13,12 @@ export GF_PATHS_LOGS=/data/logs/grafana
 export GF_PATHS_PLUGINS=/data/grafana/plugins
 export GF_PATHS_PROVISIONING=/etc/aletheia/grafana/provisioning
 export ALETHEIA_CH_PASSWORD="${ALETHEIA_CH_PASSWORD:-aletheia}"
+# Email contact points: off unless ALETHEIA_SMTP_ENABLED=true (docs/alerting.md).
+export GF_SMTP_ENABLED="${ALETHEIA_SMTP_ENABLED:-false}"
+export GF_SMTP_HOST="${ALETHEIA_SMTP_HOST:-}"
+export GF_SMTP_USER="${ALETHEIA_SMTP_USER:-}"
+export GF_SMTP_PASSWORD="${ALETHEIA_SMTP_PASSWORD:-}"
+export GF_SMTP_FROM_ADDRESS="${ALETHEIA_SMTP_FROM_ADDRESS:-aletheia@aletheia.localhost}"
 exec s6-setuidgid aletheia /usr/share/grafana/bin/grafana server \
   --homepath=/usr/share/grafana \
   --config=/etc/aletheia/grafana/grafana.ini

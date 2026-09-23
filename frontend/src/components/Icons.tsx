@@ -215,3 +215,10 @@ export const IconUser = (p: P) => (
     <circle cx="12" cy="7" r="4" />
   </Svg>
 );
+
+export const IconBell = (p: P) => (
+  <Svg {...p}>
+    <path d="M18 8.5a6 6 0 10-12 0c0 6.5-2.5 8.5-2.5 8.5h17S18 15 18 8.5z" />
+    <path d="M10.3 20.5a1.9 1.9 0 003.4 0" />
+  </Svg>
+);

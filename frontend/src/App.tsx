@@ -1,5 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
+import { AlertingShell } from './pages/AlertingPage';
+import { AlertRulesPage } from './pages/AlertRulesPage';
+import { ContactPointsPage } from './pages/ContactPointsPage';
+import { NotificationPoliciesPage } from './pages/NotificationPoliciesPage';
 import { DemoPage } from './pages/DemoPage';
 import { EventsPage } from './pages/EventsPage';
 import { ExportPage } from './pages/ExportPage';
@@ -25,6 +29,13 @@ export default function App() {
         <Route path="lyra" element={<LyraPage />} />
         <Route path="sources" element={<SourcesPage />} />
         <Route path="export" element={<ExportPage />} />
+        <Route path="alerting" element={<AlertingShell />}>
+          <Route index element={<Navigate to="/dashboard/alerting/rules" replace />} />
+          <Route path="rules" element={<AlertRulesPage />} />
+          <Route path="contact-points" element={<ContactPointsPage />} />
+          <Route path="policies" element={<NotificationPoliciesPage />} />
+          <Route path="*" element={<Navigate to="/dashboard/alerting/rules" replace />} />
+        </Route>
         <Route path="studio" element={<Navigate to="/dashboard/sources" replace />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="demo" element={<DemoPage />} />

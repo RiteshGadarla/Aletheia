@@ -1,0 +1,36 @@
+# `make services` variant of prometheus.yml. Engine and Studio run natively on the host, so
+# the worker is scraped through host.docker.internal; datastores keep their Compose names.
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 15s
+  external_labels:
+    deployment: aletheia-native
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # `make worker` listens on :9108 (ALETHEIA_METRICS_ADDR). Down until the worker runs.
+  - job_name: aletheia-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9108"]
+        labels: {service: aletheia-worker}
+
+  - job_name: redpanda
+    metrics_path: /public_metrics
+    static_configs:
+      - targets: ["redpanda:9644"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]

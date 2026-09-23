@@ -31,6 +31,10 @@ class Repo(Protocol):
     def pack_set_status(self, pack: str, version: int, status: str, **extra: Any) -> None: ...
     def audit(self, actor: str, action: str, subject: str | None, detail: dict[str, Any]) -> None: ...
     def audit_list(self, limit: int = 100) -> list[dict[str, Any]]: ...
+    # Alerting objects (CONTRACTS §13): kind is rule | contact_point | policy.
+    def alerting_list(self, kind: str) -> list[dict[str, Any]]: ...
+    def alerting_put(self, kind: str, oid: str, doc: dict[str, Any]) -> None: ...
+    def alerting_delete(self, kind: str, oid: str) -> None: ...
 
 
 class MemoryRepo:
@@ -41,6 +45,7 @@ class MemoryRepo:
         self._settings: dict[str, SettingRow] = {}
         self._packs: dict[tuple[str, int], dict[str, Any]] = {}
         self._audit: list[dict[str, Any]] = []
+        self._alerting: dict[tuple[str, str], str] = {}
 
     def settings_all(self) -> dict[str, SettingRow]:
         with self._lock:
@@ -88,6 +93,19 @@ class MemoryRepo:
         with self._lock:
             return list(reversed(self._audit))[:limit]
 
+    # Stored as JSON text so callers get fresh copies, as they would from jsonb.
+    def alerting_list(self, kind: str) -> list[dict[str, Any]]:
+        with self._lock:
+            return [json.loads(v) for (k, _), v in self._alerting.items() if k == kind]
+
+    def alerting_put(self, kind: str, oid: str, doc: dict[str, Any]) -> None:
+        with self._lock:
+            self._alerting[(kind, oid)] = json.dumps(doc)
+
+    def alerting_delete(self, kind: str, oid: str) -> None:
+        with self._lock:
+            self._alerting.pop((kind, oid), None)
+
 
 class PostgresRepo:
     """Thin psycopg wrapper over deploy/postgres/init.sql."""
@@ -99,6 +117,7 @@ class PostgresRepo:
         self._psycopg = psycopg
         self._dict_row = dict_row
         self._dsn = dsn
+        self._alerting_ready = False
 
     def _conn(self):
         return self._psycopg.connect(self._dsn, row_factory=self._dict_row, autocommit=True)
@@ -164,6 +183,39 @@ class PostgresRepo:
         with self._conn() as c, c.cursor() as cur:
             cur.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT %s", (limit,))
             return cur.fetchall()
+
+    def _alerting_conn(self):
+        # init.sql only runs on a fresh volume, so existing databases get the table here.
+        c = self._conn()
+        if not self._alerting_ready:
+            try:
+                c.execute(
+                    "CREATE TABLE IF NOT EXISTS alerting_objects (kind TEXT NOT NULL, id TEXT NOT NULL, "
+                    "doc JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), "
+                    "PRIMARY KEY (kind, id))")
+            except Exception:
+                c.close()
+                raise
+            self._alerting_ready = True
+        return c
+
+    def alerting_list(self, kind: str) -> list[dict[str, Any]]:
+        with self._alerting_conn() as c, c.cursor() as cur:
+            cur.execute("SELECT doc FROM alerting_objects WHERE kind=%s ORDER BY doc->>'created_at', id",
+                        (kind,))
+            return [r["doc"] for r in cur.fetchall()]
+
+    def alerting_put(self, kind: str, oid: str, doc: dict[str, Any]) -> None:
+        with self._alerting_conn() as c, c.cursor() as cur:
+            cur.execute(
+                "INSERT INTO alerting_objects (kind, id, doc, updated_at) VALUES (%s,%s,%s::jsonb, now()) "
+                "ON CONFLICT (kind, id) DO UPDATE SET doc=EXCLUDED.doc, updated_at=now()",
+                (kind, oid, json.dumps(doc)),
+            )
+
+    def alerting_delete(self, kind: str, oid: str) -> None:
+        with self._alerting_conn() as c, c.cursor() as cur:
+            cur.execute("DELETE FROM alerting_objects WHERE kind=%s AND id=%s", (kind, oid))
 
 
 def build_repo(dsn: str | None = None) -> Repo:

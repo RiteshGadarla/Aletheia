@@ -25,6 +25,14 @@
       "label": "Aletheia: Start Backend Studio API",
       "type": "shell",
       "command": ".\\.venv\\Scripts\\python.exe -m uvicorn backend.studio.main:app --reload --port 8081",
+      "options": {
+        "env": {
+          "ALETHEIA_GRAFANA_URL": "http://127.0.0.1:3000",
+          "ALETHEIA_LOKI_URL": "http://127.0.0.1:3100",
+          "ALETHEIA_PROMETHEUS_URL": "http://127.0.0.1:9090",
+          "ALETHEIA_ALERT_RECEIVER_URL": "http://host.docker.internal:8081"
+        }
+      },
       "problemMatcher": []
     },
     {

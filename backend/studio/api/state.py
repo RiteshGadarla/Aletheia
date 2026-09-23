@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from ..alerting.service import AlertingService
 from ..cluster.engine import ClusterEngine
 from ..core.bus import ControlPublisher
 from ..core.crypto import resolve_secret
@@ -39,11 +40,15 @@ class AppState:
     connectors: ConnectorManager = field(init=False)
     supply_server: LogSupplyServer = field(default_factory=LogSupplyServer)
     chat_store: ChatSessionStore = field(default_factory=ChatSessionStore)
+    alerting: AlertingService = field(init=False)
 
     def __post_init__(self) -> None:
         # resolve_secret falls back to a persisted local secret, so saving an API key from the
         # Settings page works on a plain `make dev` with nothing configured (CONTRACTS §9).
-        self.settings = SettingsStore(self.repo, secret=resolve_secret())
+        secret = resolve_secret()
+        self.settings = SettingsStore(self.repo, secret=secret)
+        # Same sealing secret as settings: Slack URLs/tokens are encrypted at rest (CONTRACTS §13).
+        self.alerting = AlertingService(self.repo, secret=secret)
         self.bus = ControlPublisher(str(self.settings.get("bus.brokers") or ""))
         self.registry = SourceRegistry(self.repo)
         self.forwarder = RawForwarder(str(self.settings.get("bus.brokers") or ""))

@@ -95,6 +95,11 @@ docker compose -f deploy/docker-compose.services.yml up -d
 ```powershell
 $env:ALETHEIA_MODE="lite"
 $env:ALETHEIA_PG_DSN="postgres://aletheia:aletheia@127.0.0.1:5432/aletheia"
+# Alerting + logs (docs/alerting.md). Leave ALETHEIA_GRAFANA_URL unset to use local alert evaluation.
+$env:ALETHEIA_GRAFANA_URL="http://127.0.0.1:3000"
+$env:ALETHEIA_LOKI_URL="http://127.0.0.1:3100"
+$env:ALETHEIA_PROMETHEUS_URL="http://127.0.0.1:9090"
+$env:ALETHEIA_ALERT_RECEIVER_URL="http://host.docker.internal:8081"
 .\.venv\Scripts\python.exe -m uvicorn backend.studio.main:app --reload --host 0.0.0.0 --port 8081
 ```
 
@@ -138,6 +143,12 @@ make services
 make dev
 ```
 
+`make services` also starts Loki, Prometheus and a Loki-only Vector, so Grafana's logs dashboard
+(`/d/aletheia-logs`) fills once the worker runs. Alerting rules, contact points and policies are on
+the dashboard's **Alerting** page; `make studio` already points Studio at Grafana, Loki and
+Prometheus. Email needs `ALETHEIA_SMTP_*` before `make services`. With `ufw` active, allow Grafana
+to call Studio back — see [docs/alerting.md](docs/alerting.md#troubleshooting).
+
 ---
 
 ## 4. Service Endpoints & Port Map
@@ -151,7 +162,10 @@ make dev
 | **PostgreSQL** | `localhost:5432` | `localhost:5432` | Source & Pack Metadata database |
 | **Redpanda Kafka API** | `localhost:9092` | `localhost:9092` | Log Message Bus |
 | **MinIO Console** | `http://localhost:9001` | `http://localhost:9001` | Parquet / Object Archive Storage |
-| **Grafana Dashboard** | `http://localhost:3000` | `http://localhost:3000` | Observability & Metrics |
+| **Grafana Dashboard** | `http://localhost:3000` (also `:8080/grafana/`) | `http://localhost:3000` | Observability & Metrics (admin / `aletheia`) |
+| **Grafana Logs Dashboard** | `http://localhost:3000/d/aletheia-logs` | `http://localhost:3000/d/aletheia-logs` | Normalized events + raw lines in Loki |
+| **Loki** | internal | `http://localhost:3100` | Log store behind the logs dashboard |
+| **Prometheus** | internal | `http://localhost:9090` | Worker metrics, pipeline dashboard |
 | **Syslog Listener** | `udp://localhost:5514` | `udp://localhost:5514` | Log Ingestion Port |
 
 ---

@@ -62,3 +62,13 @@ CREATE TABLE IF NOT EXISTS settings (
   encrypted  BOOLEAN     NOT NULL DEFAULT FALSE,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Alerting rules, contact points and the policy tree, owned by Studio and pushed to Grafana
+-- (CONTRACTS §13). Slack secrets inside `doc` are AES-GCM sealed like encrypted settings.
+CREATE TABLE IF NOT EXISTS alerting_objects (
+  kind       TEXT        NOT NULL,              -- rule | contact_point | policy
+  id         TEXT        NOT NULL,
+  doc        JSONB       NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (kind, id)
+);
