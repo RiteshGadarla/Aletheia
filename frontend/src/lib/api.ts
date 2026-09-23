@@ -161,6 +161,9 @@ export const api = {
   resetDemo: (): Promise<{ ok: boolean; output: string }> =>
     USE_MOCKS ? mockApi.resetDemo() : http('/demo/reset', { method: 'POST' }),
 
+  health: (): Promise<{ status: string }> =>
+    USE_MOCKS ? Promise.resolve({ status: 'ready' }) : http('/health'),
+
   /* pack self-check, used by the sidebar health indicator */
   verifyPacks: (): Promise<PackVerify> =>
     USE_MOCKS

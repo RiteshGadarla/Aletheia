@@ -18,6 +18,10 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 
+# Telemetry off (spec §13.6). A cluster property, so it cannot be a `redpanda start` flag.
+command rpk cluster config set enable_metrics_reporter false \
+  -X admin.hosts="${BROKERS%%:*}:9644" || echo "warning: could not disable usage stats"
+
 create() {
   local name="$1" parts="$2" retention="$3" cleanup="$4"
   if rpk topic describe "$name" >/dev/null 2>&1; then

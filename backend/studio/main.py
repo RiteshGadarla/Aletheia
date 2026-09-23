@@ -293,6 +293,12 @@ def reset_demo() -> dict[str, Any]:
     return {"ok": rc == 0, "output": out[-2000:]}
 
 
+@api.get("/health")
+def api_health() -> dict[str, Any]:
+    """/healthz under /api so the UI can ping it through the same proxy as every other call."""
+    return healthz()
+
+
 @api.get("/packs/verify")
 def verify_packs() -> dict[str, Any]:
     """Byte-exact reconstruction over every golden sample. Needs no services."""

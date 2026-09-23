@@ -1,0 +1,14 @@
+# Containers bind-mount and run these files, so a Windows checkout must keep LF endings;
+# otherwise bash dies on "\r" (e.g. init-topics exits and the whole stack stalls).
+* text=auto eol=lf
+
+# Windows-only launchers need CRLF: cmd.exe misparses LF-only batch files.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.gz binary
+*.tar binary

@@ -1,8 +1,9 @@
 """Dashboard stats: ingest rate, severity mix, source health, onboarding queue, normalized counts."""
 from __future__ import annotations
 
+import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter
 
@@ -10,7 +11,24 @@ from .state import get_state
 
 router = APIRouter()
 WINDOW_S, BUCKET_S = 300, 5
-_CH_CACHE: dict[str, Any] = {"at": 0.0, "val": None}
+CH_TTL_S = 10
+_CH_CACHE: dict[str, Any] = {"at": 0.0, "val": None, "lock": threading.Lock()}
+_INS_CACHE: dict[str, Any] = {"at": 0.0, "val": None, "lock": threading.Lock()}
+
+
+def _cached(cache: dict[str, Any], compute: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Serve from cache; one thread refreshes while concurrent callers get the previous value.
+    Without this, every poll that lands during a slow refresh re-runs all queries against a loaded ClickHouse."""
+    if cache["val"] is not None and time.time() - cache["at"] < CH_TTL_S:
+        return cache["val"]
+    if not cache["lock"].acquire(blocking=cache["val"] is None):
+        return cache["val"]
+    try:
+        if cache["val"] is None or time.time() - cache["at"] >= CH_TTL_S:
+            cache.update(val=compute(), at=time.time())
+        return cache["val"]
+    finally:
+        cache["lock"].release()
 
 
 def _spark(series, now: int) -> list[float]:
@@ -25,8 +43,10 @@ def _spark(series, now: int) -> list[float]:
 
 def _normalized() -> dict[str, Any]:
     """ClickHouse counts of parsed events; cached 10 s, `available: false` when it is down."""
-    if time.time() - _CH_CACHE["at"] < 10 and _CH_CACHE["val"] is not None:
-        return _CH_CACHE["val"]
+    return _cached(_CH_CACHE, _normalized_now)
+
+
+def _normalized_now() -> dict[str, Any]:
     from .. import main as m
     val: dict[str, Any] = {"available": False}
     if m._ch_up():
@@ -40,17 +60,15 @@ def _normalized() -> dict[str, Any]:
                    "normalized_pct": round(100 * (by.get("full", 0) + by.get("partial", 0)) / total, 1) if total else 0}
         except Exception:                                                            # noqa: BLE001
             pass
-    _CH_CACHE.update(at=time.time(), val=val)
     return val
-
-
-_INS_CACHE: dict[str, Any] = {"at": 0.0, "val": None}
 
 
 def _insights_ch() -> dict[str, Any]:
     """Deep ClickHouse aggregates for the Overview; cached 10 s, each query fails independently."""
-    if time.time() - _INS_CACHE["at"] < 10 and _INS_CACHE["val"] is not None:
-        return _INS_CACHE["val"]
+    return _cached(_INS_CACHE, _insights_now)
+
+
+def _insights_now() -> dict[str, Any]:
     from .. import main as m
     out: dict[str, Any] = {"available": False}
     if m._ch_up():
@@ -80,12 +98,17 @@ def _insights_ch() -> dict[str, Any]:
         out["scanners"] = [{"k": r["k"], "n": int(r["n"])} for r in q("sc", f"SELECT {ip('src_ip')} AS k, uniqExact(dst_port) AS n FROM events WHERE src_ip IS NOT NULL GROUP BY k HAVING n >= 5 ORDER BY n DESC LIMIT 8")]
         out["fanout"] = [{"k": r["k"], "n": int(r["n"])} for r in q("fo", f"SELECT {ip('src_ip')} AS k, uniqExact(dst_ip) AS n FROM events WHERE src_ip IS NOT NULL GROUP BY k HAVING n >= 3 ORDER BY n DESC LIMIT 8")]
         d = "dateDiff('millisecond', event_time, recv_time)"
-        ok = f"{d} BETWEEN 0 AND 3600000"           # a plausible lag; anything else is producer clock/timezone skew
-        lag = q("lag", f"SELECT avgIf({d}, {ok}) AS a, quantileIf(0.95)({d}, {ok}) AS p, countIf({ok}) AS good, countIf(NOT ({ok})) AS skew, "
+        ts = "event_time != recv_time"              # equal means the line had no timestamp and arrival time was copied in
+        ok = f"{ts} AND {d} BETWEEN 0 AND 3600000"   # a plausible lag; anything else is producer clock/timezone skew
+        bad = f"{ts} AND NOT ({d} BETWEEN 0 AND 3600000)"
+        lag = q("lag", f"SELECT avgIf({d}, {ok}) AS a, quantileIf(0.95)({d}, {ok}) AS p, countIf({ok}) AS good, countIf({bad}) AS skew, "
+                       f"quantileIf(0.5)({d}, {bad}) AS so, countIf(NOT ({ts})) AS nts, "
                        "toUnixTimestamp(min(recv_time)) AS f, toUnixTimestamp(max(recv_time)) AS l, avg(length(vars)) AS v, countIf(action_id = 2) AS den FROM events")
         if lag:
-            out["lag"] = {"avg_ms": round(float(lag[0]["a"] or 0)), "p95_ms": round(float(lag[0]["p"] or 0)), "good": int(lag[0]["good"]), "skewed": int(lag[0]["skew"]),
-                          "first": int(lag[0]["f"]), "last": int(lag[0]["l"]), "avg_vars": round(float(lag[0]["v"] or 0), 1), "denied": int(lag[0]["den"])}
+            r0 = lag[0]
+            out["lag"] = {"avg_ms": round(float(r0["a"] or 0)), "p95_ms": round(float(r0["p"] or 0)), "good": int(r0["good"]), "skewed": int(r0["skew"]),
+                          "skew_ms": round(float(r0["so"] or 0)), "no_ts": int(r0["nts"]),
+                          "first": int(r0["f"]), "last": int(r0["l"]), "avg_vars": round(float(r0["v"] or 0), 1), "denied": int(r0["den"])}
         out["hours"] = [{"t": int(r["t"]), "n": int(r["n"]), "hi": int(r["hi"])} for r in q("hr",
             "SELECT toUnixTimestamp(toStartOfHour(recv_time)) AS t, count() AS n, countIf(severity_id >= 4) AS hi "
             "FROM events WHERE recv_time > now() - INTERVAL 24 HOUR GROUP BY t ORDER BY t")]
@@ -98,7 +121,6 @@ def _insights_ch() -> dict[str, Any]:
                            "FROM system.parts WHERE active AND database = 'aletheia' AND `table` IN ('events','baseline_events') GROUP BY t"):
             disk[r["t"]] = {"compressed": int(r["c"]), "uncompressed": int(r["u"]), "rows": int(r["r"])}
         out["disk"] = disk
-    _INS_CACHE.update(at=time.time(), val=out)
     return out
 
 
@@ -146,6 +168,15 @@ def _derived(rows: list[dict[str, Any]], series: list[float], kp: dict[str, Any]
             "bytes_per_line": round(kp["bytes"] / lines, 1) if lines else 0}
 
 
+def _live_packs(rows: list[dict[str, Any]]) -> int:
+    """Approved packs in the newest version. Each approval re-publishes the whole set as a new version,
+    so counting rows across versions multiplies the real number."""
+    if not rows:
+        return 0
+    latest = max(int(r["version"]) for r in rows)
+    return len({r["pack"] for r in rows if int(r["version"]) == latest and r.get("status") == "approved"})
+
+
 @router.get("/stats/overview")
 def overview() -> dict[str, Any]:
     st, now = get_state(), int(time.time())
@@ -178,7 +209,7 @@ def overview() -> dict[str, Any]:
             "rejected": sum(1 for s in srcs if s.state == "rejected"),
             "risk_pct": round(100 * sev["risk"] / lines, 1) if lines else 0.0,
             "errors": sum(r["errors"] for r in rows), "buffered": st.pipeline._n, "forwarded": st.forwarder.sent,
-            "packs": sum(1 for p in st.repo.packs_list() if p.get("status") == "approved"),
+            "packs": _live_packs(st.repo.packs_list()),
         },
         "store": st.raw.kind, "bus": st.forwarder.enabled, "by_severity": sev,
         "series": total_series, "sources": sorted(rows, key=lambda r: -r["lines"]),

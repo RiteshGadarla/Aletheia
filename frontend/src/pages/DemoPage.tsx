@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { Badge, ErrorState, PageHead } from '../components/Bits';
 import { api, errMessage } from '../lib/api';
-import { useAsync } from '../lib/useAsync';
+import { usePoll } from '../lib/useAsync';
 import type { SampleServer } from '../lib/types';
 import { SeverityBar } from './SourcesPage';
 
@@ -57,19 +57,21 @@ function LiveLogs({ s, onClose }: { s: SampleServer; onClose: () => void }) {
 
   useEffect(() => {
     let stop = false;
+    let t: number | undefined;
     const poll = async () => {
-      if (pausedRef.current) return;
-      try {
-        const r = await api.sampleLogs(s.id, cursor.current);
-        if (stop) return;
-        cursor.current = r.next;
-        setErr(null);
-        if (r.items.length) setItems((p) => [...p, ...r.items].slice(-MAX_LOG_LINES));
-      } catch (e) { if (!stop) setErr(errMessage(e)); }
+      if (!pausedRef.current) {
+        try {
+          const r = await api.sampleLogs(s.id, cursor.current);
+          if (stop) return;
+          cursor.current = r.next;
+          setErr(null);
+          if (r.items.length) setItems((p) => [...p, ...r.items].slice(-MAX_LOG_LINES));
+        } catch (e) { if (!stop) setErr(errMessage(e)); }
+      }
+      if (!stop) t = window.setTimeout(() => void poll(), 1000);
     };
     void poll();
-    const t = setInterval(() => void poll(), 1000);
-    return () => { stop = true; clearInterval(t); };
+    return () => { stop = true; window.clearTimeout(t); };
   }, [s.id]);
 
   useEffect(() => { if (!paused && box.current) box.current.scrollTop = box.current.scrollHeight; }, [items, paused]);
@@ -142,12 +144,11 @@ function SampleCard({ s, busy, onStart, onStop, onAttack, onConnect, onLogs }: {
 
 function SampleServers() {
   const nav = useNavigate();
-  const q = useAsync(() => api.listSamples(), []);
+  const q = usePoll(() => api.listSamples(), 3000, []);
   const { reload } = q;
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [logsId, setLogsId] = useState<string | null>(null);
-  useEffect(() => { const t = setInterval(reload, 3000); return () => clearInterval(t); }, [reload]);
 
   const act = async (id: string, fn: () => Promise<unknown>) => {
     setBusy(id); setErr(null);

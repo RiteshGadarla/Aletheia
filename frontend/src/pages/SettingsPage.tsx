@@ -711,36 +711,30 @@ export function SettingsPage() {
               />
             </label>
 
-            {busy === 'test' && (
-              <div className="row" style={{ gap: 'var(--s2)', alignItems: 'center' }}>
-                <Spinner label="Connecting to local server & running test..." />
-              </div>
-            )}
-
-            {test && test.ok && (
-              <Callout kind="ok" icon={<IconCheck size={18} />}>
-                <div>
-                  <strong>Connection Successful & Verified!</strong>
-                  <p style={{ margin: 'var(--s1) 0 0 0', fontSize: '12.5px' }}>
-                    Successfully connected to model <code>{test.model}</code> at <code>{localUrl}</code> ({test.latency_ms}ms latency).
-                  </p>
-                  {test.sample_response && (
-                    <div style={{ marginTop: '6px', padding: '6px 10px', background: 'rgba(0,0,0,0.15)', borderRadius: '4px', fontSize: '11.5px', fontFamily: 'monospace' }}>
-                      Sample response: "{test.sample_response}"
-                    </div>
-                  )}
+            <div style={{ minHeight: '60px' }}>
+              {busy === 'test' && (
+                <div className="row" style={{ gap: 'var(--s2)', alignItems: 'center' }}>
+                  <Spinner label="Connecting to local server & running test..." />
                 </div>
-              </Callout>
-            )}
+              )}
 
-            {test && !test.ok && (
-              <Callout kind="bad" icon={<IconAlert size={18} />}>
-                <div>
-                  <strong>Connection Failed</strong>
-                  <p style={{ margin: 'var(--s1) 0 0 0' }}>{test.error ?? 'Unable to reach local server.'}</p>
-                </div>
-              </Callout>
-            )}
+              {test && test.ok && (
+                <Callout kind="ok" icon={<IconCheck size={18} />}>
+                  <div>
+                    <strong>Connection Successful & Verified!</strong>
+                  </div>
+                </Callout>
+              )}
+
+              {test && !test.ok && (
+                <Callout kind="bad" icon={<IconAlert size={18} />}>
+                  <div>
+                    <strong>Connection Failed</strong>
+                    <p style={{ margin: 'var(--s1) 0 0 0' }}>{test.error ?? 'Unable to reach local server.'}</p>
+                  </div>
+                </Callout>
+              )}
+            </div>
           </div>
         </Modal>
       )}

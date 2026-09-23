@@ -54,7 +54,8 @@ services:
     volumes:
       - chdata:/var/lib/clickhouse
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      # Mount the file, not the dir: the image's own config.d sets listen_host 0.0.0.0.
+      - ./clickhouse/config.d/aletheia.xml:/etc/clickhouse-server/config.d/aletheia.xml:ro
     ports:
       - "${ALETHEIA_CH_HTTP_PORT:-8123}:8123"
     healthcheck:
@@ -79,9 +80,7 @@ services:
       - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
       - --rpc-addr=0.0.0.0:33145
       - --advertise-rpc-addr=redpanda:33145
-      # Telemetry off at run time (spec §13.6).
-      - --set=redpanda.enable_usage_stats=false
-      - --set=pandaproxy.advertised_pandaproxy_api=[]
+      # Telemetry is switched off by init-topics (create-topics.sh), spec §13.6.
     environment:
       REDPANDA_ENVIRONMENT: production
     volumes:
@@ -144,6 +143,8 @@ services:
   loki:
     <<: *restart
     image: grafana/loki:${LOKI_VERSION:-3.3.2}
+    # The named volume at /data/loki is created root-owned; Loki's default uid 10001 cannot write it.
+    user: "0"
     command: ["-config.file=/etc/loki/loki.yml"]
     volumes:
       - ./loki/loki.yml:/etc/loki/loki.yml:ro
@@ -184,6 +185,8 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: ${ALETHEIA_ADMIN_PASSWORD:-aletheia}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       # Telemetry + update checks off (spec §13.6).
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
@@ -312,6 +315,8 @@ services:
       dockerfile: docker/ui/Dockerfile
     depends_on:
       aletheia-studio: {condition: service_healthy}
+      # nginx exits at boot if the "grafana" upstream hostname does not resolve yet.
+      grafana: {condition: service_started}
     environment:
       ALETHEIA_STUDIO_UPSTREAM: http://aletheia-studio:8081
       ALETHEIA_GRAFANA_UPSTREAM: http://grafana:3000
@@ -357,7 +362,8 @@ services:
       - "${ALETHEIA_SYSLOG_PORT:-5514}:5514/tcp"
       - "${ALETHEIA_SYSLOG_TLS_PORT:-6514}:6514/tcp"
     healthcheck:
-      test: ["CMD-SHELL", "vector top --url http://127.0.0.1:8686/graphql --interval 1000 >/dev/null 2>&1 || wget -qO- http://127.0.0.1:8686/health | grep -q ok"]
+      # The debian image has neither wget nor curl, and `vector top` needs a TTY; bash /dev/tcp does.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8686 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"ok\":true' <&3"]
       interval: 15s
       timeout: 10s
       retries: 20

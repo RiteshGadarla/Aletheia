@@ -8,6 +8,7 @@ personal/
 !docker/versions.env
 deploy/secrets/*
 !deploy/secrets/*.example
+deploy/vector/tls/
 
 # build artifacts
 /bin/

@@ -5,7 +5,7 @@ import { Badge, Confidence, EmptyState, ErrorState, PageHead, Panel, Spinner } f
 import { Modal } from '../components/Modal';
 import { api, errMessage } from '../lib/api';
 import { useNotify } from '../lib/notify';
-import { useAsync } from '../lib/useAsync';
+import { useAsync, usePoll } from '../lib/useAsync';
 import type { BadgeKind } from '../components/Bits';
 import type { MappingRow, SourceCluster, SourceInfo, SourceProposal, SourceState } from '../lib/types';
 
@@ -334,9 +334,7 @@ function RawTab({ id }: { id: string }) {
   const [sev, setSev] = useState('');
   const [q, setQ] = useState('');
   const [text, setText] = useState('');
-  const raw = useAsync(() => api.sourceRaw(id, text, sev), [id, text, sev]);
-  const { reload } = raw;
-  useEffect(() => { const t = setInterval(reload, 3000); return () => clearInterval(t); }, [reload]);
+  const raw = usePoll(() => api.sourceRaw(id, text, sev), 3000, [id, text, sev]);
   return (
     <div className="stack-sm">
       <form className="btn-row" onSubmit={(e) => { e.preventDefault(); setText(q); }}>
@@ -438,14 +436,13 @@ function SourceDialog({ src, onClose, onChanged }: { src: SourceInfo; onClose: (
 
 // ------------------------------------------------------------------ page
 export function SourcesPage() {
-  const list = useAsync(() => api.listSources(), []);
+  const list = usePoll(() => api.listSources(), 3000, []);
   const [params, setParams] = useSearchParams();
   const { toast } = useNotify();
   const [adding, setAdding] = useState<Prefill | 'blank' | null>(() => prefillFrom(params));
   const [sel, setSel] = useState<string | null>(params.get('review'));
   const [removing, setRemoving] = useState<SourceInfo | null>(null);
   const { reload } = list;
-  useEffect(() => { const t = setInterval(reload, 3000); return () => clearInterval(t); }, [reload]);
 
   // A toast's Review button lands here with ?review=<id>; the Demo page's Connect with ?connect=1.
   useEffect(() => {

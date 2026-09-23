@@ -374,7 +374,13 @@ export interface Insights {
   ch: {
     available: boolean; top_src?: KN[]; top_dst?: KN[]; top_ports?: KN[]; top_users?: KN[]; top_templates?: KN[];
     top_denied?: KN[]; scanners?: KN[]; fanout?: KN[]; hours?: { t: number; n: number; hi: number }[];
-    lag?: { avg_ms: number; p95_ms: number; good: number; skewed: number; first: number; last: number; avg_vars: number; denied: number };
+    lag?: {
+      avg_ms: number; p95_ms: number; good: number; skewed: number; first: number; last: number; avg_vars: number; denied: number;
+      /** Median offset of skewed events (ms); a whole number of hours usually means a timezone mismatch. */
+      skew_ms?: number;
+      /** Lines with no timestamp of their own. */
+      no_ts?: number;
+    };
     protocols?: KN[]; actions?: KN[]; classes?: KN[]; ocsf_sev?: KN[]; modes?: Record<string, number>;
     timeline?: { t: number; n: number; hi: number }[];
     unique?: { si: number; di: number; us: number; mb: number; hashed: number; n: number };

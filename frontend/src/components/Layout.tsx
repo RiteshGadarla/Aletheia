@@ -27,26 +27,23 @@ function Health() {
   const [state, setState] = useState<'pending' | 'up' | 'down'>('pending');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const checkHealth = async () => {
-    try {
-      const packs = await api.verifyPacks();
-      if (packs.ok) {
-        setState('up');
-        setErrorMsg(null);
-      } else {
-        setState('down');
-        setErrorMsg('Pack verification failed');
-      }
-    } catch (err: any) {
-      setState('down');
-      setErrorMsg(err?.message ?? 'API unreachable');
-    }
-  };
-
+  // The pack self-check spawns a full reconstruction run, so it runs once; after that a cheap ping.
   useEffect(() => {
-    void checkHealth();
-    const interval = setInterval(() => { void checkHealth(); }, 5000);
-    return () => clearInterval(interval);
+    let alive = true;
+    let t: number | undefined;
+    let packsOk = true;
+    const set = (s: 'up' | 'down', msg: string | null) => { if (alive) { setState(s); setErrorMsg(msg); } };
+    const ping = async () => {
+      if (!document.hidden) {
+        try {
+          await api.health();
+          set(packsOk ? 'up' : 'down', packsOk ? null : 'Pack verification failed');
+        } catch (err: any) { set('down', err?.message ?? 'API unreachable'); }
+      }
+      if (alive) t = window.setTimeout(() => void ping(), 10000);
+    };
+    api.verifyPacks().then((p) => { packsOk = p.ok; }, () => {}).finally(() => { if (alive) void ping(); });
+    return () => { alive = false; window.clearTimeout(t); };
   }, []);
 
   const label = state === 'pending' ? 'Checking…'

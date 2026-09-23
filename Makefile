@@ -55,7 +55,7 @@ help:
 	@echo "  lite            dockerless end-to-end over files"
 	@echo "  cli ARGS='...'  run the aletheia CLI, e.g. ARGS='test-pack --help'"
 	@echo
-	@echo "  services        start ONLY the datastores in Docker (CH, PG, Redpanda, MinIO)"
+	@echo "  services        start ONLY the datastores in Docker (CH, PG, Redpanda, Loki, Grafana)"
 	@echo "  run             services in Docker + engine/studio/frontend natively"
 	@echo "  up / down       optional: the entire stack in Docker"
 	@echo "  install-go      install Go $(GO_VERSION) into ~/.local/go (no root)"
@@ -182,6 +182,7 @@ frontend:
 dev: services engine
 	@echo "Studio  -> http://localhost:8081"
 	@echo "Frontend-> http://localhost:5173"
+	@echo "Grafana -> http://localhost:3000"
 	@echo "Worker  -> engine metrics on :9108"
 	@$(MAKE) -j3 studio frontend worker
 
@@ -232,13 +233,13 @@ services:
 	@echo "waiting for health..."
 	@for i in $$(seq 1 60); do \
 	  n=$$(docker compose -f $(SERVICES) ps --format '{{.Health}}' | grep -c '^healthy$$' || true); \
-	  [ "$$n" -ge 4 ] && { echo "all 4 services healthy"; break; }; sleep 2; \
+	  [ "$$n" -ge 5 ] && { echo "all 5 services healthy"; break; }; sleep 2; \
 	done
 	@docker compose -f $(SERVICES) ps --format 'table {{.Service}}\t{{.Status}}'
 	@echo
 	@$(MAKE) --no-print-directory topics
 	@echo
-	@echo "ClickHouse :8123   PostgreSQL :5432   Redpanda :9092   MinIO :9001"
+	@echo "ClickHouse :8123   PostgreSQL :5432   Redpanda :9092   Grafana :3000"
 
 # Topics are part of a usable stack, so create them once the bus is healthy.
 topics:
@@ -263,7 +264,7 @@ services-logs:
 
 # run: backing services in Docker + engine/studio/frontend natively
 run: services engine
-	@echo "Studio -> http://localhost:8081  Frontend -> http://localhost:5173  (engine worker running)"
+	@echo "Studio -> http://localhost:8081  Frontend -> http://localhost:5173  Grafana -> http://localhost:3000  (engine worker running)"
 	@$(MAKE) -j3 studio frontend worker
 
 ## ---------------------------------------------------------------- full stack in Docker (optional)

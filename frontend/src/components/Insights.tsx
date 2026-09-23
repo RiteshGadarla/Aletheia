@@ -65,18 +65,18 @@ export function Donut({ rows, center }: { rows: { label: string; n: number }[]; 
   );
 }
 
-export function RankBars({ rows, fmt = (k: string | number) => String(k), color = 'var(--accent)', empty = 'No data yet' }: {
-  rows: KN[]; fmt?: (k: string | number) => string; color?: string; empty?: string;
+export function RankBars({ rows, fmt = (k: string | number) => String(k), val = int, color = 'var(--accent)', empty = 'No data yet' }: {
+  rows: KN[]; fmt?: (k: string | number) => string; val?: (n: number) => string; color?: string; empty?: string;
 }) {
   if (!rows.length) return <p className="hint">{empty}</p>;
   const max = Math.max(...rows.map((r) => r.n), 1);
   return (
     <div className="rank">
       {rows.map((r) => (
-        <div className="rank-row" key={String(r.k)} title={`${fmt(r.k)}: ${int(r.n)}`}>
+        <div className="rank-row" key={String(r.k)} title={`${fmt(r.k)}: ${val(r.n)}`}>
           <span className="truncate mono">{fmt(r.k)}</span>
           <div className="rank-track"><div style={{ width: `${Math.max((r.n / max) * 100, 2)}%`, background: color }} /></div>
-          <span className="n">{int(r.n)}</span>
+          <span className="n">{val(r.n)}</span>
         </div>
       ))}
     </div>

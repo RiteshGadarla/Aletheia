@@ -8,6 +8,8 @@ import type { SourceInfo } from './types';
 export interface ToastIn {
   kind?: 'ok' | 'info' | 'bad'; title: string; body?: string;
   action?: { label: string; to: string }; sticky?: boolean;
+  /** Source ids this toast is about; it closes once none of them is still in review. */
+  review?: string[];
 }
 interface Toast extends ToastIn { id: number }
 interface Ctx { toast: (t: ToastIn) => void; pending: SourceInfo[] }
@@ -38,12 +40,16 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let alive = true;
+    let t: number | undefined;
     const tick = async () => {
+      if (document.hidden) { t = window.setTimeout(() => void tick(), 4000); return; }
       try {
         const d = await api.listSources();
         if (!alive) return;
         const ready = d.sources.filter((s) => s.state === 'review');
         setPending(ready);
+        const readyIds = new Set(ready.map((s) => s.id));
+        setToasts((x) => x.filter((m) => !m.review || m.review.some((id) => readyIds.has(id))));
         const fresh = ready.filter((s) => {
           const key = `${s.id}@${s.attempts}`;
           if (seen.current.has(key)) return false;
@@ -54,17 +60,17 @@ export function NotifyProvider({ children }: { children: ReactNode }) {
           saveSeen(seen.current);
           const one = fresh.length === 1 ? fresh[0] : null;
           toast({
-            kind: 'info', sticky: true,
+            kind: 'info', sticky: true, review: fresh.map((s) => s.id),
             title: one ? `${one.id} is ready for approval` : `${fresh.length} sources are ready for approval`,
             body: one ? 'A mapping proposal is waiting for your decision.' : fresh.map((s) => s.id).join(', '),
             action: { label: one ? 'Review' : 'Open Sources', to: one ? `/dashboard/sources?review=${encodeURIComponent(one.id)}` : '/dashboard/sources' },
           });
         }
       } catch { /* API down: the pages show their own errors */ }
+      if (alive) t = window.setTimeout(() => void tick(), 4000);
     };
     void tick();
-    const t = setInterval(() => void tick(), 4000);
-    return () => { alive = false; clearInterval(t); };
+    return () => { alive = false; window.clearTimeout(t); };
   }, [toast]);
 
   useEffect(() => {

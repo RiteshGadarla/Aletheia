@@ -1,9 +1,9 @@
 // Overview: live ingest, threat signals, normalization, traffic, storage and governance in one consistent grid.
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, EmptyState, ErrorState, PageHead, Panel, Spinner } from '../components/Bits';
 import { api } from '../lib/api';
-import { useAsync } from '../lib/useAsync';
+import { usePoll } from '../lib/useAsync';
 import type { Overview } from '../lib/types';
 import { IconExport } from '../components/Icons';
 import {
@@ -102,14 +102,26 @@ function Spark({ v }: { v: number[] }) {
   return <svg viewBox="0 0 100 24" width="100" height="24" aria-hidden="true"><path d={d} fill="none" stroke="var(--sev-info)" strokeWidth="1.5" /></svg>;
 }
 
-function Pill({ tone, children }: { tone: 'ok' | 'warn' | 'bad' | 'plain'; children: React.ReactNode }) {
-  return <span className={`pill p-${tone}`}><i />{children}</span>;
+type Tone = 'ok' | 'warn' | 'bad' | 'plain';
+
+function StatusCell({ label, value, tone, live, title }: { label: string; value: string; tone: Tone; live?: boolean; title?: string }) {
+  return (
+    <div className={`ov-cell t-${tone}`} title={title}>
+      <span className="ov-cell-k">{label}</span>
+      <span className="ov-cell-v"><i className={live ? 'live' : undefined} aria-hidden="true" />{value}</span>
+    </div>
+  );
 }
 
+/** Magnitude of a clock offset in ms, as "5h 30m". */
+const offsetText = (ms: number) => {
+  const m = Math.round(Math.abs(ms) / 60000);
+  const h = Math.floor(m / 60);
+  return `${h ? `${h}h ` : ''}${m % 60 ? `${m % 60}m` : ''}`.trim() || '<1m';
+};
+
 export function OverviewPage() {
-  const q = useAsync(() => api.overview(), []);
-  const { reload } = q;
-  useEffect(() => { const t = setInterval(reload, 3000); return () => clearInterval(t); }, [reload]);
+  const q = usePoll(() => api.overview(), 3000, []);
   const d = q.data;
 
   return (
@@ -125,17 +137,20 @@ export function OverviewPage() {
         Live ingest across every connected source. Updates every 3 seconds.
       </PageHead>
 
-      {q.error && <ErrorState error={q.error} what="stats" />}
+      {q.error && !d && <ErrorState error={q.error} what="stats" />}
       {q.loading && !d && <Spinner label="Loading stats" />}
-      {d && <Body d={d} />}
+      {d && <Body d={d} stale={!!q.error} />}
     </div>
   );
 }
 
-function Body({ d }: { d: Overview }) {
+function Body({ d, stale }: { d: Overview; stale: boolean }) {
   const k = d.kpis; const ins = d.insights; const ch = ins.ch;
   const disk = ch.disk?.events; const base = ch.disk?.baseline_events; const u = ch.unique; const lag = ch.lag;
-  const reduction = disk && disk.compressed > 0 && k.bytes > 0 ? +(k.bytes / disk.compressed).toFixed(1) : null;
+  // Raw size of the events actually in the DB. `k.bytes` only covers lines this Studio process has
+  // seen since it started, so dividing it by the all-time DB size understates the reduction.
+  const rawDb = disk && disk.rows > 0 && ins.bytes_per_line > 0 ? Math.round(disk.rows * ins.bytes_per_line) : null;
+  const reduction = rawDb && disk && disk.compressed > 0 ? +(rawDb / disk.compressed).toFixed(1) : null;
   const vsBase = disk && base && base.compressed > 0 && disk.compressed > 0 ? Math.round((1 - disk.compressed / base.compressed) * 100) : null;
   const total = Object.values(d.by_severity).reduce((a, b) => a + b, 0);
   const fnd = findings(d);
@@ -143,16 +158,26 @@ function Body({ d }: { d: Overview }) {
   const hasData = d.sources.length > 0;
   const denied = lag?.denied ?? 0;
   const perEvent = disk && disk.rows > 0 ? Math.round(disk.compressed / disk.rows) : null;
+  const skewMs = lag?.skew_ms ?? 0;
+  const fresh = ins.freshness_s;
+  const allOnline = k.sources > 0 && k.connected === k.sources;
 
   return (
     <>
-      <div className="ov-status" aria-label="System status">
-        <Pill tone={k.errors ? 'warn' : 'ok'}>{k.connected}/{k.sources} sources online</Pill>
-        <Pill tone={ch.available ? 'ok' : 'bad'}>Event DB {ch.available ? 'reachable' : 'down'}</Pill>
-        <Pill tone={d.bus ? 'ok' : 'plain'}>Bus {d.bus ? 'forwarding' : 'off'}</Pill>
-        <Pill tone="plain">Store: {d.store}</Pill>
-        <Pill tone={ins.freshness_s === null ? 'plain' : ins.freshness_s > 60 ? 'warn' : 'ok'}>Last line {ins.freshness_s === null ? '—' : `${dur(ins.freshness_s)} ago`}</Pill>
-        {ins.spike && <Pill tone="warn">Ingest spike</Pill>}
+      {stale && <p className="hint err" role="status">Can't reach the Studio API right now. Showing the last numbers received; retrying.</p>}
+      <div className="ov-status" role="group" aria-label="System status">
+        <StatusCell label="Sources" value={k.sources ? `${k.connected} of ${k.sources} online` : 'None yet'}
+          tone={!k.sources ? 'plain' : allOnline && !k.errors ? 'ok' : 'warn'}
+          title={k.errors ? `${k.errors} connection errors` : undefined} />
+        <StatusCell label="Ingest" value={`${k.eps}/s`} tone={ins.spike ? 'warn' : k.eps > 0 ? 'ok' : 'plain'}
+          title={ins.spike ? 'Traffic is well above the 5-minute mean' : '2-bucket average, all sources'} />
+        <StatusCell label="Last line" value={fresh === null ? 'Never' : fresh < 2 ? 'Just now' : `${dur(fresh)} ago`}
+          tone={fresh === null ? 'plain' : fresh > 60 ? 'warn' : 'ok'} live={fresh !== null && fresh <= 10} />
+        <StatusCell label="Event DB" value={ch.available ? 'Reachable' : 'Down'} tone={ch.available ? 'ok' : 'bad'} />
+        <StatusCell label="Bus" value={d.bus ? 'Forwarding' : 'Off'} tone={d.bus ? 'ok' : 'warn'}
+          title={d.bus ? `${int(k.forwarded)} lines sent` : 'Approved logs are not sent for processing'} />
+        <StatusCell label="Raw store" value={d.store === 'memory' ? 'In memory' : d.store} tone={d.store === 'memory' ? 'warn' : 'ok'}
+          title={d.store === 'memory' ? 'Raw lines are lost when Studio restarts' : undefined} />
       </div>
 
       <Section id="glance" title="At a glance" desc="One score, and the findings behind it, written from the live numbers.">
@@ -224,8 +249,12 @@ function Body({ d }: { d: Overview }) {
               <Kpi label="Avg fields / event" value={lag ? String(lag.avg_vars) : '—'} sub="variables extracted" />
               <Kpi label="Tamper-evident" value={u && u.n ? `${Math.round((u.hashed / u.n) * 100)}%` : '—'} sub="events with SHA-256" />
               <Kpi label="Merkle batches" value={u ? int(u.mb) : '—'} sub="sealed batches" />
-              <Kpi label="Ingest lag" value={lag && lag.good ? `${lag.avg_ms} ms` : '—'} sub={lag ? (lag.good ? `p95 ${lag.p95_ms} ms` : 'no usable timestamps') : undefined} />
-              <Kpi label="Clock-skewed events" value={lag ? int(lag.skewed) : '—'} sub="log time ≠ arrival time" tone={lag && lag.skewed ? 'warn' : undefined} />
+              <Kpi label="Ingest lag" value={lag && lag.good ? `${lag.avg_ms} ms` : '—'}
+                sub={lag ? (lag.good ? `p95 ${lag.p95_ms} ms · ${int(lag.good)} events` : 'no usable timestamps') : undefined} />
+              <Kpi label="Clock-skewed events" value={lag ? int(lag.skewed) : '—'}
+                sub={lag && lag.skewed && skewMs ? `log clock ${skewMs < 0 ? 'ahead' : 'behind'} by ${offsetText(skewMs)}${Math.abs(skewMs) >= 15 * 60000 ? ': check source timezone' : ''}` : 'log time ≠ arrival time'}
+                tone={lag && lag.skewed ? 'warn' : undefined} />
+              <Kpi label="No timestamp" value={lag?.no_ts !== undefined ? int(lag.no_ts) : '—'} sub="arrival time used instead" />
             </div>
             <div className="cards c3">
               <Panel title="Parse quality"><Donut center={`${nm.normalized_pct ?? 0}%`} rows={[
@@ -266,18 +295,21 @@ function Body({ d }: { d: Overview }) {
               <Kpi label="Reduction vs raw" value={reduction ? `${reduction}×` : '—'} sub={disk ? `${bytesFmt(disk.compressed)} on disk` : undefined} tone={reduction && reduction > 1 ? 'ok' : undefined} />
               <Kpi label="Smaller than baseline" value={vsBase !== null ? `${vsBase}%` : '—'} sub="raw + JSON store" tone={vsBase !== null && vsBase > 0 ? 'ok' : undefined} />
               <Kpi label="Bytes per event" value={perEvent !== null ? `${perEvent} B` : '—'} sub="on disk, compressed" />
-              <Kpi label="Space saved" value={disk && k.bytes > disk.compressed ? bytesFmt(k.bytes - disk.compressed) : '—'} sub="versus raw lines" />
+              <Kpi label="Space saved" value={disk && rawDb && rawDb > disk.compressed ? bytesFmt(rawDb - disk.compressed) : '—'} sub="versus raw lines" />
               <Kpi label="Storage mode" value={ch.modes ? `${Math.round(100 * (ch.modes.template ?? 0) / Math.max(1, (ch.modes.template ?? 0) + (ch.modes.verbatim ?? 0)))}%` : '—'} sub="stored as template + vars" />
             </div>
             <div className="cards c1">
               <Panel title="On-disk size" subtitle="smaller is better">
                 {disk ? (
                   <>
-                    <RankBars color="var(--ok)" rows={[
-                      { k: 'Raw log lines', n: k.bytes },
+                    <RankBars color="var(--ok)" val={bytesFmt} rows={[
+                      ...(rawDb ? [{ k: 'Raw log lines', n: rawDb }] : []),
                       ...(base ? [{ k: 'Baseline (raw + JSON)', n: base.compressed }] : []),
                       { k: 'Aletheia events', n: disk.compressed }]} />
-                    <p className="hint">Bytes: {bytesFmt(k.bytes)} raw{base ? ` · ${bytesFmt(base.compressed)} baseline` : ''} · {bytesFmt(disk.compressed)} Aletheia.</p>
+                    <p className="hint">
+                      {rawDb ? `${bytesFmt(rawDb)} raw` : 'Raw size unknown'}{base ? ` · ${bytesFmt(base.compressed)} baseline` : ''} · {bytesFmt(disk.compressed)} Aletheia,
+                      for {int(disk.rows)} stored events. Raw size is estimated from the average line ({ins.bytes_per_line} B).
+                    </p>
                   </>
                 ) : <p className="hint">The event database is not reachable.</p>}
               </Panel>

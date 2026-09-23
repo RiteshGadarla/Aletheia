@@ -28,12 +28,12 @@ If you only have **Docker Engine / Docker Desktop** installed on Windows, you ca
 
 #### PowerShell:
 ```powershell
-.\setup.ps1
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
-*(or explicitly: `.\setup.ps1 -Mode Container`)*
+*(or explicitly: `powershell -ExecutionPolicy Bypass -File .\setup.ps1 -Mode Container`)*
 
-> *Execution Policy Note*: If PowerShell displays a script execution policy restriction, run once:
-> `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+> *Execution Policy Note*: `-ExecutionPolicy Bypass` applies to this one run only. Plain `.\setup.ps1` is
+> refused by default, and even `RemoteSigned` refuses it if the repo was downloaded as a ZIP.
 
 #### Command Prompt:
 ```cmd
@@ -44,7 +44,7 @@ What this does automatically:
 1. Verifies Docker Desktop is running.
 2. Creates local secret configuration (`deploy/secrets/aletheia.env`) from template.
 3. Builds and launches the complete containerized stack (`deploy/docker-compose.yml`).
-4. Serves the **Aletheia UI on `http://localhost:8080`**, Studio API on `http://localhost:8081`, and Grafana on `http://localhost:3000`.
+4. Serves the **Aletheia UI on `http://localhost:8080`**, Studio API through the UI proxy, and Grafana on `http://localhost:3000`.
 
 ---
 
@@ -57,7 +57,7 @@ Open PowerShell or Command Prompt in the project root:
 
 **PowerShell:**
 ```powershell
-.\setup.ps1 -Mode Native
+powershell -ExecutionPolicy Bypass -File .\setup.ps1 -Mode Native
 ```
 
 **Command Prompt:**
@@ -159,9 +159,16 @@ make dev
 ## 5. Troubleshooting for Windows Users
 
 ### 1. PowerShell Script Execution Error
-If PowerShell says `...script cannot be loaded because running scripts is disabled on this system`:
+If PowerShell says `...script cannot be loaded because running scripts is disabled on this system`
+(or `...is not digitally signed`), run it with a one-off bypass:
 ```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
+### 1b. Shell scripts fail inside containers (`$'\r': command not found`, `set: -: invalid option`)
+The repo was checked out with Windows (CRLF) line endings before `.gitattributes` existed. Re-checkout once (this discards uncommitted local changes):
+```powershell
+git rm -r --cached . ; git reset --hard
 ```
 
 ### 2. Docker Desktop Memory Settings
