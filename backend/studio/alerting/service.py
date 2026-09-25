@@ -569,8 +569,8 @@ class AlertingService:
             if value is None:
                 value = parse_value_string(a.get("valueString"))
             link = a.get("generatorURL") or None
-            if link and cfg.url and link.startswith(cfg.url):
-                link = cfg.public_url + link[len(cfg.url):]
+            if link and cfg.url:
+                link = cfg.public_link(link)
             ends = a.get("endsAt")
             self.feed.add(status="resolved" if a.get("status") == "resolved" else "firing",
                           source="grafana", rule_id=labels.get("aletheia_rule_id"),

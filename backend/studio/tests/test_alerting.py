@@ -554,3 +554,13 @@ def test_rawstore_falls_back_when_loki_is_down(monkeypatch: pytest.MonkeyPatch) 
     assert rawstore.build_rawstore().kind == "memory"
     monkeypatch.setattr(rawstore.httpx, "get", lambda *a, **k: httpx.Response(503, text="warming up"))
     assert rawstore.build_rawstore().kind == "loki"
+
+
+def test_public_link_reroots_on_subpath() -> None:
+    # Behind nginx Grafana renders links from its public root_url, so match the path, not the host.
+    cfg = grafana.GrafanaConfig("http://127.0.0.1:3000/grafana", "/grafana", None, "admin", "x", "http://s")
+    assert cfg.public_link("http://localhost:6156/grafana/alerting/grafana/r1/view?orgId=1") \
+        == "/grafana/alerting/grafana/r1/view?orgId=1"
+    assert cfg.public_link("http://example.com/elsewhere") == "http://example.com/elsewhere"
+    bare = grafana.GrafanaConfig("http://127.0.0.1:3000", "http://localhost:3000", None, "a", "x", "http://s")
+    assert bare.public_link("http://127.0.0.1:3000/d/x") == "http://localhost:3000/d/x"

@@ -1,8 +1,24 @@
 # Aletheia — Benchmark methodology and results
 
+[← Documentation index](README.md) · [Project README](../README.md)
+
 > **Rule for this document: no unmeasured figures.** Every number below is produced by the harness
 > in [`bench/`](../bench/) and recorded together with the machine specification it ran on. Cells
 > marked *(pending)* have not been measured yet and must not be quoted until they are.
+
+## Contents
+
+- [How to reproduce](#how-to-reproduce)
+- [Machine specification for the results below](#machine-specification-for-the-results-below)
+- [1. Throughput](#1-throughput)
+- [2. Storage efficiency](#2-storage-efficiency)
+- [3. Verified rate](#3-verified-rate)
+- [4. Zero loss](#4-zero-loss)
+- [5. Integrity detection](#5-integrity-detection)
+- [6. Onboarding effort](#6-onboarding-effort)
+- [7. Drift detection latency](#7-drift-detection-latency)
+- [8. Replay diff speed](#8-replay-diff-speed)
+- [Interpreting these results honestly](#interpreting-these-results-honestly)
 
 ## How to reproduce
 

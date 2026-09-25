@@ -1,4 +1,7 @@
-# Aletheia: Technical Specification
+# Aletheia — Technical specification
+
+[← Documentation index](README.md) · [Project README](../README.md)
+
 ### Universal Lossless Log Pre-processing Framework
 ### Smart India Hackathon, Problem Statement 26156
 
@@ -987,8 +990,8 @@ ollama pull qwen2.5-coder:7b          # any instruction-following model works; t
 OLLAMA_HOST=0.0.0.0 ollama serve
 
 # start Aletheia
-docker run -d --name aletheia -p 6156:6156 -p 3000:3000 \
-  -p 5514:5514/udp -p 5514:5514/tcp \
+docker run -d --name aletheia -p 6156:6156 \
+  -p 26514:5514/udp -p 26514:5514/tcp \
   --add-host=host.docker.internal:host-gateway \
   -e ALETHEIA_LLM_PROVIDER=ollama \
   -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
@@ -1002,7 +1005,7 @@ docker network create aletheia-net
 docker run -d --name ollama --network aletheia-net -v ollama:/root/.ollama ollama/ollama
 docker exec ollama ollama pull qwen2.5-coder:7b
 docker run -d --name aletheia --network aletheia-net \
-  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp \
   -e ALETHEIA_LLM_PROVIDER=ollama \
   -e ALETHEIA_LLM_BASE_URL=http://ollama:11434/v1 \
   -e ALETHEIA_LLM_MODEL=qwen2.5-coder:7b \
@@ -1021,7 +1024,7 @@ ALETHEIA_LLM_MODEL=gemini-3.5-flash-lite    # any gemini-* model
 ALETHEIA_LLM_SEND_SAMPLES=masked
 
 docker run -d --name aletheia --env-file aletheia.env \
-  -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 Then open **Settings** (`http://localhost:6156/dashboard/settings`), paste the Gemini key and press **Test connection**. The key is not read from the environment (Section 8.12.7).
@@ -1168,7 +1171,7 @@ Batch inserts from workers (thousands of rows per insert) through the native pro
 Periodic export using ClickHouse's `s3` table function writing Parquet to MinIO, partitioned by `class_uid`, date and source. Typed columns make it ready for Python/Spark/DuckDB ML workflows (requirement h).
 
 ### 11.3 Grafana Loki
-- Vector consumes the `normalized` topic (consumer group `aletheia-sinks`) and pushes to Loki with its `loki` sink (`deploy/vector/loki.toml`, disk-buffered, snappy-compressed). In `make services` mode a small `vector-loki` container runs only this file; the full stack and the all-in-one image load it next to the HEC/CEF sinks (`sinks.toml`).
+- Vector consumes the `normalized` topic (consumer group `aletheia-sinks`) and pushes to Loki with its `loki` sink (`deploy/vector/loki.toml`, disk-buffered, snappy-compressed). In `make services` mode a small `vector-loki` container runs only this file; the full stack and the all-in-one image load it next to the optional HEC and CEF sinks (`hec.toml`, `cef.toml`), which are loaded only when `ALETHEIA_HEC_ENDPOINT` or `ALETHEIA_CEF_SYSLOG_ADDR` is set so an unconfigured sink never makes outbound DNS lookups.
 - **Labels must be low-cardinality**, because Loki indexes only labels and each unique label combination creates a stream. Allowed labels: `vendor`, `product`, `device`/`source_id`, `ocsf_class`, `parse_status`.
 - **Never labels:** IP addresses, ports, usernames, `event_uid`. These would create millions of streams.
 - `event_uid`, `template_id`, `merkle_batch` and `storage_mode` go into **structured metadata** (supported in Loki 3.x): usable as filters (`| event_uid="..."`), not as stream selectors. The Loki datasource turns `event_uid` into two links: the full ClickHouse record (`aletheia-events` dashboard) and the event dashboard (`aletheia-event`).
@@ -1249,7 +1252,7 @@ Aletheia is delivered to evaluators as a **Docker image pushed to a public conta
 | Mode | Artifact | Purpose | Scaling |
 |---|---|---|---|
 | **Evaluation (all-in-one)** | One image: `docker.io/<namespace>/aletheia:<version>` | Evaluators, demos, air-gapped trials on a single machine | Single host; worker count configurable inside the container |
-| **Production (multi-image)** | Component images: `aletheia-worker`, `aletheia-sealer`, `aletheia-studio`, `aletheia-ui`, plus upstream images (Vector, Redpanda, ClickHouse, PostgreSQL, MinIO, Loki, Grafana, Prometheus), orchestrated by Docker Compose (`deploy/docker-compose.yml`) or Helm | Real deployments | Horizontal: many workers, multi-node bus and ClickHouse |
+| **Production (multi-image)** | Component images: `aletheia-worker`, `aletheia-sealer`, `aletheia-studio`, `aletheia-ui`, plus upstream images (Vector, Redpanda, ClickHouse, PostgreSQL, MinIO, Loki, Grafana, Prometheus), orchestrated by Docker Compose (`deploy/docker-compose.yml`) | Real deployments | Horizontal: many workers, multi-node bus and ClickHouse |
 
 Both modes are built from the same repository, run the same engine binary and load the same parser packs. The all-in-one image is a packaging choice for convenient evaluation, not a different product.
 
@@ -1303,8 +1306,7 @@ docker pull docker.io/<namespace>/aletheia:1.0.0
 
 docker run -d --name aletheia \
   -p 6156:6156 \
-  -p 3000:3000 \
-  -p 5514:5514/udp -p 5514:5514/tcp \
+  -p 26514:5514/udp -p 26514:5514/tcp \
   docker.io/<namespace>/aletheia:1.0.0
 ```
 Wait until `docker ps` shows `healthy` (typically one to two minutes), then open `http://localhost:6156`.
@@ -1312,12 +1314,12 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 **Ports.**
 | Host port | Service | Use |
 |---|---|---|
-| 6156 | Aletheia UI | Landing, dashboard, lineage, Lyra, Sources, Export, Alerting, Demo Console, Settings; Studio API proxied under `/api/` |
-| 3000 | Grafana | Dashboards over ClickHouse, Loki and Prometheus |
-| 5514 UDP/TCP | Syslog input | Send your own logs |
-| 5515 TCP (optional) | Octet-counted syslog | RFC 6587 octet-counted TCP senders |
-| 6514 (optional) | Syslog over TLS | TLS ingestion test |
-| 8123 (optional) | ClickHouse HTTP | Direct SQL with a read-only demo user |
+| 6156 | nginx: Aletheia UI | The only HTTP port. Landing, dashboard, lineage, Lyra, Sources, Export, Alerting, Demo Console, Settings; Studio API under `/api/`; Grafana under `/grafana/` |
+| 26514 UDP/TCP | Syslog input (container 5514) | Send your own logs |
+| 26515 TCP (optional) | Octet-counted syslog (container 5515) | RFC 6587 octet-counted TCP senders |
+| 26516 (optional) | Syslog over TLS (container 6514) | TLS ingestion test |
+
+Every other component (Grafana, ClickHouse, PostgreSQL, Redpanda, Loki, Prometheus) binds the container's loopback and is never published. The syslog host ports are deliberately uncommon so they do not collide with a syslog daemon or SIEM agent already on the host.
 
 **Environment variables.**
 | Variable | Default | Effect |
@@ -1336,7 +1338,7 @@ Wait until `docker ps` shows `healthy` (typically one to two minutes), then open
 | `ALETHEIA_AIRGAP` | `false` | When `true`, cloud AI providers are refused |
 | `ALETHEIA_SECRET` | generated at first start | Key material for encrypting secrets stored via the UI |
 | `ALETHEIA_SUPPLY_ENABLED`, `_HOST`, `_PORT`, `_FORMAT`, `_ALLOW`, `_MODE`, `_TARGET` | `false`, `127.0.0.1`, `9099`, `raw`, empty, `listen`, empty | Startup defaults for the supply stream (Section 11.8); the Export page's saved values win |
-| `ALETHEIA_GRAFANA_URL` / `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://127.0.0.1:3000` / `http://localhost:3000` | Grafana as Studio reaches it, and as the browser does (for "Open in Grafana" links) |
+| `ALETHEIA_GRAFANA_URL` / `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://127.0.0.1:3000/grafana` / `/grafana` | Grafana as Studio reaches it, and as the browser does (for "Open in Grafana" links) |
 | `ALETHEIA_GRAFANA_USER` / `ALETHEIA_GRAFANA_PASSWORD` / `ALETHEIA_GRAFANA_TOKEN` | `admin` / `ALETHEIA_ADMIN_PASSWORD` / empty | Grafana credentials; a service-account token takes precedence |
 | `ALETHEIA_LOKI_URL` / `ALETHEIA_LOKI_TENANT` | `http://127.0.0.1:3100` / empty | Loki for the raw store and alerting health; unset means raw lines stay in memory |
 | `ALETHEIA_PROMETHEUS_URL` | `http://127.0.0.1:9090` | Prometheus for alerting health and local evaluation |
@@ -1356,9 +1358,9 @@ docker exec aletheia aletheia bench --workers 1,2,4 --duration 60s
 
 **Bring your own log.** Evaluators can send any perimeter-device log line to test the "any source" claim:
 ```bash
-logger --server localhost --port 5514 --udp "<your log line>"
+logger --server localhost --port 26514 --udp "<your log line>"
 # or
-echo "<your log line>" | nc -u -w1 localhost 5514
+echo "<your log line>" | nc -u -w1 localhost 26514
 ```
 A recognised format is normalized immediately. An unknown format is stored verbatim, appears in quarantine, and can be onboarded in the Studio on the spot.
 
@@ -1382,8 +1384,8 @@ sha256sum aletheia-1.0.0.tar          # compare with the value published in the 
 # air-gapped machine
 sha256sum aletheia-1.0.0.tar
 docker load -i aletheia-1.0.0.tar
-docker run -d --name aletheia -p 6156:6156 -p 3000:3000 \
-  -p 5514:5514/udp -p 5514:5514/tcp docker.io/<namespace>/aletheia:1.0.0
+docker run -d --name aletheia -p 6156:6156 \
+  -p 26514:5514/udp -p 26514:5514/tcp docker.io/<namespace>/aletheia:1.0.0
 ```
 - Nothing is downloaded at start or at run time: no packages, no models, no fonts, no map tiles, no update checks.
 - Start with `-e ALETHEIA_AIRGAP=true`. The AI assistant is then either `none` or a self-hosted model carried into the network the same way (Section 8.12.10).
@@ -1393,8 +1395,8 @@ docker run -d --name aletheia -p 6156:6156 -p 3000:3000 \
 **Proving the air-gap claim.** Pull the image, then disconnect the machine from all networks (or block all egress on the host firewall), start the container and run every Demo Console scenario. All must pass. A container-only test with `--network none` is not suitable because it also blocks the published ports the evaluator needs for the UI.
 
 ### 13.5 Production deployment
-- Docker Compose file (and optional Helm chart) with one service per component.
-- `deploy/docker-compose.yml` services: `postgres`, `clickhouse`, `redpanda`, `minio`, one-shot `init-topics` and `init-buckets`, `loki` (3.3.2), `prometheus` (v3.1.0), `grafana` (11.4.0), `aletheia-worker`, `aletheia-sealer`, `aletheia-studio` (port 8081, internal), `aletheia-ui` (nginx, host port `ALETHEIA_UI_PORT`, default 8080) and `vector` (started last). Grafana is published on `ALETHEIA_GRAFANA_PORT` (default 3000) and served under `/grafana/`, and the UI's nginx proxies it at `http://localhost:8080/grafana/`. Studio reaches Grafana at `http://grafana:3000/grafana`, Loki at `http://loki:3100`, Prometheus at `http://prometheus:9090`, and Grafana calls Studio back at `http://aletheia-studio:8081`. Grafana telemetry, update checks and plugin installs are disabled.
+- Docker Compose file with one service per component.
+- `deploy/docker-compose.yml` services: `postgres`, `clickhouse`, `redpanda`, `minio`, one-shot `init-topics` and `init-buckets`, `loki` (3.3.2), `prometheus` (v3.1.0), `grafana` (11.4.0), `aletheia-worker`, `aletheia-sealer`, `aletheia-studio` (port 8081, internal), `aletheia-ui` (nginx, host port `ALETHEIA_UI_PORT`, default 6156) and `vector` (started last, syslog on host ports 26514 UDP/TCP, 26515 and 26516 TLS). nginx is the only published HTTP port: Grafana is served under `/grafana/` and reached only at `http://localhost:6156/grafana/`; ClickHouse is not published. Studio reaches Grafana at `http://grafana:3000/grafana`, Loki at `http://loki:3100`, Prometheus at `http://prometheus:9090`, and Grafana calls Studio back at `http://aletheia-studio:8081`. Grafana telemetry, update checks, plugin installs and plugin-key retrieval are disabled.
 - For development, `deploy/docker-compose.services.yml` (`make services`) runs only the datastores and views in Docker (Redpanda 9092, ClickHouse 8123/9000, PostgreSQL 5432, Loki 3100, Grafana 3000, Prometheus 9090, plus a `vector-loki` container for the `normalized` to Loki sink); the engine, Studio (8081) and the Vite frontend run natively (`make run`).
 - Workers scale by replica count; Redpanda and ClickHouse are deployed as multi-node clusters.
 - Same environment variables and parser pack format as the evaluation image.
@@ -1501,7 +1503,7 @@ Every number presented must be measured with this methodology and recorded with 
 | Cisco ASA | Firewall | Generated from published message documentation | Generator | RFC 3164 with free-text message IDs |
 | FortiGate | Firewall | Generated from published log reference | Generator | Key=value |
 | Generic CEF and LEEF emitters | Firewall/WAF | Generated | Generator | CEF, LEEF |
-| Evaluator's own logs | Any | Whatever the evaluator sends | Syslog port 5514 | Any |
+| Evaluator's own logs | Any | Whatever the evaluator sends | Syslog host port 26514 | Any |
 
 - **Replay with fresh timestamps.** The replayer rewrites timestamps to the current time so dashboards look live. The rewritten line is what Aletheia receives, so it is the raw event that gets hashed and preserved; this does not weaken any lossless claim.
 - **Correlated traffic.** The generators use shared IP pools and a fixed seed, so the same attacker IP appears in firewall denies, IDS alerts and VPN failures. This makes cross-source correlation visible and makes every run identical.
@@ -1527,7 +1529,7 @@ Every number presented must be measured with this methodology and recorded with 
 | Dashboards and alerting | Grafana 11 (unified alerting, provisioning API) | Reads ClickHouse, Loki and Prometheus; evaluates alert rules and delivers to browser, webhook, email and Slack | Kibana: tied to Elasticsearch; Alertmanager alone: no LogQL/SQL rules and no UI for contact points |
 | Metrics | Prometheus | Standard pipeline observability | None needed |
 | UI | React with Vite | Lineage viewer, Studio, replay diff | None needed |
-| Packaging | All-in-one evaluation image on Docker Hub (s6-overlay, multi-arch via buildx); per-component images with Docker Compose or Helm for production | One `docker run` for evaluators; `docker save`/`docker load` for air-gap | supervisord: less robust signal handling and dependency ordering than s6-overlay |
+| Packaging | All-in-one evaluation image on Docker Hub (s6-overlay, multi-arch via buildx); per-component images with Docker Compose for production | One `docker run` for evaluators; `docker save`/`docker load` for air-gap | supervisord: less robust signal handling and dependency ordering than s6-overlay |
 
 ---
 
@@ -1554,8 +1556,7 @@ aletheia/
 │   └── build.sh                    # docker buildx --platform linux/amd64,linux/arm64 --push
 ├── deploy/
 │   ├── docker-compose.yml          # production mode (multi-image)
-│   ├── helm/                       # optional
-│   ├── vector/                     # ingest.toml (sources -> raw), loki.toml (normalized -> Loki), sinks.toml (-> HEC/CEF)
+│   ├── vector/                     # ingest.toml (sources -> raw), loki.toml (normalized -> Loki), hec.toml / cef.toml (optional sinks), sinks.toml (self-metrics)
 │   ├── redpanda/                   # topic definitions
 │   ├── clickhouse/init.sql
 │   ├── postgres/init.sql
@@ -1660,7 +1661,7 @@ A **Reset demo** button restores the initial state without restarting the contai
 | 7 | Reach | Console: **Open in Grafana (Loki)** and **Show sink feeds** | Same events in Loki with low-cardinality labels; live views of the Kafka topic and CEF re-emit feed | g |
 | 8 | Throughput | Console: **Run benchmark** (runs `aletheia bench`) | Events/sec for 1, 2 and 4 workers on the evaluator's own machine, next to the reference results measured by the team | Scalability claim |
 | 9 | Air-gapped operation | Follow Section 13.4 on a disconnected machine | All scenarios above pass with no network | j |
-| 10 | Bring your own log | Send any line to port 5514 (Section 13.3) | Known formats normalize immediately; unknown ones are quarantined and can be onboarded live | "Any source" claim |
+| 10 | Bring your own log | Send any line to port 26514 (Section 13.3) | Known formats normalize immediately; unknown ones are quarantined and can be onboarded live | "Any source" claim |
 
 ### 21.3 How the tamper action works
 The **Tamper one stored byte** action changes one character inside one event's stored variables directly in ClickHouse (a synchronous `ALTER TABLE ... UPDATE` mutation), bypassing Aletheia entirely, exactly as an attacker with database access would. Verification then recomputes the hash of the reconstructed event, finds the mismatch, and the Merkle root of that batch no longer matches the sealed root. **Reset demo** restores the original value.
@@ -1691,9 +1692,9 @@ It talks to PostgreSQL directly, so it works with Studio stopped; Studio picks u
 The README is written so that an evaluator who has never seen the project can run and assess it in minutes.
 1. **What Aletheia does**, in three lines, and the architecture diagram.
 2. **Requirements:** Docker; 4 cores, 8 GB RAM for Docker, 10 GB disk; note on raising Docker Desktop's memory limit.
-3. **Quick start:** `docker pull` and the single `docker run` command; how to know it is ready (`healthy`); URLs for the UI (6156 in the all-in-one image, 8080 in the compose stack) and Grafana (3000); demo credentials.
+3. **Quick start:** `docker pull` and the single `docker run` command; how to know it is ready (`healthy`); URLs for the UI (6156 in both the all-in-one image and the compose stack) and Grafana (`/grafana/` on the same port); demo credentials.
 4. **Guided evaluation:** open the Demo Console and run the scenarios in order, with a screenshot and the expected result for each.
-5. **Bring your own log:** `logger` and `nc` examples for port 5514.
+5. **Bring your own log:** `logger` and `nc` examples for port 26514.
 6. **CLI:** `docker exec aletheia aletheia verify | replay | bench` examples.
 7. **Air-gapped installation:** `docker save`, checksum, `docker load`, run; how to prove there are no outbound calls.
 8. **Configuration:** environment variables table; mounting `/data` for persistence; sinks (ClickHouse, Loki, Kafka, Splunk HEC, CEF, Parquet).
@@ -1779,7 +1780,7 @@ A typical solution to this PS is: collector, format detection, a parser registry
 | h. AI/ML ready | Typed columns, Parquet exports partitioned by class and date | Sections 7.5, 11.2 |
 | i. Reduced parser effort | Automatic template derivation, slot typing, mapping proposals; measured onboarding time | Sections 8.6 to 8.9, 17 |
 | j. Air-gapped | Image carried in via `docker save`/`docker load`, nothing downloaded at run time, telemetry disabled, AI assistant optional and restricted to self-hosted endpoints in air-gap mode | Sections 8.12.6, 13.4, 13.6; Scenario 9 |
-| k. Containerized | All-in-one evaluation image on Docker Hub (amd64 and arm64); per-component images with Compose or Helm | Sections 13.1 to 13.3; Scenario 0 |
+| k. Containerized | All-in-one evaluation image on Docker Hub (amd64 and arm64); per-component images with Docker Compose | Sections 13.1 to 13.3; Scenario 0 |
 
 ---
 

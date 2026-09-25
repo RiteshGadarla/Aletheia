@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from .pipeline import IngestPipeline
-from .sources import Source, SourceRegistry
+from .sources import Source, SourceRegistry, check_udp_port
 
 log = logging.getLogger("studio.connectors")
 
@@ -73,6 +73,7 @@ class Runner:
             w.close()
 
     async def _udp_listen(self, c) -> None:
+        check_udp_port(int(c["port"]))      # sources saved before the guard existed
         loop, pipe, sid = asyncio.get_running_loop(), self.pipe, self.src.id
 
         class P(asyncio.DatagramProtocol):

@@ -56,8 +56,7 @@ services:
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
       # Mount the file, not the dir: the image's own config.d sets listen_host 0.0.0.0.
       - ./clickhouse/config.d/aletheia.xml:/etc/clickhouse-server/config.d/aletheia.xml:ro
-    ports:
-      - "${ALETHEIA_CH_HTTP_PORT:-8123}:8123"
+    # No published ports: Studio and Grafana reach it on the compose network.
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
       interval: 5s
@@ -196,8 +195,8 @@ services:
       GF_USAGE_STATS_ENABLED: "false"
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_INSTALL_PLUGINS: ""
-      # Served under /grafana/ so the UI's nginx proxy works; bare :3000 paths redirect there.
-      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:${ALETHEIA_GRAFANA_PORT:-3000}/grafana/"
+      # Not published: the browser reaches it only through the UI's nginx at /grafana/.
+      GF_SERVER_ROOT_URL: "${ALETHEIA_PUBLIC_URL:-http://localhost:${ALETHEIA_UI_PORT:-6156}}/grafana/"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       # Email contact points (docs/alerting.md). Off unless ALETHEIA_SMTP_ENABLED=true.
       GF_SMTP_ENABLED: ${ALETHEIA_SMTP_ENABLED:-false}
@@ -211,8 +210,6 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
-    ports:
-      - "${ALETHEIA_GRAFANA_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q ok"]
       interval: 10s
@@ -307,7 +304,8 @@ services:
       ALETHEIA_SECRET: ${ALETHEIA_SECRET:-}
       # Alerting (CONTRACTS §13.1): Studio pushes rules to Grafana, Grafana posts back to Studio.
       ALETHEIA_GRAFANA_URL: http://grafana:3000/grafana
-      ALETHEIA_GRAFANA_PUBLIC_URL: ${ALETHEIA_GRAFANA_PUBLIC_URL:-http://localhost:${ALETHEIA_GRAFANA_PORT:-3000}/grafana}
+      # Relative: the UI and Grafana share an origin, so deep links survive any host or port.
+      ALETHEIA_GRAFANA_PUBLIC_URL: ${ALETHEIA_GRAFANA_PUBLIC_URL:-/grafana}
       ALETHEIA_GRAFANA_USER: admin
       ALETHEIA_GRAFANA_PASSWORD: ${ALETHEIA_ADMIN_PASSWORD:-aletheia}
       ALETHEIA_LOKI_URL: http://loki:3100
@@ -338,8 +336,9 @@ services:
     environment:
       ALETHEIA_STUDIO_UPSTREAM: http://aletheia-studio:8081
       ALETHEIA_GRAFANA_UPSTREAM: http://grafana:3000
+    # The only HTTP port on the host: UI, /api/ and /grafana/.
     ports:
-      - "${ALETHEIA_UI_PORT:-8080}:8080"
+      - "${ALETHEIA_UI_PORT:-6156}:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz | grep -q ok"]
       interval: 10s
@@ -357,29 +356,41 @@ services:
       init-topics: {condition: service_completed_successfully}
       aletheia-worker: {condition: service_healthy}
       loki: {condition: service_healthy}
-    command: ["--config-dir", "/etc/vector"]
+    # Optional HEC/CEF sinks load only when their target is set; an unconfigured one would keep
+    # resolving a placeholder host (outbound DNS). `$$` is a literal `$` for the shell, not Compose.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        args=(--config-dir /etc/vector)
+        [ -n "$${ALETHEIA_HEC_ENDPOINT:-}" ] && args+=(--config /etc/vector/optional/hec.toml)
+        [ -n "$${ALETHEIA_CEF_SYSLOG_ADDR:-}" ] && args+=(--config /etc/vector/optional/cef.toml)
+        exec /usr/bin/vector "$${args[@]}"
     environment:
-      VECTOR_CONFIG_DIR: /etc/vector
       VECTOR_LOG: info
       # Vector's own telemetry/usage reporting is opt-in; kept explicitly off.
       VECTOR_INTERNAL_LOG_RATE_LIMIT: "10"
       ALETHEIA_BUS_BROKERS: redpanda:9092
       ALETHEIA_LOKI_ENDPOINT: http://loki:3100
-      ALETHEIA_HEC_ENDPOINT: ${ALETHEIA_HEC_ENDPOINT:-http://splunk-hec.invalid:8088}
+      ALETHEIA_HEC_ENDPOINT: ${ALETHEIA_HEC_ENDPOINT:-}
       ALETHEIA_HEC_TOKEN: ${ALETHEIA_HEC_TOKEN:-}
-      ALETHEIA_CEF_SYSLOG_ADDR: ${ALETHEIA_CEF_SYSLOG_ADDR:-siem.invalid:514}
+      ALETHEIA_CEF_SYSLOG_ADDR: ${ALETHEIA_CEF_SYSLOG_ADDR:-}
       ALETHEIA_TLS_DIR: /etc/vector/tls
     volumes:
       - ./vector/ingest.toml:/etc/vector/ingest.toml:ro
       - ./vector/sinks.toml:/etc/vector/sinks.toml:ro
       - ./vector/loki.toml:/etc/vector/loki.toml:ro
+      - ./vector/hec.toml:/etc/vector/optional/hec.toml:ro
+      - ./vector/cef.toml:/etc/vector/optional/cef.toml:ro
       - ./vector/sources.csv:/etc/vector/sources.csv:ro
       - ./vector/tls:/etc/vector/tls:ro
       - vectordata:/var/lib/vector
+    # Uncommon host ports so ingest never collides with a local syslog daemon or SIEM.
     ports:
-      - "${ALETHEIA_SYSLOG_PORT:-5514}:5514/udp"
-      - "${ALETHEIA_SYSLOG_PORT:-5514}:5514/tcp"
-      - "${ALETHEIA_SYSLOG_TLS_PORT:-6514}:6514/tcp"
+      - "${ALETHEIA_SYSLOG_PORT:-26514}:5514/udp"
+      - "${ALETHEIA_SYSLOG_PORT:-26514}:5514/tcp"
+      - "${ALETHEIA_SYSLOG_OCTET_PORT:-26515}:5515/tcp"
+      - "${ALETHEIA_SYSLOG_TLS_PORT:-26516}:6514/tcp"
     healthcheck:
       # The debian image has neither wget nor curl, and `vector top` needs a TTY; bash /dev/tcp does.
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8686 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"ok\":true' <&3"]

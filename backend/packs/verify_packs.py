@@ -34,7 +34,8 @@ import sys
 import yaml
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-OCSFDIR = os.path.abspath(os.path.join(HERE, "..", "ocsf"))
+# The image installs packs and OCSF in different trees, so honour the same env var the engine reads.
+OCSFDIR = os.environ.get("ALETHEIA_OCSF_DIR") or os.path.abspath(os.path.join(HERE, "..", "ocsf"))
 sys.path.insert(0, OCSFDIR)
 import validate as ocsf_validate  # noqa: E402
 
@@ -297,7 +298,7 @@ def cross_match_failures(packs: list, envelopes: dict) -> list:
             for sf in sorted(glob.glob(os.path.join(HERE, tpl["tests"]["samples"]))):
                 with open(sf, "rb") as fh:
                     samples.append((tpl["id"], os.path.basename(sf),
-                                    fh.read().decode("utf-8").rstrip("\n")))
+                                    fh.read().decode("utf-8").rstrip("\r\n")))
     for pname, tid, env_name, rx in compiled:
         for stid, sname, raw in samples:
             if stid != tid and rx.match(raw):
@@ -359,7 +360,7 @@ def main() -> int:
                 stats["samples"] += 1
                 totals["samples"] += 1
                 with open(sf, "rb") as fh:
-                    raw = fh.read().decode("utf-8").rstrip("\n")
+                    raw = fh.read().decode("utf-8").rstrip("\r\n")
                 matched = None
                 for env_name in env_names:
                     if env_name not in envelopes:

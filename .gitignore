@@ -34,3 +34,4 @@ venv/
 /*.log
 /.demo-traffic.log
 .chat_sessions.json
+.pytest_cache/

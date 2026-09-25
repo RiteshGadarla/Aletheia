@@ -4,7 +4,8 @@ set -eu
 exec 2>&1
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:9092 120
 /opt/aletheia/init/wait-for.sh http http://127.0.0.1:3100/ready 120
-export VECTOR_CONFIG_DIR=/etc/aletheia/vector
+# No VECTOR_CONFIG_DIR: Vector would load that directory on top of the --config files below,
+# and every component would then be defined twice.
 # ingest.toml defaults to the Compose layout; redirect it at the all-in-one one. Without
 # ALETHEIA_VECTOR_DATA_DIR every disk buffer fails to build its ledger with EACCES, because
 # /var/lib/vector is not writable by the aletheia user.
@@ -13,5 +14,15 @@ export ALETHEIA_VECTOR_ETC=/etc/aletheia/vector
 export ALETHEIA_TLS_DIR=/data/tls
 export ALETHEIA_BUS_BROKERS=127.0.0.1:9092
 export ALETHEIA_LOKI_ENDPOINT=http://127.0.0.1:3100
+# API and metrics stay on loopback; only the syslog listeners face the network.
+export ALETHEIA_VECTOR_API_ADDR=127.0.0.1:8686
+export ALETHEIA_VECTOR_METRICS_ADDR=127.0.0.1:9598
+# Optional sinks (Splunk HEC, CEF) load only when configured: an unconfigured one keeps resolving a
+# placeholder host, which is outbound DNS the air-gap claim does not allow. The 2s shutdown limit
+# keeps an unreachable sink from outlasting Docker's 10s stop timeout; disk buffers keep the data.
+cfg=/etc/aletheia/vector
+args=(--config "$cfg/ingest.toml" --config "$cfg/loki.toml" --config "$cfg/sinks.toml")
+[ -n "${ALETHEIA_HEC_ENDPOINT:-}" ] && args+=(--config "$cfg/hec.toml")
+[ -n "${ALETHEIA_CEF_SYSLOG_ADDR:-}" ] && args+=(--config "$cfg/cef.toml")
 exec s6-setuidgid aletheia /usr/local/bin/vector \
-  --config-dir /etc/aletheia/vector --require-healthy false
+  "${args[@]}" --require-healthy false --graceful-shutdown-limit-secs 2

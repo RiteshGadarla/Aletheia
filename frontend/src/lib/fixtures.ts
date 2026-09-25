@@ -475,9 +475,9 @@ export const SCENARIOS: DemoScenario[] = [
   {
     id: 'scn0', number: 0, title: 'One-command start', action_label: 'Check health',
     proves: 'The whole framework is one container the evaluator can start with a single command.',
-    expected: 'Container reports healthy; the UI opens on port 6156 and Grafana on 3000.',
+    expected: 'Container reports healthy; the UI opens on port 6156 and Grafana at /grafana/.',
     link: { label: 'Container health', href: '/dashboard/demo' },
-    cli: 'docker run -d --name aletheia -p 6156:6156 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp docker.io/<namespace>/aletheia:1.0.0',
+    cli: 'docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp docker.io/<namespace>/aletheia:1.0.0',
     requirements: ['k'], runnable: true,
   },
   {
@@ -556,7 +556,7 @@ export const SCENARIOS: DemoScenario[] = [
     id: 'scn7', number: 7, title: 'Reach', action_label: 'Show sink feeds',
     proves: 'The same events reach the tools an organization already runs.',
     expected: 'Events visible in Loki with low-cardinality labels, plus live Kafka topic and CEF re-emit feeds.',
-    link: { label: 'Grafana (Loki)', href: 'http://localhost:3000', external: true },
+    link: { label: 'Grafana (Loki)', href: '/grafana/', external: true },
     cli: 'docker exec aletheia aletheia-demo sinks --show loki,kafka,cef',
     requirements: ['g'], runnable: true,
   },
@@ -581,7 +581,7 @@ export const SCENARIOS: DemoScenario[] = [
     proves: 'Any source works: known formats normalize at once, unknown ones are onboarded live.',
     expected: 'Known formats appear as full in the explorer; unknown ones appear as a new quarantine cluster in the Studio.',
     link: { label: 'Onboarding Studio', href: '/dashboard/studio' },
-    cli: 'logger -n localhost -P 5514 -d "<166>Sep 19 14:31:02 fw01 %ASA-6-302013: Built outbound TCP connection 1234 for outside:203.0.113.5/443 (203.0.113.5/443) to inside:10.0.0.5/52144 (198.51.100.7/52144)"',
+    cli: 'logger -n localhost -P 26514 -d "<166>Sep 19 14:31:02 fw01 %ASA-6-302013: Built outbound TCP connection 1234 for outside:203.0.113.5/443 (203.0.113.5/443) to inside:10.0.0.5/52144 (198.51.100.7/52144)"',
     requirements: ['b', 'e'], runnable: false,
   },
 ];

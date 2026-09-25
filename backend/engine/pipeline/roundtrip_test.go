@@ -70,7 +70,8 @@ func samples(t *testing.T, prefix string) []sample {
 		if err != nil {
 			t.Fatalf("read %s: %v", p, err)
 		}
-		for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		for _, line := range strings.Split(strings.TrimRight(string(b), "\r\n"), "\n") {
+			line = strings.TrimSuffix(line, "\r") // CRLF checkout on Windows
 			if line == "" {
 				continue
 			}

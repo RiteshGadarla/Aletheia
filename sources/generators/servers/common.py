@@ -312,21 +312,22 @@ def tcp_handler(feed: Feed):
 
 
 async def udp_pusher(feed: Feed, target: str) -> None:
-    """Pushes each line as one UDP syslog datagram; retries DNS until the target resolves."""
-    host, _, port = target.rpartition(":")
+    """Pushes each line as one UDP syslog datagram to every comma-separated target; retries DNS."""
+    targets = [t.strip().rpartition(":") for t in target.split(",") if t.strip()]
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
-    addr = None
+    addrs = None
     q = feed.subscribe()
     while True:
         _, _, line, _ = await q.get()
-        if addr is None:
+        if addrs is None:
             try:
-                addr = (socket.gethostbyname(host), int(port))
+                addrs = [(socket.gethostbyname(host), int(port)) for host, _, port in targets]
             except OSError:
                 await asyncio.sleep(5)
                 continue
-        try:
-            sock.sendto(line.encode(), addr)
-        except OSError:
-            pass
+        for addr in addrs:
+            try:
+                sock.sendto(line.encode(), addr)
+            except OSError:
+                pass

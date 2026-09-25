@@ -23,6 +23,11 @@ SERVE = Path(os.environ.get(
 ))
 HOST = os.environ.get("ALETHEIA_SAMPLES_HOST", "127.0.0.1")
 UDP_TARGET = os.environ.get("ALETHEIA_SAMPLES_UDP_TARGET", "127.0.0.1:5514")
+# Port the waf-cef preset listens on. The all-in-one sets 5516: Vector already owns 5514 in the
+# same network namespace, and a Studio listener grabbing it first at boot crashes Vector.
+UDP_PORT = os.environ.get("ALETHEIA_SAMPLES_UDP_PORT", UDP_TARGET.rpartition(":")[2])
+# The cef generator feeds syslog (UDP_TARGET) and the preset's own port when they differ.
+PUSH_TARGETS = ",".join(dict.fromkeys([UDP_TARGET, f"{HOST}:{UDP_PORT}"]))
 
 # id -> generator type, ports, and the Sources preset the Connect button pre-fills.
 SAMPLES: dict[str, dict[str, Any]] = {
@@ -37,7 +42,7 @@ SAMPLES: dict[str, dict[str, Any]] = {
     "vpn": {"category": "Access", "purpose": "Remote-access VPN gateway: logins, failures and brute-force bursts from repeat attackers.", "title": "OpenVPN gateway", "format": "OpenVPN auth", "transport": "WebSocket", "ctl": 9104,
             "port": 9104, "preset": {"id": "vpn-gw", "type": "websocket", "config": {"url": f"ws://{HOST}:9104/ws"}}},
     "cef": {"category": "Network security", "purpose": "WAF and next-gen firewall alerts in CEF and LEEF: SQL injection, blocks and policy denies.", "title": "WAF and NGFW", "format": "CEF + LEEF", "transport": "UDP push", "ctl": 9105,
-            "port": 5514, "preset": {"id": "waf-cef", "type": "udp_listen", "config": {"port": "5514"}}},
+            "port": int(UDP_PORT), "preset": {"id": "waf-cef", "type": "udp_listen", "config": {"port": UDP_PORT}}},
     "app": {"category": "Web and apps", "purpose": "AetherOS 2030 Cyber-App logs: quantum-mesh traces, holo-session telemetry and bio-neural events with a futuristic 2030 nested schema.", "title": "AetherOS 2030 Cyber-App", "format": "2030 Telemetry JSON", "transport": "REST cursor", "ctl": 9106,
             "port": 9106, "preset": {"id": "aether2030-app", "type": "rest_cursor", "config": {"url": f"http://{HOST}:9106/logs"}}},
     "shop": {"category": "Web and apps", "purpose": "AmazonMart, a fictional online store: load-balancer access logs plus order, payment, cart and fraud events.",
@@ -94,7 +99,7 @@ def start_sample(sid: str) -> dict[str, Any]:
     if not SERVE.is_file():
         raise HTTPException(503, "generator servers are not part of this build")
     if not _up(s["ctl"]):
-        env = {**os.environ, "PUSH_TARGET": UDP_TARGET} if sid == "cef" else dict(os.environ)
+        env = {**os.environ, "PUSH_TARGET": PUSH_TARGETS} if sid == "cef" else dict(os.environ)
         _PROCS[sid] = subprocess.Popen([sys.executable, str(SERVE), "--type", sid, "--host", "127.0.0.1"],
                                        env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                        start_new_session=True)

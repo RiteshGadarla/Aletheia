@@ -49,7 +49,7 @@ function Health() {
   }, []);
 
   const label = state === 'pending' ? 'Checking…'
-    : state === 'down' ? 'API unreachable'
+    : state === 'down' ? (errorMsg === 'Pack verification failed' ? 'Pack check failed' : 'API unreachable')
       : 'Engine healthy';
 
   return (

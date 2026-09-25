@@ -324,7 +324,7 @@ def derive_exact(samples: list[str], max_relax: int = 8) -> TemplateProposal:
     """Derive a byte-exact template that reconstructs every sample in the cluster."""
     uniq: list[str] = []
     for s in samples:
-        s = s.rstrip("\n")
+        s = s.rstrip("\r\n")
         if s and s not in uniq:
             uniq.append(s)
     if not uniq:

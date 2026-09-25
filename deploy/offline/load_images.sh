@@ -46,7 +46,7 @@ cat <<'EOF'
 Next:
   # all-in-one evaluation image
   docker run -d --name aletheia -e ALETHEIA_AIRGAP=true \
-    -p 8080:8080 -p 3000:3000 -p 5514:5514/udp -p 5514:5514/tcp \
+    -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp \
     <registry>/aletheia:<version>
 
   # or the production stack

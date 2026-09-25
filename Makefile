@@ -289,7 +289,7 @@ run: services engine
 
 up:
 	docker compose -f $(ROOT)/deploy/docker-compose.yml up -d
-	@echo "UI http://localhost:8080   Grafana http://localhost:3000"
+	@echo "UI http://localhost:6156   Grafana http://localhost:6156/grafana/   syslog :26514"
 
 down:
 	docker compose -f $(ROOT)/deploy/docker-compose.yml down

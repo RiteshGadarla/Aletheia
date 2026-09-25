@@ -1,83 +1,6 @@
-# Aletheia fan-out — Redpanda topic `normalized` -> Splunk HEC, CEF-over-syslog.
-# The `normalized_bus` source and the Loki sink live in loki.toml, which `make services` runs alone.
-# ClickHouse is written by the workers directly (spec §11.1); this file is the rest of §11.
-
-# ---------------------------------------------------------------- Splunk HEC
-
-[transforms.hec_fields]
-type = "remap"
-inputs = ["normalized_bus"]
-source = '''
-.st = "ocsf:" + (to_string(.class_uid) ?? "0")
-.src_host = to_string(.aletheia.source_id) ?? "unknown"
-'''
-
-[sinks.splunk_hec]
-type = "splunk_hec_logs"
-inputs = ["hec_fields"]
-endpoint = "${ALETHEIA_HEC_ENDPOINT:-http://splunk-hec.invalid:8088}"
-default_token = "${ALETHEIA_HEC_TOKEN:-unset}"
-sourcetype = "{{ st }}"
-source = "aletheia"
-index = "${ALETHEIA_HEC_INDEX:-main}"
-host_key = "src_host"
-healthcheck.enabled = false        # optional sink; absence must not block startup
-
-[sinks.splunk_hec.encoding]
-codec = "json"
-except_fields = ["st", "src_host"]
-
-[sinks.splunk_hec.buffer]
-type = "disk"
-max_size = 536870912
-when_full = "drop_newest"          # optional downstream; never backpressure the pipeline
-
-# ---------------------------------------------------------------- CEF re-emit
-
-# OCSF -> CEF key mapping (spec §11.6): a uniform CEF feed from heterogeneous sources.
-[transforms.cef]
-type = "remap"
-inputs = ["normalized_bus"]
-source = '''
-sev = to_int(.severity_id) ?? 1
-act = if (to_int(.action_id) ?? 0) == 1 { "allow" } else if (to_int(.action_id) ?? 0) == 2 { "deny" } else { "unknown" }
-vendor = to_string(.metadata.product.vendor_name) ?? "Aletheia"
-product = to_string(.metadata.product.name) ?? "Normalized"
-ver = to_string(.metadata.product.version) ?? "1.0"
-name = to_string(.activity_name) ?? ("class_" + (to_string(.class_uid) ?? "0"))
-sig = (to_string(.class_uid) ?? "0") + ":" + (to_string(.activity_id) ?? "0")
-
-ext = []
-if exists(.src_endpoint.ip)   { ext = push(ext, "src=" + (to_string(.src_endpoint.ip) ?? "")) }
-if exists(.dst_endpoint.ip)   { ext = push(ext, "dst=" + (to_string(.dst_endpoint.ip) ?? "")) }
-if exists(.src_endpoint.port) { ext = push(ext, "spt=" + (to_string(.src_endpoint.port) ?? "")) }
-if exists(.dst_endpoint.port) { ext = push(ext, "dpt=" + (to_string(.dst_endpoint.port) ?? "")) }
-if exists(.connection_info.protocol_name) { ext = push(ext, "proto=" + (to_string(.connection_info.protocol_name) ?? "")) }
-if exists(.actor.user.name)   { ext = push(ext, "suser=" + (to_string(.actor.user.name) ?? "")) }
-ext = push(ext, "act=" + act)
-ext = push(ext, "rt=" + (to_string(.time) ?? "0"))
-ext = push(ext, "cs1Label=event_uid")
-ext = push(ext, "cs1=" + (to_string(.aletheia.event_uid) ?? ""))
-ext = push(ext, "cs2Label=template_id")
-ext = push(ext, "cs2=" + (to_string(.aletheia.template_id) ?? ""))
-
-. = { "message": "<134>CEF:0|" + vendor + "|" + product + "|" + ver + "|" + sig + "|" + name + "|" + to_string(sev) + "|" + join!(ext, " ") }
-'''
-
-[sinks.cef_syslog]
-type = "socket"
-inputs = ["cef"]
-mode = "tcp"
-address = "${ALETHEIA_CEF_SYSLOG_ADDR:-siem.invalid:514}"
-framing.method = "newline_delimited"
-
-[sinks.cef_syslog.encoding]
-codec = "text"
-
-[sinks.cef_syslog.buffer]
-type = "disk"
-max_size = 268435488               # Vector's floor for a disk buffer: 256 MiB + 32 B
-when_full = "drop_newest"
+# Vector's own metrics for Prometheus. The `normalized_bus` source and the Loki sink live in
+# loki.toml; the optional Splunk HEC and CEF sinks live in hec.toml and cef.toml, loaded only when
+# their target is configured. ClickHouse is written by the workers directly (spec §11.1).
 
 # ---------------------------------------------------------------- self-metrics
 
@@ -87,5 +10,5 @@ type = "internal_metrics"
 [sinks.prometheus]
 type = "prometheus_exporter"
 inputs = ["vector_metrics"]
-address = "0.0.0.0:9598"
+address = "${ALETHEIA_VECTOR_METRICS_ADDR:-0.0.0.0:9598}"
 default_namespace = "vector"

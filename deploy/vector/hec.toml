@@ -1,0 +1,33 @@
+# Optional fan-out: Redpanda topic `normalized` -> Splunk HEC.
+# Loaded only when ALETHEIA_HEC_ENDPOINT is set; an unconfigured sink would keep resolving a
+# placeholder host, which is outbound DNS an air-gapped deployment must not make.
+
+# ---------------------------------------------------------------- Splunk HEC
+
+[transforms.hec_fields]
+type = "remap"
+inputs = ["normalized_bus"]
+source = '''
+.st = "ocsf:" + (to_string(.class_uid) ?? "0")
+.src_host = to_string(.aletheia.source_id) ?? "unknown"
+'''
+
+[sinks.splunk_hec]
+type = "splunk_hec_logs"
+inputs = ["hec_fields"]
+endpoint = "${ALETHEIA_HEC_ENDPOINT:-http://splunk-hec.invalid:8088}"
+default_token = "${ALETHEIA_HEC_TOKEN:-unset}"
+sourcetype = "{{ st }}"
+source = "aletheia"
+index = "${ALETHEIA_HEC_INDEX:-main}"
+host_key = "src_host"
+healthcheck.enabled = false        # optional sink; absence must not block startup
+
+[sinks.splunk_hec.encoding]
+codec = "json"
+except_fields = ["st", "src_host"]
+
+[sinks.splunk_hec.buffer]
+type = "disk"
+max_size = 536870912
+when_full = "drop_newest"          # optional downstream; never backpressure the pipeline

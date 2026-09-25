@@ -1,5 +1,7 @@
 # Aletheia — Alerting and the Loki logs dashboard
 
+[← Documentation index](README.md) · [Project README](../README.md)
+
 Alert rules, contact points and the notification policy tree are edited on the dashboard's
 **Alerting** page. Grafana's unified alerting evaluates them and sends the notifications. The API
 contract is [CONTRACTS §13](CONTRACTS.md#13-alerting-api-contract-grafana-backed).
@@ -15,6 +17,19 @@ contract is [CONTRACTS §13](CONTRACTS.md#13-alerting-api-contract-grafana-backe
    "browser" point    webhook             email (SMTP)    Slack
    = webhook to Studio /api/v1/alerting/receive ──▶ UI notification feed
 ```
+
+## Contents
+
+- [Modes](#modes)
+- [The Alerting page](#the-alerting-page)
+- [Where each deployment points Studio](#where-each-deployment-points-studio)
+- [Contact points](#contact-points)
+- [Rule queries](#rule-queries)
+- [Dashboards](#dashboards)
+- [Logs dashboard](#logs-dashboard)
+- [Overview dashboard](#overview-dashboard)
+- [Event dashboard](#event-dashboard)
+- [Troubleshooting](#troubleshooting)
 
 ## Modes
 
@@ -60,8 +75,8 @@ button. Three tabs sit below it, each with a count:
 
 | | `make run` / `make studio` | `deploy/docker-compose.yml` | all-in-one image |
 |---|---|---|---|
-| `ALETHEIA_GRAFANA_URL` | `http://127.0.0.1:3000` | `http://grafana:3000/grafana` | `http://127.0.0.1:3000` |
-| `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://localhost:3000` | `http://localhost:3000/grafana` | `http://localhost:3000` |
+| `ALETHEIA_GRAFANA_URL` | `http://127.0.0.1:3000` | `http://grafana:3000/grafana` | `http://127.0.0.1:3000/grafana` |
+| `ALETHEIA_GRAFANA_PUBLIC_URL` | `http://localhost:3000` | `/grafana` | `/grafana` |
 | `ALETHEIA_LOKI_URL` | `http://127.0.0.1:3100` | `http://loki:3100` | `http://127.0.0.1:3100` |
 | `ALETHEIA_PROMETHEUS_URL` | `http://127.0.0.1:9090` | `http://prometheus:9090` | `http://127.0.0.1:9090` |
 | `ALETHEIA_ALERT_RECEIVER_URL` | `http://host.docker.internal:8081` | `http://aletheia-studio:8081` | `http://127.0.0.1:8081` |
@@ -72,8 +87,12 @@ stack sets the password from `ALETHEIA_ADMIN_PASSWORD`). A service-account token
 `ALETHEIA_GRAFANA_TOKEN` takes precedence over them. `ALETHEIA_LOKI_TENANT` sets the Loki tenant
 header for the local evaluator when Loki runs multi-tenant.
 
-In the full compose stack Grafana is served under `/grafana/`, so the UI's nginx proxies it at
-`http://localhost:8080/grafana/`. Bare `:3000` paths still work because they redirect.
+In the compose stack and the all-in-one image Grafana is served under `/grafana/` and is not
+published on a port of its own: the only way in is the UI's nginx, at
+`http://localhost:6156/grafana/`. The public URL is relative, so Aletheia's "Open in Grafana" links
+work whatever host name or port the UI is reached on. `ALETHEIA_PUBLIC_URL` (default
+`http://localhost:6156`) is the origin Grafana writes into links it renders itself, such as alert
+emails.
 
 ## Contact points
 

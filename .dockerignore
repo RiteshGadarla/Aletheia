@@ -56,7 +56,5 @@ backend/engine/testdata
 personal
 docs
 scripts
-setup.bat
-setup.ps1
 *.tar
 *.tar.gz

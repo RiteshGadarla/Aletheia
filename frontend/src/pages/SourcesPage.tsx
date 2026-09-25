@@ -330,8 +330,10 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
     try {
       if (action === 'propose') { setProp(await api.sourcePropose(src.id)); }
       else {
-        try { localStorage.setItem('aletheia.approver', approver); } catch { /* ignore */ }
-        const r = await api.sourceDecide(src.id, { action, approver, reason: note, feedback: note });
+        // Remembered in this browser only, so the next approval autofills it.
+        const name = approver.trim();
+        try { localStorage.setItem('aletheia.approver', name); } catch { /* ignore */ }
+        const r = await api.sourceDecide(src.id, { action, approver: name, reason: note.trim(), feedback: note.trim() });
         if (r.proposal) setProp(r.proposal);
         if (action === 'approve') {
           // Integration changes every page's data; a clean reload beats patching stale state.
@@ -394,7 +396,8 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
           </>}>
           <form className="stack" onSubmit={(e) => { e.preventDefault(); if (approver.trim() && !busy) void act(ask); }}>
             <label className="field"><span className="lbl">Your name (required)</span>
-              <input autoFocus value={approver} onChange={(e) => setApprover(e.target.value)} placeholder="e.g. ritesh" /></label>
+              <input autoFocus required name="approver" autoComplete="name" value={approver}
+                onChange={(e) => setApprover(e.target.value)} placeholder="Ashok Kumar" /></label>
             <label className="field"><span className="lbl">{ask === 'retry' ? 'Feedback for the next attempt' : 'Comment (optional)'}</span>
               <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. these are authentication events" /></label>
             {err && <p className="hint err">{err}</p>}

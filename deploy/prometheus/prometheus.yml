@@ -56,5 +56,6 @@ scrape_configs:
       - targets: ["minio:9000"]
 
   - job_name: grafana
+    metrics_path: /grafana/metrics      # served under the /grafana/ sub-path
     static_configs:
       - targets: ["grafana:3000"]

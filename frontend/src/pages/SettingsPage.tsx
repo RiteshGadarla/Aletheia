@@ -216,15 +216,15 @@ export function SettingsPage() {
   };
 
   const saveAndTestLocal = async () => {
-    if (!localModel.trim()) {
-      setError('Model name is required.');
-      toast({ kind: 'bad', title: 'Validation Error', body: 'Please specify a model name (e.g. llama 3.2)' });
+    if (!localUrl.trim() || !localModel.trim()) {
+      setError('Server base URL and model name are both required.');
+      toast({ kind: 'bad', title: 'Validation Error', body: 'Please specify both a server base URL and a model name.' });
       return;
     }
     setBusy('save');
     setError(null);
     setTest(null);
-    const targetUrl = localUrl.trim() || LOCAL_URL_DEFAULT;
+    const targetUrl = localUrl.trim();
     const targetModel = localModel.trim();
     const update: LlmSettingsUpdate = {
       provider: 'local',
@@ -540,7 +540,10 @@ export function SettingsPage() {
                 className="primary"
                 onClick={test?.ok ? () => setActiveModal(null) : saveAndTestGemini}
                 disabled={busy !== null}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  ...(test?.ok ? { background: 'var(--ok)', borderColor: 'var(--ok-border)', color: '#ffffff' } : {}),
+                }}
               >
                 <IconCheck size={14} />
                 {busy === 'save'
@@ -619,7 +622,7 @@ export function SettingsPage() {
                 type="button"
                 className="primary"
                 onClick={test?.ok ? () => setActiveModal(null) : saveAndTestLocal}
-                disabled={busy !== null || !localModel.trim()}
+                disabled={busy !== null || !localUrl.trim() || !localModel.trim()}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
               >
                 <IconCheck size={14} />
@@ -659,7 +662,7 @@ export function SettingsPage() {
               <button
                 type="button"
                 className={`button ${selectedPreset === 'custom' ? 'primary' : 'secondary'}`}
-                onClick={() => { setTest(null); setSelectedPreset('custom'); }}
+                onClick={() => { setTest(null); setSelectedPreset('custom'); setLocalUrl(''); setLocalModel(''); }}
                 style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--s3)', gap: '6px', fontWeight: 600 }}
               >
                 <IconSettings size={16} /> Custom
@@ -669,7 +672,7 @@ export function SettingsPage() {
             {/* Server Base URL Input - fully editable */}
             <label className="field code" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--s1)' }}>
               <span className="lbl" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <IconServer size={14} /> Server Base URL
+                <IconServer size={14} /> Server Base URL <span style={{ color: 'var(--bad)', fontSize: '12px' }}>*required</span>
               </span>
               <input
                 type="text"

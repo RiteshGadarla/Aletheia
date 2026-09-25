@@ -28,7 +28,7 @@ INSERT INTO sources (source_id, peers, listener, vendor, product, device_type, t
   ('fortigate',    ARRAY['127.0.0.1'], 'http:9102', 'Fortinet',    'FortiGate',    'firewall', 'UTC'),
   ('web-proxy',    ARRAY['127.0.0.1'], 'loki:9103', 'Squid Cache', 'Squid',        'proxy',    'UTC'),
   ('vpn-gw',       ARRAY['127.0.0.1'], 'ws:9104',   'OpenVPN Inc', 'OpenVPN',      'vpn',      'UTC'),
-  ('waf-cef',      ARRAY['127.0.0.1'], 'udp:5514',  'Generic',     'CEF',          'waf',      'UTC'),
+  ('waf-cef',      ARRAY['127.0.0.1'], 'udp:5516',  'Generic',     'CEF',          'waf',      'UTC'),
   ('llm-cluster',  ARRAY['127.0.0.1'], 'tcp:9111',  'AI-Cluster',  'LLM-Trainer',  'compute',  'UTC'),
   ('defense-net',  ARRAY['127.0.0.1'], 'tcp:9110',  'Generic',     'CEF',          'defense',  'UTC')
 ON CONFLICT (source_id) DO NOTHING;

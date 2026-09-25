@@ -1,11 +1,33 @@
-# Aletheia — Shared Contracts (frozen)
+# Aletheia — Shared contracts (frozen)
 
-Every component codes against this file. **Do not change anything here without saying so loudly
-in your final report** — other components are being built in parallel against it.
+[← Documentation index](README.md) · [Project README](../README.md)
 
-Source of truth for intent: `personal/Aletheia_Technical_Specification.md` (read your own sections).
+The interfaces every Aletheia component codes against: module identity, bus topics and message
+formats, database schemas, HTTP APIs and environment variables. These contracts are **frozen**: a
+change here is an interface change and must be made in every affected component at the same time.
+
+For the reasoning behind each contract, see the [technical specification](technical-specification.md).
 
 ---
+
+## Contents
+
+- [0. Module / package identity](#0-module--package-identity)
+- [1. Template token model (backend/engine/template)](#1-template-token-model-backendenginetemplate)
+- [2. Parser pack YAML (packs/\*.yaml)](#2-parser-pack-yaml-packsyaml)
+- [3. Bus contract (Redpanda / Kafka)](#3-bus-contract-redpanda--kafka)
+- [4. Identity & integrity (backend/engine/stamp, backend/engine/merkle)](#4-identity--integrity-backendenginestamp-backendenginemerkle)
+- [5. Normalized event JSON (backend/engine/normalize → topic normalized, and UI)](#5-normalized-event-json-backendenginenormalize--topic-normalized-and-ui)
+- [6. ClickHouse schema](#6-clickhouse-schema)
+- [7. PostgreSQL schema](#7-postgresql-schema)
+- [8. Studio ↔ Engine boundary](#8-studio--engine-boundary)
+- [9. LLM provider config — runtime configurable, not baked in](#9-llm-provider-config--runtime-configurable-not-baked-in)
+- [10. Non-negotiable invariants](#10-non-negotiable-invariants)
+- [11. Lyra chat agent contract](#11-lyra-chat-agent-contract)
+- [12. Stats / Overview API contract](#12-stats--overview-api-contract)
+- [13. Alerting API contract (Grafana-backed)](#13-alerting-api-contract-grafana-backed)
+- [14. Export & log supply (backend/studio/api/export.py, backend/studio/ingest/supply.py)](#14-export--log-supply-backendstudioapiexportpy-backendstudioingestsupplypy)
+- [15. Studio HTTP API index (backend/studio/main.py, backend/studio/api/)](#15-studio-http-api-index-backendstudiomainpy-backendstudioapi)
 
 ## 0. Module / package identity
 
@@ -389,7 +411,7 @@ Studio's own evaluator runs the same rules (`mode: "local"`), so the feature wor
 | Variable | Default | Meaning |
 |---|---|---|
 | `ALETHEIA_GRAFANA_URL` | unset → local mode | Grafana base URL as Studio reaches it (`http://grafana:3000`, `http://127.0.0.1:3000`) |
-| `ALETHEIA_GRAFANA_PUBLIC_URL` | `ALETHEIA_GRAFANA_URL` or `http://localhost:3000` | Grafana URL as the browser reaches it (deep links) |
+| `ALETHEIA_GRAFANA_PUBLIC_URL` | `ALETHEIA_GRAFANA_URL` or `http://localhost:3000` (Docker images: `/grafana`) | Grafana URL as the browser reaches it (deep links); may be relative when nginx serves Grafana on the UI's origin |
 | `ALETHEIA_GRAFANA_TOKEN` | unset | Service-account token; else basic auth below |
 | `ALETHEIA_GRAFANA_USER` / `ALETHEIA_GRAFANA_PASSWORD` | `admin` / `aletheia` | Basic auth fallback |
 | `ALETHEIA_ALERT_RECEIVER_URL` | `http://host.docker.internal:8081` | Studio base URL as **Grafana** reaches it, for the browser webhook |

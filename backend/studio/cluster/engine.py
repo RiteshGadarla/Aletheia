@@ -58,7 +58,7 @@ class ClusterEngine:
         self._clusters: dict[str, Cluster] = {}
 
     def add(self, line: str, source_id: str | None = None) -> Cluster:
-        raw = line.rstrip("\n")
+        raw = line.rstrip("\r\n")
         masked = premask(raw)
         result = self._miner.add_log_message(masked)
         cid = str(result["cluster_id"])

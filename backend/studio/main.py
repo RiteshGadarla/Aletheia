@@ -212,13 +212,13 @@ SCENARIOS: list[dict[str, Any]] = [
     {"id": "start", "number": 0, "title": "One-command start", "action_label": "—",
      "proves": "the whole stack comes up from one command",
      "expected": "container reports healthy; the UI opens",
-     "link": None, "cli": "docker run -d --name aletheia -p 6156:6156 ...",
+     "link": None, "cli": "docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp ...",
      "requirements": ["k"], "runnable": False},
     {"id": "traffic", "number": 1, "title": "Start traffic", "action_label": "Start traffic",
      "proves": "every source lands in one OCSF shape",
      "expected": "eight source types stream in; one table, identical columns",
      "link": {"label": "Open events", "href": "/events"},
-     "cli": "python3 sources/generators/log_generator.py --seed 1337 --syslog localhost:5514",
+     "cli": "python3 sources/generators/log_generator.py --seed 1337 --syslog localhost:26514",
      "requirements": ["b", "c", "f"], "runnable": True},
     {"id": "lineage", "number": 2, "title": "Byte lineage", "action_label": "Pick an event",
      "proves": "traceability down to the byte",
@@ -268,7 +268,7 @@ SCENARIOS: list[dict[str, Any]] = [
     {"id": "byol", "number": 10, "title": "Bring your own log", "action_label": "—",
      "proves": "the 'any source' claim, on the evaluator's own data",
      "expected": "known formats normalize; unknown ones quarantine and can be onboarded live",
-     "link": None, "cli": 'echo "<your log line>" | nc -u -w1 localhost 5514',
+     "link": None, "cli": 'echo "<your log line>" | nc -u -w1 localhost 26514',
      "requirements": [], "runnable": False},
 ]
 
@@ -319,7 +319,8 @@ def verify_packs() -> dict[str, Any]:
     try:
         return json.loads(last)
     except json.JSONDecodeError:
-        return {"ok": p.returncode == 0, "output": p.stdout[-4000:]}
+        # A crash prints only to stderr; without it the UI gets ok:false and an empty reason.
+        return {"ok": p.returncode == 0, "output": (p.stdout + p.stderr)[-4000:]}
 
 
 # --------------------------------------------------------------------------- events + lineage

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -14,6 +15,14 @@ KEY = "sources.registry"
 TYPES = ("tcp", "udp_listen", "http_stream", "websocket", "loki_pull", "rest_cursor", "push")
 STATES = ("collecting", "review", "approved", "rejected")
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,62}$")
+# UDP ports another process in this network namespace owns (Vector's syslog in the all-in-one).
+# Binding one first at boot makes that process fail to start, so udp_listen may never take them.
+RESERVED_UDP = {int(p) for p in os.environ.get("ALETHEIA_RESERVED_UDP_PORTS", "").split(",") if p.strip()}
+
+
+def check_udp_port(port: int) -> None:
+    if port in RESERVED_UDP:
+        raise ValueError(f"UDP port {port} is reserved for the syslog listener; pick another port")
 
 
 @dataclass
@@ -42,6 +51,8 @@ def validate(src: Source) -> None:
             raise ValueError(f"{src.type} needs config.{k}")
     if "port" in c and not (1 <= int(c["port"]) <= 65535):
         raise ValueError("port out of range")
+    if src.type == "udp_listen":
+        check_udp_port(int(c["port"]))
 
 
 class SourceRegistry:

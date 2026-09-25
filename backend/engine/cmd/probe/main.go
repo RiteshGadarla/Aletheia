@@ -37,7 +37,8 @@ func main() {
 	files, _ := filepath.Glob("../packs/tests/*/*.log")
 	for _, f := range files {
 		b, _ := os.ReadFile(f)
-		for _, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		for _, line := range strings.Split(strings.TrimRight(string(b), "\r\n"), "\n") {
+			line = strings.TrimSuffix(line, "\r") // CRLF checkout on Windows
 			if line == "" {
 				continue
 			}

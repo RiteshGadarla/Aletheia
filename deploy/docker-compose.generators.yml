@@ -34,7 +34,7 @@ services:
     <<: *gen
     command: ["--type", "cef"]
     ports: ["9105:9105"]
-    environment: {PUSH_TARGET: "host.docker.internal:5514"}
+    environment: {PUSH_TARGET: "host.docker.internal:26514"}
 
   gen-app:
     <<: *gen

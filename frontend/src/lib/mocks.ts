@@ -380,7 +380,7 @@ function approvalOf(proposalId: string): ApprovalState {
 function demoOutput(id: string): { ok: boolean; output: string } {
   switch (id) {
     case 'scn0':
-      return { ok: true, output: 'CONTAINER  STATUS\naletheia   Up 4 minutes (healthy)\nUI http://localhost:6156   Grafana http://localhost:3000' };
+      return { ok: true, output: 'CONTAINER  STATUS\naletheia   Up 4 minutes (healthy)\nUI http://localhost:6156   Grafana http://localhost:6156/grafana/' };
     case 'scn1':
       state.trafficStarted = true;
       return { ok: true, output: 'generators started (seed 26156)\n  fw01 ASA   fgt01 FortiGate   cef01 CEF   proxy01 Squid\n  pf01 filterlog   vpn01 OpenVPN   ids01 Suricata   win01 winlog\nrate 500 eps' };
@@ -416,7 +416,7 @@ function demoOutput(id: string): { ok: boolean; output: string } {
     case 'scn9':
       return { ok: true, output: 'air-gap checklist\n  UI bundles all fonts, icons and JS: no external origins\n  ALETHEIA_AIRGAP=true refuses every cloud provider\n  outbound connections observed during the full demo: 0' };
     case 'scn10':
-      return { ok: true, output: 'send any line to port 5514. Known formats normalize at once; unknown ones appear as a new quarantine cluster in the Studio.' };
+      return { ok: true, output: 'send any line to port 26514. Known formats normalize at once; unknown ones appear as a new quarantine cluster in the Studio.' };
     default:
       return { ok: false, output: `unknown scenario ${id}` };
   }
@@ -600,7 +600,7 @@ function mockStatus(): AlertingStatus {
   const live = alerting.rules.filter((r) => r.enabled);
   return {
     mode: 'grafana',
-    grafana: { url: 'http://grafana:3000', public_url: 'http://localhost:3000', reachable: true, version: '11.2.0' },
+    grafana: { url: 'http://grafana:3000', public_url: '/grafana', reachable: true, version: '11.2.0' },
     loki: { url: 'http://loki:3100', reachable: true },
     prometheus: { url: 'http://prometheus:9090', reachable: true },
     receiver_url: 'http://host.docker.internal:8081',

@@ -1,5 +1,7 @@
 # Aletheia — Architecture
 
+[← Documentation index](README.md) · [Project README](../README.md)
+
 **Universal Lossless Log Pre-processing Framework — SIH PS 26156**
 *Normalize everything. Lose nothing. Prove it.*
 
@@ -229,7 +231,7 @@ are backfilled onto the bus.
 | Mode | Artifact |
 |---|---|
 | **Evaluation** | one all-in-one image, `docker run`, s6-overlay supervising every service, multi-arch (amd64 + arm64) |
-| **Production** | per-component images via Docker Compose or Helm; workers scale by replica count; Redpanda and ClickHouse as clusters |
+| **Production** | per-component images via Docker Compose; workers scale by replica count; Redpanda and ClickHouse as clusters |
 
 Both build from the same repository and run the same engine binary and parser packs. The
 Compose stack adds Loki, Prometheus and Grafana (port 3000) beside the core services.
@@ -249,7 +251,7 @@ bundled component at build time.
 
 | a | b | c | d | e | f | g | h | i | j | k |
 |---|---|---|---|---|---|---|---|---|---|---|
-| hash-verified reconstruction + verbatim fallback, never dropped | every variable captured; `unmapped` retains the rest | OCSF, pinned | `event_uid`, `raw_sha256`, pack version, byte-level lineage | packs + Studio + hot reload | one schema across sources | Kafka, HEC, CEF, Loki, Parquet | typed columns, Parquet by class/date | derivation, typing, mapping proposals | `save`/`load`, no run-time fetches | multi-arch image + Compose/Helm |
+| hash-verified reconstruction + verbatim fallback, never dropped | every variable captured; `unmapped` retains the rest | OCSF, pinned | `event_uid`, `raw_sha256`, pack version, byte-level lineage | packs + Studio + hot reload | one schema across sources | Kafka, HEC, CEF, Loki, Parquet | typed columns, Parquet by class/date | derivation, typing, mapping proposals | `save`/`load`, no run-time fetches | multi-arch image + Compose |
 
 ### What Aletheia is not
 

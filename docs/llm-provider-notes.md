@@ -1,4 +1,6 @@
-# LLM provider notes — measured, not assumed
+# Aletheia — LLM provider notes
+
+[← Documentation index](README.md) · [Project README](../README.md)
 
 ## Providers and model
 

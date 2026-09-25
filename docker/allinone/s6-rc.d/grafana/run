@@ -6,6 +6,12 @@ exec 2>&1
 export GF_SECURITY_ADMIN_USER=admin
 export GF_SECURITY_ADMIN_PASSWORD="${ALETHEIA_ADMIN_PASSWORD:-aletheia}"
 export GF_PATHS_DATA=/data/grafana
+# Loopback only, served under /grafana/ behind nginx on 6156. ALETHEIA_PUBLIC_URL is the
+# browser-facing origin; Grafana uses it only for links it renders (alert emails, share URLs).
+export GF_SERVER_HTTP_ADDR=127.0.0.1
+export GF_SERVER_HTTP_PORT=3000
+export GF_SERVER_ROOT_URL="${ALETHEIA_PUBLIC_URL:-http://localhost:6156}/grafana/"
+export GF_SERVER_SERVE_FROM_SUB_PATH=true
 # grafana.ini's default_home_dashboard_path is the Compose path (/var/lib/grafana/...),
 # which does not exist here; without this the evaluator gets Grafana's welcome page.
 export GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/aletheia/grafana/dashboards/aletheia-pipeline.json

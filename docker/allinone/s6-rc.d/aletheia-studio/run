@@ -7,8 +7,10 @@ exec 2>&1
 /opt/aletheia/init/wait-for.sh tcp 127.0.0.1:8123 120
 export ALETHEIA_SECRET="$(cat /data/secret 2>/dev/null || true)"
 # Alerting (CONTRACTS §13.1): everything is on loopback here, Grafana included.
-export ALETHEIA_GRAFANA_URL="${ALETHEIA_GRAFANA_URL:-http://127.0.0.1:3000}"
-export ALETHEIA_GRAFANA_PUBLIC_URL="${ALETHEIA_GRAFANA_PUBLIC_URL:-http://localhost:3000}"
+# Grafana serves under /grafana/; the browser reaches it same-origin through nginx, so the public
+# URL is relative and deep links work whatever host or port the container is published on.
+export ALETHEIA_GRAFANA_URL="${ALETHEIA_GRAFANA_URL:-http://127.0.0.1:3000/grafana}"
+export ALETHEIA_GRAFANA_PUBLIC_URL="${ALETHEIA_GRAFANA_PUBLIC_URL:-/grafana}"
 export ALETHEIA_GRAFANA_USER="${ALETHEIA_GRAFANA_USER:-admin}"
 export ALETHEIA_GRAFANA_PASSWORD="${ALETHEIA_GRAFANA_PASSWORD:-${ALETHEIA_ADMIN_PASSWORD:-aletheia}}"
 export ALETHEIA_LOKI_URL="${ALETHEIA_LOKI_URL:-http://127.0.0.1:3100}"

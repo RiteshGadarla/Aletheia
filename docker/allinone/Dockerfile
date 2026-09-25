@@ -176,6 +176,8 @@ COPY deploy/postgres/init.sql            /opt/aletheia/sql/postgres-init.sql
 COPY deploy/vector/ingest.toml           /etc/aletheia/vector/ingest.toml
 COPY deploy/vector/sinks.toml            /etc/aletheia/vector/sinks.toml
 COPY deploy/vector/loki.toml             /etc/aletheia/vector/loki.toml
+COPY deploy/vector/hec.toml              /etc/aletheia/vector/hec.toml
+COPY deploy/vector/cef.toml              /etc/aletheia/vector/cef.toml
 COPY deploy/vector/sources.csv           /etc/aletheia/vector/sources.csv
 COPY deploy/loki/loki.yml                /etc/aletheia/loki/loki.yml
 COPY deploy/prometheus/prometheus.yml    /etc/aletheia/prometheus/prometheus.yml
@@ -191,7 +193,9 @@ COPY docker/allinone/healthcheck.sh      /usr/local/bin/healthcheck.sh
 
 # rootfs ships all-in-one overrides (everything on 127.0.0.1) for prometheus.yml
 # and the Grafana datasources; they land on top of the deploy/ copies above.
-RUN chmod +x /usr/local/bin/healthcheck.sh /opt/aletheia/init/*.sh && \
+# The upstream docker_related_config.xml binds ClickHouse on 0.0.0.0; allinone.xml pins loopback.
+RUN rm -f /etc/aletheia/clickhouse/config.d/docker_related_config.xml && \
+    chmod +x /usr/local/bin/healthcheck.sh /opt/aletheia/init/*.sh && \
     find /etc/s6-overlay/s6-rc.d -type f \( -name run -o -name up -o -name finish \) -exec chmod +x {} +
 
 # libpq5 is there for initdb specifically: the server binary links statically enough to run,
@@ -209,6 +213,7 @@ RUN set -eux; \
     for d in postgres clickhouse redpanda loki prometheus grafana vector tls run logs bench demo; do \
       mkdir -p "/data/$d"; \
     done; \
+    mkdir -p /etc/aletheia/grafana/provisioning/plugins /etc/aletheia/grafana/provisioning/alerting; \
     chown -R aletheia:aletheia /data /opt/aletheia /app /usr/share/aletheia; \
     chown -R pgrun:aletheia /data/postgres
 
@@ -220,6 +225,7 @@ ENV GF_ANALYTICS_REPORTING_ENABLED=false \
     GF_NEWS_NEWS_FEED_ENABLED=false \
     GF_USAGE_STATS_ENABLED=false \
     GF_PLUGINS_PLUGIN_ADMIN_ENABLED=false \
+    GF_PLUGINS_PREINSTALL_DISABLED=true \
     DO_NOT_TRACK=1 \
     CHECKPOINT_DISABLE=1 \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -236,6 +242,8 @@ ENV PATH=/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin 
     ALETHEIA_DEMO_AUTOSTART=true \
     ALETHEIA_DEMO_RATE=200 \
     ALETHEIA_DEMO_SAMPLES=asa,fortigate,cef \
+    ALETHEIA_SAMPLES_UDP_PORT=5516 \
+    ALETHEIA_RESERVED_UDP_PORTS=5514 \
     ALETHEIA_SERVE_PY=/opt/aletheia/sources/generators/servers/serve.py \
     ALETHEIA_DEMO_SCRIPT=/app/demo/scenarios.py \
     ALETHEIA_VERIFY_PACKS=/opt/aletheia/packs/verify_packs.py \
@@ -256,16 +264,20 @@ ENV PATH=/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin 
     ALETHEIA_LLM_API_KEY_FILE= \
     ALETHEIA_LLM_SEND_SAMPLES=masked \
     ALETHEIA_AIRGAP=false \
+    # KILL_GRACETIME is a fixed wait after every service has already stopped, not a timeout:
+    # at 15000 it pushed every stop past Docker's 10s default, so each one ended in SIGKILL.
     S6_KEEP_ENV=1 \
     S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0 \
     S6_SERVICES_GRACETIME=15000 \
-    S6_KILL_GRACETIME=15000
+    S6_KILL_GRACETIME=3000
 
 VOLUME ["/data"]
 
-# 6156 UI  3000 Grafana  5514 syslog udp/tcp  5515 octet-counted  6514 syslog TLS  8123 ClickHouse HTTP
-EXPOSE 6156 3000 5514/udp 5514/tcp 5515/tcp 6514/tcp 8123
+# 6156 is the only HTTP port: nginx serves the UI, /api/ and /grafana/. The rest are syslog
+# ingest (5514 udp/tcp, 5515 octet-counted, 6514 TLS); publish them on uncommon host ports:
+#   -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -p 26515:5515 -p 26516:6514
+EXPOSE 6156 5514/udp 5514/tcp 5515/tcp 6514/tcp
 
 HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=10 \
   CMD /usr/local/bin/healthcheck.sh

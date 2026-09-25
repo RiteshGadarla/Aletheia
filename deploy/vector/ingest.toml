@@ -6,7 +6,7 @@ data_dir = "${ALETHEIA_VECTOR_DATA_DIR:-/var/lib/vector}"
 
 [api]
 enabled = true
-address = "0.0.0.0:8686"
+address = "${ALETHEIA_VECTOR_API_ADDR:-0.0.0.0:8686}"
 
 # Peer -> source_id resolution (spec §14). Unknown peers become `unknown:<ip>`
 # and therefore never inherit another source's parser packs.

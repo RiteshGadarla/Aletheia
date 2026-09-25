@@ -9,6 +9,7 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -44,6 +45,16 @@ class GrafanaConfig:
             receiver_url=((os.environ.get("ALETHEIA_ALERT_RECEIVER_URL") or "").strip().rstrip("/")
                           or "http://host.docker.internal:8081"),
         )
+
+    def public_link(self, link: str) -> str:
+        """Re-root a URL Grafana rendered onto public_url. Matches on the sub-path, not the host:
+        Grafana builds links from its root_url, which is the browser origin, never `url`."""
+        sub = urlsplit(self.url or "").path.rstrip("/")
+        u = urlsplit(link)
+        if not u.path.startswith(sub + "/"):
+            return link
+        return (self.public_url + u.path[len(sub):] + (f"?{u.query}" if u.query else "")
+                + (f"#{u.fragment}" if u.fragment else ""))
 
 
 # --------------------------------------------------------------------------- translation

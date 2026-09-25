@@ -15,8 +15,8 @@
 # Verification is the point of this script. "docker build succeeded" says nothing about whether
 # a log line put in the front door comes out the other end, so `verify` starts the image exactly
 # the way a judge will, waits for it to report healthy, and then proves four separate things:
-# the UI is served, the internal services are all reachable from the nginx entrypoint, the
-# externally published ports answer from the host, and a syslog line sent to 5514 lands in
+# the UI and Grafana are served through the one nginx port, internal services stay unpublished,
+# the syslog ports answer from the host, and a syslog line sent to ${P_SYSLOG} lands in
 # ClickHouse. Anything short of all four is a failed build.
 
 set -euo pipefail
@@ -51,13 +51,13 @@ CONTAINER="${CONTAINER:-aletheia-verify}"
 OUT_DIR="${OUT_DIR:-dist}"
 TARBALL="${OUT_DIR}/aletheia-${ALETHEIA_VERSION}.tar"
 
-# Host ports used during verification. Overridable so a busy machine can still run the check.
+# Host ports used during verification, the same uncommon numbers the README documents.
+# Overridable so a busy machine can still run the check. Grafana and ClickHouse have none:
+# Grafana is reached at ${P_UI}/grafana/ and ClickHouse is never published.
 P_UI="${P_UI:-6156}"
-P_GRAFANA="${P_GRAFANA:-3000}"
-P_SYSLOG="${P_SYSLOG:-5514}"
-P_SYSLOG_OCTET="${P_SYSLOG_OCTET:-5515}"
-P_SYSLOG_TLS="${P_SYSLOG_TLS:-6514}"
-P_CLICKHOUSE="${P_CLICKHOUSE:-8123}"
+P_SYSLOG="${P_SYSLOG:-26514}"
+P_SYSLOG_OCTET="${P_SYSLOG_OCTET:-26515}"
+P_SYSLOG_TLS="${P_SYSLOG_TLS:-26516}"
 
 # First boot runs initdb, the ClickHouse schema, topic creation and bucket creation before the
 # pipeline is genuinely up. The image's own start-period is 180s; allow generously more here.
@@ -306,12 +306,10 @@ verify_runtime() {
   # No --env-file, no -e: the image is self-contained and the LLM key is entered in the UI.
   docker run -d --name "$CONTAINER" \
     -p "${P_UI}:6156" \
-    -p "${P_GRAFANA}:3000" \
     -p "${P_SYSLOG}:5514/udp" \
     -p "${P_SYSLOG}:5514/tcp" \
     -p "${P_SYSLOG_OCTET}:5515/tcp" \
     -p "${P_SYSLOG_TLS}:6514/tcp" \
-    -p "${P_CLICKHOUSE}:8123" \
     "$IMAGE" >/dev/null || die "container failed to start"
   OWNS_CONTAINER=1
 
@@ -466,29 +464,75 @@ verify_runtime() {
     bad "Studio cannot reach ClickHouse -- UI would show 'Event DB down': $(grep -oE '"ch":\{[^}]*\}' <<<"$ov" || echo 'no ch field')"
   fi
 
-  # --- externally published ports, from the host
-  step "External ports (from the host)"
-  check "Grafana :${P_GRAFANA}/api/health"  curl -fsS -o /dev/null --max-time 15 "http://127.0.0.1:${P_GRAFANA}/api/health"
+  # --- Grafana, reached the way the browser reaches it: under /grafana/ on the UI port
+  step "Grafana through the nginx entrypoint (:${P_UI}/grafana/)"
+  local gf="http://127.0.0.1:${P_UI}/grafana"
+  check "Grafana ${gf}/api/health"  curl -fsS -o /dev/null --max-time 15 "${gf}/api/health"
+  # A 200 on the HTML is not enough: the page must boot, so its JS bundle must load too.
+  local gpage gjs
+  gpage=$(curl -fsS --max-time 15 "${gf}/login" 2>/dev/null || true)
+  # Grafana writes asset paths relative to <base href="/grafana/">, so resolve them the same way.
+  gjs=$(grep -oE 'public/build/[A-Za-z0-9._-]+\.js' <<<"$gpage" | head -1 || true)
+  if [[ -n "$gjs" ]] && curl -fsS -o /dev/null --max-time 15 "${gf}/${gjs}"; then
+    ok "Grafana UI and JS bundle served under /grafana/ (${gjs})"
+  else
+    bad "Grafana UI bundle not reachable under /grafana/"
+  fi
+  if curl -sS -D - -o /dev/null --max-time 15 "${gf}/login" 2>/dev/null | grep -qi '^content-security-policy'; then
+    bad "Grafana pages inherit the UI's CSP (Grafana needs inline scripts)"
+  else
+    ok "Grafana pages are not held to the UI's CSP"
+  fi
+  local ws
+  ws=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 --http1.1 \
+         -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
+         -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "${gf}/api/live/ws" 2>/dev/null || true)
+  if [[ "$ws" == "101" ]]; then ok "Grafana Live websocket upgrades through nginx"; else bad "Grafana Live websocket -> ${ws}"; fi
 
   # Grafana answering /api/health says only that Grafana is up. Provisioning can fail silently
   # (a dashboards path that does not exist just logs an error every 30s), leaving a judge with
   # an empty Grafana, so assert the dashboards are actually there.
   local dash
   dash=$(curl -fsS --max-time 15 -u "admin:${ALETHEIA_ADMIN_PASSWORD:-aletheia}" \
-           "http://127.0.0.1:${P_GRAFANA}/api/search?type=dash-db" 2>/dev/null || true)
+           "${gf}/api/search?type=dash-db" 2>/dev/null || true)
   if [[ "$(grep -o '"uid"' <<<"$dash" | wc -l)" -ge 2 ]]; then
     ok "Grafana dashboards provisioned ($(grep -o '"uid"' <<<"$dash" | wc -l) found)"
   else
     bad "Grafana dashboards missing -- provisioning path wrong? got: ${dash:0:120}"
   fi
-  check "ClickHouse :${P_CLICKHOUSE}/ping"  curl -fsS -o /dev/null --max-time 15 "http://127.0.0.1:${P_CLICKHOUSE}/ping"
+  # Studio's alert deep links must point at the proxied path, not a host port that is closed.
+  local gpub
+  gpub=$(curl -fsS --max-time 15 "http://127.0.0.1:${P_UI}/api/v1/alerting/status" 2>/dev/null \
+           | grep -oE '"public_url"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 || true)
+  if grep -q '"/grafana"' <<<"$gpub"; then ok "Studio links Grafana at /grafana"; else bad "Studio Grafana public_url: ${gpub:-missing}"; fi
+
+  # --- nothing but nginx and syslog is published or bound beyond loopback
+  step "Hidden ports"
+  local published
+  published=$(docker inspect -f '{{range $p, $_ := .Config.ExposedPorts}}{{$p}} {{end}}' "$CONTAINER")
+  if grep -qE '(^| )(3000|8123|9000|9090|3100|8081|5432|9092)/tcp' <<<"$published"; then
+    bad "image EXPOSEs an internal port: ${published}"
+  else
+    ok "image EXPOSEs only: ${published}"
+  fi
+  # Even on the container's own network address, internal services must not answer.
+  local cip
+  cip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER")
+  for p in 3000 8123 9000 9090 3100 8081 8088 5432 9092; do
+    if [[ -n "$cip" ]] && timeout 3 bash -c "exec 3<>/dev/tcp/${cip}/${p}" 2>/dev/null; then
+      bad "${cip}:${p} answers from outside the container"
+    else
+      ok "${p} not reachable from outside the container"
+    fi
+  done
+
+  step "Syslog ports (from the host)"
   check "syslog TCP :${P_SYSLOG} open"      bash -c "exec 3<>/dev/tcp/127.0.0.1/${P_SYSLOG}"
   check "syslog octet-counted TCP :${P_SYSLOG_OCTET} open" bash -c "exec 3<>/dev/tcp/127.0.0.1/${P_SYSLOG_OCTET}"
   check "syslog TLS :${P_SYSLOG_TLS} open"  bash -c "exec 3<>/dev/tcp/127.0.0.1/${P_SYSLOG_TLS}"
 
   # --- end-to-end: a line in the front door comes out in ClickHouse
   step "End-to-end ingest (host :${P_SYSLOG} -> Vector -> Redpanda -> worker -> ClickHouse)"
-  local ch="http://127.0.0.1:${P_CLICKHOUSE}"
   local before after token line
 
   # Never let a failed query abort the run: report it instead. Echoes the raw body on error so
@@ -498,7 +542,9 @@ verify_runtime() {
     # -G is required. Without it --data-urlencode POSTs "query=<sql>" as the request *body*,
     # and ClickHouse reads a POST body as the statement itself, so it tries to parse the literal
     # text "query=SELECT ..." and fails with "Syntax error at position 1 ('query')".
-    out=$(curl -sS -G --max-time 15 --data-urlencode "query=${q}" "$ch/" 2>&1) && rc=0 || rc=$?
+    # ClickHouse is loopback-only, so the query runs inside the container.
+    out=$(docker exec "$CONTAINER" curl -sS -G --max-time 15 --data-urlencode "query=${q}" \
+            "http://127.0.0.1:8123/" 2>&1) && rc=0 || rc=$?
     out=$(printf '%s' "$out" | tr -d '[:space:]')
     if [[ "$out" =~ ^[0-9]+$ ]]; then
       printf '%s' "$out"
@@ -619,9 +665,8 @@ sha256sum -c aletheia-${ALETHEIA_VERSION}.tar.gz.sha256
 gunzip -c aletheia-${ALETHEIA_VERSION}.tar.gz | docker load
 
 docker run -d --name aletheia \\
-  -p 6156:6156 -p 3000:3000 \\
-  -p 5514:5514/udp -p 5514:5514/tcp -p 5515:5515/tcp -p 6514:6514/tcp \\
-  -p 8123:8123 \\
+  -p 6156:6156 \\
+  -p 26514:5514/udp -p 26514:5514/tcp -p 26515:5515/tcp -p 26516:6514/tcp \\
   ${IMAGE}
 \`\`\`
 
@@ -634,17 +679,15 @@ there; it is stored encrypted in the container and never leaves it otherwise.
 
 | Port | Service |
 |---|---|
-| 6156 | Aletheia UI (Demo Console, lineage viewer, Onboarding Studio, Settings) |
-| 3000 | Grafana — dashboards over ClickHouse, Loki and Prometheus |
-| 5514 udp/tcp | Syslog input — send your own logs |
-| 5515 tcp | Syslog, octet-counted framing |
-| 6514 tcp | Syslog over TLS |
-| 8123 | ClickHouse HTTP — query the normalized events directly |
+| 6156 | The only HTTP port: Aletheia UI at \`/\`, API at \`/api/\`, Grafana at \`/grafana/\` |
+| 26514 udp/tcp | Syslog input — send your own logs |
+| 26515 tcp | Syslog, octet-counted framing |
+| 26516 tcp | Syslog over TLS |
 
 Send a log line:
 
 \`\`\`bash
-logger --server localhost --port 5514 --udp "<your log line>"
+logger --server localhost --port 26514 --udp "<your log line>"
 \`\`\`
 
 Persist state across restarts by adding \`-v aletheia-data:/data\`.

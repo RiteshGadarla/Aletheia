@@ -1,130 +1,288 @@
-# Aletheia — Development & Setup Guide (Windows & Linux)
+# Aletheia — Setup Guide
 
-This document provides step-by-step instructions to set up, build, test, and run **Aletheia** on both **Windows** (using PowerShell or Command Prompt, without needing WSL2/Ubuntu) and **Linux**.
+How to install and start Aletheia. Pick one:
+
+| | Best for | You install |
+| :--- | :--- | :--- |
+| **[1. Docker](#1-docker-recommended)** (recommended) | Evaluating and running Aletheia | Docker only |
+| **[2. Linux / macOS from source](#2-linux--macos-from-source)** | Development with hot reload | Docker, Python, Node.js, Go |
+| **[3. Windows from source](#3-windows-from-source)** | Development in PowerShell | Docker Desktop, Python, Node.js, Go |
+
+Then see the [port map](#4-port-map) and [troubleshooting](#5-troubleshooting). Once it runs,
+continue with the [README](README.md): [connect an AI provider](README.md#connect-an-ai-provider)
+(optional) and the [guided evaluation](README.md#guided-evaluation).
 
 ---
 
-## 1. System Requirements & Setup Options
+## 1. Docker (recommended)
 
-### Recommended Hardware
-- **CPU**: 4+ cores
-- **RAM**: 8 GB minimum (16 GB recommended for full datastore services)
-- **Disk**: 10 GB free space
+### Requirements
 
-### Windows Setup Modes
+- **Docker Desktop** (Windows, macOS) or **Docker Engine** (Linux).
+- **4+ CPU cores, 8 GB RAM allocated to Docker, 10 GB free disk.** Docker Desktop's default memory
+  limit is often lower than 8 GB: raise it under *Settings → Resources → Memory*, or the container
+  will not reach `healthy`.
 
-| Setup Mode | Pre-requisites Required | Setup Command | Primary Use Case |
+### Pull and run
+
+> The image name below, `<docker-repo>/aletheia:1.0.0`, is a placeholder until the registry URL is
+> published. Replace it in the commands in this section.
+
+```bash
+docker pull <docker-repo>/aletheia:1.0.0
+
+docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data --add-host=host.docker.internal:host-gateway <docker-repo>/aletheia:1.0.0
+```
+
+The command is one line so it pastes unchanged into bash, zsh, PowerShell and Command Prompt.
+
+| Flag | Why |
+| :--- | :--- |
+| `-p 6156:6156` | The only web port. nginx inside the container serves the UI, the API and Grafana on it |
+| `-p 26514:5514/udp -p 26514:5514/tcp` | Syslog input for your own logs (optional) |
+| `-v aletheia-data:/data` | Keeps data and **saved settings, including your AI key**, across restarts. Without it every `docker run` starts a fresh demo |
+| `--add-host=host.docker.internal:host-gateway` | Lets the container reach a local AI model (Ollama) on this machine. Harmless if you never use one |
+
+No environment file and no API key are needed to start.
+
+### Wait until it is ready
+
+First boot takes one to two minutes (database initialisation, schema, topics).
+
+```bash
+docker ps --filter name=aletheia        # STATUS shows "(healthy)" when ready
+```
+
+Then open **<http://localhost:6156>**.
+
+| What | URL |
+| :--- | :--- |
+| Landing page | <http://localhost:6156> |
+| Dashboard | <http://localhost:6156/dashboard> |
+| Demo Console | <http://localhost:6156/dashboard/demo> |
+| Settings (AI provider) | <http://localhost:6156/dashboard/settings> |
+| Grafana (admin / `aletheia`) | <http://localhost:6156/grafana/> |
+| Readiness | <http://localhost:6156/healthz> |
+
+### Ports
+
+Everything HTTP goes through **one port, 6156**. Grafana, ClickHouse, PostgreSQL, Redpanda, Loki and
+Prometheus run inside the container on its loopback and are never published. The syslog ports are
+deliberately uncommon, so they never collide with a syslog daemon or SIEM agent already on the host.
+
+| Host port | Container port | Service |
+| :--- | :--- | :--- |
+| **6156** | 6156 | UI at `/`, Studio API at `/api/`, Grafana at `/grafana/` |
+| **26514** UDP/TCP | 5514 | Syslog input |
+| 26515 TCP (optional) | 5515 | Syslog with RFC 6587 octet counting — add `-p 26515:5515` |
+| 26516 TCP (optional) | 6514 | Syslog over TLS — add `-p 26516:6514` |
+
+If a port is already taken, change only the host side, e.g. `-p 16156:6156`, and open
+`http://localhost:16156`. Links inside the app are relative and keep working.
+
+### Everyday commands
+
+```bash
+docker logs -f aletheia            # follow the logs
+docker stop aletheia               # stop (data stays in the aletheia-data volume)
+docker start aletheia              # start again
+docker rm -f aletheia              # remove the container; the volume keeps the data
+docker volume rm aletheia-data     # delete all data and settings for a clean start
+```
+
+To upgrade, pull the new tag, `docker rm -f aletheia`, and run the same `docker run` command with the
+new tag. The volume carries your data and settings over.
+
+### Air-gapped machines
+
+```bash
+# on a machine with internet
+docker pull <docker-repo>/aletheia:1.0.0
+docker save -o aletheia-1.0.0.tar <docker-repo>/aletheia:1.0.0
+sha256sum aletheia-1.0.0.tar
+
+# on the air-gapped machine, after copying the file across
+sha256sum aletheia-1.0.0.tar          # must match
+docker load -i aletheia-1.0.0.tar
+docker run -d --name aletheia -e ALETHEIA_AIRGAP=true -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data <docker-repo>/aletheia:1.0.0
+```
+
+Nothing is downloaded at start or run time. `ALETHEIA_AIRGAP=true` refuses cloud AI providers; a
+local model still works.
+
+### Building the image from source (optional)
+
+On Linux or macOS with the repository checked out:
+
+```bash
+./docker/build.sh build      # builds aletheia:1.0.0 locally
+./docker/build.sh verify     # boots it and runs the end-to-end checks
+```
+
+---
+
+## 2. Linux / macOS from source
+
+For development: Studio (Python), the frontend (Vite) and the engine worker (Go) run natively with hot
+reload. Docker runs only the datastores (PostgreSQL, ClickHouse, Redpanda, Loki, Grafana, Prometheus).
+
+### Requirements
+
+| Tool | Version | Linux | macOS |
 | :--- | :--- | :--- | :--- |
-| **Mode 1: Docker Automated** *(Recommended)* | **Docker Desktop / Docker Engine** only | `.\setup.ps1` *(PowerShell)*<br>`setup.bat` *(CMD)* | Quickstart, evaluators, zero toolchain configuration required |
-| **Mode 2: IDE Native Dev** | **Docker Desktop** + **Python 3.10+**, **Node.js 18+**, **Go 1.23+** *(optional)* | `.\setup.ps1 -Mode Native`<br>`setup.bat native` | Active code development in **VS Code** with live hot-reloading |
+| Docker | Engine 24+ / Desktop | distro packages or Docker's repo | Docker Desktop |
+| Python | 3.10+ with `venv` | `sudo apt install python3 python3-venv` | `brew install python` |
+| Node.js | 18+ LTS | [nodejs.org](https://nodejs.org) or `nvm` | `brew install node` |
+| Go | 1.23+ | `make install-go` (no root, amd64) | `brew install go` |
+| make, git, curl | any | usually present | `xcode-select --install` |
+
+Same hardware as Docker: 4+ cores, 8 GB RAM for Docker, 10 GB disk.
+
+### Step 1: Clone
+
+```bash
+git clone https://github.com/RiteshGadarla/Aletheia.git
+cd Aletheia
+```
+
+### Step 2: Install Go (Linux amd64, only if you do not have it)
+
+```bash
+make install-go
+export PATH=$HOME/.local/go/bin:$PATH     # add this line to ~/.bashrc or ~/.zshrc too
+```
+
+On macOS or ARM Linux, install Go 1.23+ from your package manager or [go.dev/dl](https://go.dev/dl/) instead.
+
+### Step 3: Install dependencies and check
+
+```bash
+make setup      # .venv with backend deps, npm install, deploy/secrets/aletheia.env from the example
+make doctor     # shows what is installed and what each target needs
+make check      # offline: parser packs + engine + studio + frontend tests
+```
+
+### Step 4: Run
+
+```bash
+make services   # datastores in Docker, waits for health, creates the Redpanda topics
+make dev        # engine worker + Studio + frontend, natively (also starts services if not up)
+```
+
+| What | URL |
+| :--- | :--- |
+| Landing page | <http://localhost:5173> |
+| Dashboard | <http://localhost:5173/dashboard> |
+| Studio API | <http://localhost:8081> |
+| Grafana (admin / `aletheia`) | <http://localhost:3000> |
+
+`Ctrl+C` stops the native processes; `make services-down` stops the datastores. `make help` lists every
+target. `make studio`, `make frontend` and `make worker` run one piece each.
+
+Optional extras:
+
+```bash
+make seed       # fresh demo: wipes data, sets Gemini from aletheia.env, connects two demo log
+                # servers, seeds alert rules. Run it before `make dev`
+make gens       # six live log generator servers on :9101-9106 to connect as sources
+```
+
+With `ufw` active on Linux, allow Grafana (in Docker) to call Studio back for browser alerts — see
+[docs/alerting.md](docs/alerting.md#troubleshooting). Email alerts need `ALETHEIA_SMTP_*` set before
+`make services`.
 
 ---
 
-## 2. Windows Setup Guide
+## 3. Windows from source
 
-### Option A: Automated Docker Setup (Zero Host Toolchain Dependencies)
+The same development setup as Section 2, run from **PowerShell**. If you only want to use Aletheia,
+the [Docker image](#1-docker-recommended) is simpler. With WSL2 you can also follow the
+[Linux steps](#2-linux--macos-from-source) inside an Ubuntu shell.
 
-If you only have **Docker Engine / Docker Desktop** installed on Windows, you can start the entire stack in containerized mode with a single command:
+### Requirements
 
-#### PowerShell:
+| Tool | Version | Install |
+| :--- | :--- | :--- |
+| Docker Desktop | current | [docker.com](https://www.docker.com/products/docker-desktop/) — give it 8 GB of memory |
+| Git | any | [git-scm.com](https://git-scm.com/download/win) |
+| Python | 3.10+ | [python.org](https://www.python.org/downloads/) — tick **Add python.exe to PATH** |
+| Node.js | 18+ LTS | [nodejs.org](https://nodejs.org) |
+| Go | 1.23+ (for the engine worker) | [go.dev/dl](https://go.dev/dl/) |
+
+Open a new PowerShell window after installing so the tools are on `PATH`, then check:
+`docker version; python --version; node --version; go version`.
+
+### Step 1: Clone
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
-*(or explicitly: `powershell -ExecutionPolicy Bypass -File .\setup.ps1 -Mode Container`)*
-
-> *Execution Policy Note*: `-ExecutionPolicy Bypass` applies to this one run only. Plain `.\setup.ps1` is
-> refused by default, and even `RemoteSigned` refuses it if the repo was downloaded as a ZIP.
-
-#### Command Prompt:
-```cmd
-setup.bat
+git clone https://github.com/RiteshGadarla/Aletheia.git
+cd Aletheia
 ```
 
-What this does automatically:
-1. Verifies Docker Desktop is running.
-2. Creates local secret configuration (`deploy/secrets/aletheia.env`) from template.
-3. Builds and launches the complete containerized stack (`deploy/docker-compose.yml`).
-4. Serves the **Aletheia UI on `http://localhost:8080`** (dashboard at `/dashboard`), the Studio API through the UI proxy (it is not published on its own port), Grafana on `http://localhost:3000` (also `http://localhost:8080/grafana/`), and syslog on `5514` UDP/TCP and `6514` TLS.
+### Step 2: Install dependencies
 
-To enable the AI assistant (onboarding mappings and the Lyra chat), put a Gemini key in
-`deploy/secrets/aletheia.env` before running it, or set it later in **Settings** at
-`http://localhost:8080/dashboard/settings`. See [Local configuration](#5-local-configuration-deploysecretsaletheiaenv).
-
----
-
-### Option B: VS Code Native Development Setup
-
-If you want to edit and debug Python, TypeScript/React, or Go code directly on Windows inside **VS Code**:
-
-#### 1. Automated Native IDE Setup
-Open PowerShell or Command Prompt in the project root:
-
-**PowerShell:**
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -Mode Native
+# Python virtual environment with the backend dependencies
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r backend\studio\requirements-dev.txt
+
+# Frontend
+cd frontend; npm install; cd ..
+
+# Engine CLI and worker (Go)
+New-Item -ItemType Directory -Force bin | Out-Null
+cd backend\engine
+go build -o ..\..\bin\aletheia.exe .\cmd\aletheia
+go build -o ..\..\bin\aletheia-worker.exe .\cmd\worker
+cd ..\..
+
+# Local config file (gitignored) and an offline check of every parser pack
+Copy-Item deploy\secrets\aletheia.env.example deploy\secrets\aletheia.env
+.\.venv\Scripts\python.exe backend\packs\verify_packs.py
 ```
 
-**Command Prompt:**
-```cmd
-setup.bat native
-```
+### Step 3: Start the datastores
 
-What this does automatically:
-1. Creates Python `.venv` virtual environment and installs backend dependencies (`backend/studio/requirements-dev.txt`).
-2. Installs frontend Node modules (`frontend/node_modules`).
-3. Compiles Go engine binaries into `bin/aletheia.exe` and `bin/aletheia-worker.exe` (if Go is installed).
-4. Generates local secrets (`deploy/secrets/aletheia.env`).
-5. Starts backing services (PostgreSQL, ClickHouse, Redpanda, Loki, Grafana, Prometheus, and a small Vector that ships normalized events to Loki) via Docker (`deploy/docker-compose.services.yml`).
-6. Verifies all parser packs with an offline golden sample check.
-
-#### 2. Developing in VS Code
-Pre-configured IDE tasks and debug configurations are included in `.vscode/`:
-
-- **Launch Tasks (`Ctrl+Shift+B` or Command Palette -> `Tasks: Run Task`)**:
-  - `Aletheia: Start Datastores in Docker` — Starts database services.
-  - `Aletheia: Start Backend Studio API` — Launches FastAPI with hot reload on port 8081.
-  - `Aletheia: Start Frontend Dev Server` — Launches Vite dev server with hot reload on port 5173.
-  - `Aletheia: Verify Parser Packs` — Runs golden sample verification test.
-- **Debugging (`F5` or Run & Debug tab)**:
-  - Select **"Studio API (FastAPI Backend)"** to attach Python debugger with breakpoints.
-
-#### 3. Manual Command Line Dev Commands (Powershell)
-
-**Step 1: Start Backing Datastores in Docker**
 ```powershell
 docker compose -f deploy/docker-compose.services.yml up -d
-# Create the bus topics once Redpanda is healthy (make services does this on Linux)
+docker compose -f deploy/docker-compose.services.yml ps     # repeat until all show "healthy"
+
+# Create the bus topics once Redpanda is healthy
 foreach ($t in "raw","quarantine","normalized","control","dlq") { docker exec aletheia-services-redpanda-1 rpk topic create $t -p 4 -r 1 }
 ```
 
-**Step 2: Start Studio Backend API (Port 8081 with Hot Reload)**
+### Step 4: Run Studio, the frontend and the worker
+
+Use three PowerShell windows, each opened in the repository root.
+
+**Window 1 — Studio API (port 8081, hot reload):**
+
 ```powershell
 $env:ALETHEIA_MODE="lite"
 $env:ALETHEIA_PG_DSN="postgres://aletheia:aletheia@127.0.0.1:5432/aletheia"
 $env:ALETHEIA_BUS_BROKERS="127.0.0.1:9092"
-# AI provider: optional; can also be set from Settings in the UI. Only gemini-* models are accepted.
-$env:ALETHEIA_LLM_PROVIDER="gemini"
-$env:ALETHEIA_LLM_MODEL="gemini-3.5-flash-lite"
-$env:ALETHEIA_LLM_API_KEY="<your Gemini key>"
-# Alerting + logs (docs/alerting.md). Leave ALETHEIA_GRAFANA_URL unset to use local alert evaluation.
 $env:ALETHEIA_GRAFANA_URL="http://127.0.0.1:3000"
 $env:ALETHEIA_GRAFANA_PUBLIC_URL="http://localhost:3000"
 $env:ALETHEIA_LOKI_URL="http://127.0.0.1:3100"
 $env:ALETHEIA_PROMETHEUS_URL="http://127.0.0.1:9090"
 $env:ALETHEIA_ALERT_RECEIVER_URL="http://host.docker.internal:8081"
-.\.venv\Scripts\python.exe -m uvicorn backend.studio.main:app --reload --host 0.0.0.0 --port 8081
+cd backend
+..\.venv\Scripts\python.exe -m uvicorn studio.main:app --reload --host 0.0.0.0 --port 8081
 ```
 
-**Step 3: Start Frontend Dev Server (Port 5173 with Hot Reload)**
-In a second terminal window:
+It listens on all interfaces so Grafana (in Docker) can deliver browser alerts back to it. If Windows
+Firewall asks, allow Python on **private** networks.
+
+**Window 2 — frontend (port 5173, hot reload):**
+
 ```powershell
 cd frontend
 npm run dev
 ```
 
-**Step 4 (optional): Start the Engine Worker**
-Approved sources only reach Events, Lineage and the Grafana dashboards while the worker runs
-(needs Go; `setup.ps1 -Mode Native` builds it). In a third terminal:
+**Window 3 — engine worker** (approved sources reach Events, Lineage and Grafana only while it runs):
+
 ```powershell
 $env:ALETHEIA_PACKS_DIR="backend/packs"
 $env:ALETHEIA_OCSF_DIR="backend/ocsf"
@@ -136,125 +294,63 @@ $env:ALETHEIA_BUS_BROKERS="127.0.0.1:9092"
 .\bin\aletheia-worker.exe
 ```
 
-Open your browser at **`http://localhost:5173`** (landing page) or **`http://localhost:5173/dashboard`**.
+Open **<http://localhost:5173/dashboard>**. Grafana is at <http://localhost:3000> (admin / `aletheia`).
+
+To stop: `Ctrl+C` in each window, then `docker compose -f deploy/docker-compose.services.yml down`.
+
+### Developing in VS Code
+
+`.vscode/` has ready-made tasks (*Terminal → Run Task*) for starting the datastores, Studio and the
+frontend and for verifying packs, and a debug configuration **"Studio API (FastAPI Backend)"** (`F5`)
+that runs Studio under the Python debugger with breakpoints.
 
 ---
 
-## 3. Linux Setup Guide
+## 4. Port map
 
-### Step 1: Clone Repository & Install Dependencies
-```bash
-git clone https://github.com/Ritesh2006M/Aletheia.git
-cd Aletheia
-```
-
-### Step 2: Install Go (No Root Required)
-```bash
-make install-go
-export PATH=$HOME/.local/go/bin:$PATH
-```
-
-### Step 3: Run Automated Linux Setup
-```bash
-make setup      # .venv, npm install, and deploy/secrets/aletheia.env from the example
-make check      # offline: packs + engine + studio + frontend
-```
-
-Optionally put your Gemini key in `deploy/secrets/aletheia.env` (`ALETHEIA_LLM_API_KEY=`); `make studio`,
-`make worker` and `make seed` read it, so nothing has to be typed into the UI.
-
-### Step 4: Run Application
-```bash
-# Backing services in Docker (ClickHouse, PostgreSQL, Redpanda, Loki, Grafana, Prometheus) + topics
-make services
-
-# Optional fresh demo: wipes data, sets Gemini as the LLM, connects two demo log servers,
-# seeds alert rules. Needs the key above. Run it before `make dev`.
-make seed
-
-# Native engine worker + Studio + Frontend (also starts services if they are not up)
-make dev
-```
-
-Then open the dashboard at `http://localhost:5173/dashboard`, the Studio API at
-`http://localhost:8081`, and Grafana at `http://localhost:3000` (admin / `aletheia`).
-`make help` lists every target; `make doctor` shows what is installed.
-
-`make services` also starts Loki, Prometheus and a Loki-only Vector, so Grafana's logs dashboard
-(`/d/aletheia-logs`) and the overview (`/d/aletheia-overview`) fill once the worker runs. Alerting rules, contact points and policies are on
-the dashboard's **Alerting** page; `make studio` already points Studio at Grafana, Loki and
-Prometheus. Email needs `ALETHEIA_SMTP_*` before `make services`. With `ufw` active, allow Grafana
-to call Studio back — see [docs/alerting.md](docs/alerting.md#troubleshooting).
-
----
-
-## 4. Service Endpoints & Port Map
-
-Container mode is `deploy/docker-compose.yml` (Option A, `make up`); native mode is
-`deploy/docker-compose.services.yml` plus the native Studio, frontend and worker (Option B, `make dev`).
-
-| Component | Container Mode URL | Native Dev Mode URL | Description |
-| :--- | :--- | :--- | :--- |
-| **Frontend Web App** | `http://localhost:8080` | `http://localhost:5173` | React + Vite UI (landing page) |
-| **Dashboard** | `http://localhost:8080/dashboard` | `http://localhost:5173/dashboard` | Overview, Events, Lineage, Lyra, Sources, Export, Alerting, Demo, Settings |
-| **Studio API Server** | via UI proxy (`:8080/api/`) | `http://localhost:8081` | FastAPI Control Plane & Studio |
-| **ClickHouse HTTP** | `http://localhost:8123` | `http://localhost:8123` | Log & Event Columnar Database |
-| **ClickHouse Native** | internal | `localhost:9000` | Native TCP interface (used by the worker) |
-| **PostgreSQL** | internal | `localhost:5432` | Source & Pack Metadata database |
-| **Redpanda Kafka API** | internal | `localhost:9092` | Log Message Bus |
-| **MinIO** | internal | not started | Parquet / Object Archive Storage |
-| **Grafana** | `http://localhost:3000` (also `:8080/grafana/`) | `http://localhost:3000` | Dashboards and alert evaluation (admin / `aletheia`) |
-| **Grafana Dashboards** | `/d/aletheia-overview`, `/d/aletheia-logs`, `/d/aletheia-event`, `/d/aletheia-events`, `/d/aletheia-pipeline` | same | Overview, Loki logs, single event, storage & integrity, pipeline health |
-| **Loki** | internal | `http://localhost:3100` | Log store behind the logs dashboards |
-| **Prometheus** | internal | `http://localhost:9090` | Worker metrics, pipeline dashboard |
-| **Engine Worker Metrics** | internal | `http://localhost:9108` | Prometheus scrape target |
-| **Syslog Listener** | `udp/tcp://localhost:5514`, TLS `:6514` | not started | Log Ingestion Port (Vector) |
-| **Supply Stream** | off by default | `127.0.0.1:9099` when enabled | TCP feed to a SIEM/collector, configured on the Export page |
-| **Demo Log Servers** | — | `:9101-9106` (`make gens`) | Live generator servers to connect as sources |
-
----
-
-## 5. Local configuration (`deploy/secrets/aletheia.env`)
-
-Created from `deploy/secrets/aletheia.env.example` by `make setup` / `make secrets` / `setup.ps1`.
-It is gitignored; never commit the filled copy. Values set in the UI's **Settings** page override it.
-
-| Variable | Example default | Effect |
+| Component | Docker image | From source |
 | :--- | :--- | :--- |
-| `ALETHEIA_LLM_PROVIDER` | `gemini` | `none` (heuristics only), `gemini`, or `local` (Ollama, vLLM, llama.cpp, LM Studio) |
-| `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` | On `gemini`, only `gemini-*` models are accepted; anything else falls back to this default |
-| `ALETHEIA_LLM_API_KEY` / `_FILE` | empty | Gemini key, inline or from a mounted file (the file is preferred) |
-| `ALETHEIA_LLM_BASE_URL` | unset | Required for `local`, e.g. `http://localhost:11434/v1` |
-| `ALETHEIA_LLM_SEND_SAMPLES` | `masked` | `masked`, `none`, or `raw` (local providers only) |
-| `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud providers |
-| `ALETHEIA_SECRET` | generated | AES-GCM key for settings stored via the UI |
+| Frontend (landing page) | `http://localhost:6156` | `http://localhost:5173` |
+| Dashboard | `http://localhost:6156/dashboard` | `http://localhost:5173/dashboard` |
+| Studio API | `http://localhost:6156/api/` | `http://localhost:8081` |
+| Grafana (admin / `aletheia`) | `http://localhost:6156/grafana/` | `http://localhost:3000` |
+| Grafana dashboards | `/grafana/d/aletheia-overview`, `-logs`, `-event`, `-events`, `-pipeline` | `/d/aletheia-overview`, … on `:3000` |
+| Syslog input | `udp/tcp :26514`, octet `:26515`, TLS `:26516` | not started |
+| ClickHouse HTTP / native | internal | `:8123` / `:9000` |
+| PostgreSQL | internal | `:5432` |
+| Redpanda (Kafka API) | internal | `:9092` |
+| Loki | internal | `:3100` |
+| Prometheus | internal | `:9090` |
+| Engine worker metrics | internal | `:9108` |
+| Supply stream | off by default | `127.0.0.1:9099` when enabled on the Export page |
+| Demo log servers | — | `:9101-9106` (`make gens`) |
 
-Alerting and Grafana variables (`ALETHEIA_GRAFANA_URL`, `ALETHEIA_GRAFANA_PUBLIC_URL`,
-`ALETHEIA_LOKI_URL`, `ALETHEIA_PROMETHEUS_URL`, `ALETHEIA_ALERT_RECEIVER_URL`, `ALETHEIA_SMTP_*`) are
-set by `make studio` / `make services` with the defaults shown in the Windows manual Step 2 above; see
-[docs/alerting.md](docs/alerting.md).
+"Internal" means the service runs inside the container and is not reachable from the host.
 
 ---
 
-## 6. Troubleshooting for Windows Users
+## 5. Troubleshooting
 
-### 1. PowerShell Script Execution Error
-If PowerShell says `...script cannot be loaded because running scripts is disabled on this system`
-(or `...is not digitally signed`), run it with a one-off bypass:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
+| Symptom | Fix |
+| :--- | :--- |
+| Container never becomes `healthy` | Almost always memory: give Docker 8 GB. Then check `docker logs aletheia` |
+| `port is already allocated` | Change the host side of the mapping, e.g. `-p 16156:6156` or `-p 36514:5514/udp` |
+| Settings and AI key gone after restart | The container ran without `-v aletheia-data:/data`. Recreate it with the volume and save the key again |
+| Shell scripts fail in containers with `$'\r': command not found` (Windows) | The repo was checked out with CRLF line endings. Re-checkout once (discards uncommitted changes): `git rm -r --cached . ; git reset --hard` |
+| From source: port 8081 or 5173 in use | Frontend: `npm run dev -- --port 5174`. Studio: change `--port 8081` and start the frontend with `VITE_API_TARGET=http://127.0.0.1:<port>` |
+| From source: Events stay empty | The engine worker is not running (`make worker`, or Window 3 on Windows) |
+| Browser alerts never arrive (Linux, from source) | A firewall blocks Grafana → Studio on 8081; see [docs/alerting.md](docs/alerting.md#troubleshooting) |
 
-### 1b. Shell scripts fail inside containers (`$'\r': command not found`, `set: -: invalid option`)
-The repo was checked out with Windows (CRLF) line endings before `.gitattributes` existed. Re-checkout once (this discards uncommitted local changes):
-```powershell
-git rm -r --cached . ; git reset --hard
-```
+For problems after installation (AI provider, Settings, alerts), see
+[README → Troubleshooting](README.md#troubleshooting).
 
-### 2. Docker Desktop Memory Settings
-- Open Docker Desktop Settings $\rightarrow$ Resources $\rightarrow$ Memory.
-- Ensure at least **6 GB - 8 GB** of RAM is allocated to Docker Desktop.
+---
 
-### 3. Port Conflicts (`port 8081 or 5173 already in use`)
-- Change the frontend port: `npm run dev -- --port 5174`.
-- Change the backend port: `.\.venv\Scripts\python.exe -m uvicorn backend.studio.main:app --port 8082`.
+## Next steps
+
+1. **Connect an AI provider** (optional): Google Gemini or a local model. See
+   [README → Connect an AI provider](README.md#connect-an-ai-provider).
+2. **Run the guided evaluation** in the Demo Console. See
+   [README → Guided evaluation](README.md#guided-evaluation).
+3. **Configuration reference** (environment variables, `deploy/secrets/aletheia.env`): see
+   [README → Configuration](README.md#configuration).

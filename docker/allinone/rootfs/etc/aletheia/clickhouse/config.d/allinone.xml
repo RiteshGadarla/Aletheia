@@ -2,14 +2,16 @@
      (copied from the upstream image) so its tested defaults apply; this fragment only moves
      state off the image and onto /data, the single mutable tree.
 
-     listen_host is deliberately NOT set here: the stock config.d/docker_related_config.xml
-     already binds 0.0.0.0 and ::, which is what makes the published :8123 reachable.
+     Loopback only: the Dockerfile deletes the stock docker_related_config.xml (0.0.0.0 and ::),
+     so ClickHouse is reachable just from inside the container. Nothing publishes 8123/9000.
 
      The access/ override matters more than it looks: init-ch-schema.sh runs CREATE USER for
      the read-only demo account, and SQL-created users are written to this directory. Left at
      the stock /var/lib/clickhouse/access/ it would write into the container layer instead of
      the volume and be lost on every restart. -->
 <clickhouse>
+    <listen_host>127.0.0.1</listen_host>
+
     <path>/data/clickhouse/</path>
     <tmp_path>/data/clickhouse/tmp/</tmp_path>
     <user_files_path>/data/clickhouse/user_files/</user_files_path>

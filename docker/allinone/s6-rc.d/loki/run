@@ -1,4 +1,6 @@
 #!/command/with-contenv bash
 set -eu
 exec 2>&1
-exec s6-setuidgid aletheia /usr/local/bin/loki -config.file=/etc/aletheia/loki/loki.yml
+# Loopback only: loki.yml is shared with Compose, where Loki must listen on the network.
+exec s6-setuidgid aletheia /usr/local/bin/loki -config.file=/etc/aletheia/loki/loki.yml \
+  -server.http-listen-address=127.0.0.1 -server.grpc-listen-address=127.0.0.1

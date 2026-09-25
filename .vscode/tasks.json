@@ -2,20 +2,6 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Aletheia: Windows Automated Setup (Docker)",
-      "type": "shell",
-      "command": "powershell -ExecutionPolicy Bypass -File .\\setup.ps1 -Mode Container",
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
-      "label": "Aletheia: Windows Native Setup (IDE Toolchain)",
-      "type": "shell",
-      "command": "powershell -ExecutionPolicy Bypass -File .\\setup.ps1 -Mode Native",
-      "problemMatcher": [],
-      "group": "build"
-    },
-    {
       "label": "Aletheia: Start Datastores in Docker",
       "type": "shell",
       "command": "docker compose -f deploy/docker-compose.services.yml up -d",
