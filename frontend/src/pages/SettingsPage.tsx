@@ -11,6 +11,7 @@ import { Modal } from '../components/Modal';
 import { api, errMessage } from '../lib/api';
 import { useNotify } from '../lib/notify';
 import { useSettings } from '../lib/settings';
+import { tourSignal } from '../components/Tour';
 import { isCloudProvider, PROVIDER_DEFAULTS, PROVIDERS } from '../lib/types';
 import type { ConnTest, LlmSettings, LlmSettingsUpdate, Provider } from '../lib/types';
 
@@ -65,6 +66,14 @@ const LOCAL_PRESETS = [
   },
 ] as const;
 
+/** Saved local server when Local is already active; otherwise a fresh pick starts on the Ollama preset. */
+function localStart(s: LlmSettings) {
+  const ollama = LOCAL_PRESETS[0];
+  if (s.provider !== 'local' || !s.base_url) return { url: ollama.baseUrl, model: ollama.model, preset: 'ollama' as const };
+  const preset = s.base_url.includes('8080') ? 'llamacpp' as const : s.base_url.includes('11434') ? 'ollama' as const : 'custom' as const;
+  return { url: s.base_url, model: s.model && s.model !== 'smollm:135m' ? s.model : ollama.model, preset };
+}
+
 type ActiveModal = 'none_warning' | 'gemini_privacy' | 'gemini_config' | 'local_config' | 'reset_confirm' | null;
 
 export function SettingsPage() {
@@ -84,13 +93,10 @@ export function SettingsPage() {
   useEffect(() => {
     if (settings && !form) {
       setForm(settings);
-      setLocalUrl(settings.base_url || LOCAL_URL_DEFAULT);
-      setLocalModel(settings.model && settings.model !== 'smollm:135m' ? settings.model : 'llama3.2:1b');
-      if (settings.base_url?.includes('8080')) {
-        setSelectedPreset('llamacpp');
-      } else {
-        setSelectedPreset('ollama');
-      }
+      const l = localStart(settings);
+      setLocalUrl(l.url);
+      setLocalModel(l.model);
+      setSelectedPreset(l.preset);
     }
   }, [settings, form]);
 
@@ -122,16 +128,10 @@ export function SettingsPage() {
     } else if (p === 'gemini') {
       setActiveModal('gemini_privacy');
     } else if (p === 'local') {
-      const url = form.base_url || LOCAL_URL_DEFAULT;
-      setLocalUrl(url);
-      setLocalModel(form.model && form.model !== 'smollm:135m' ? form.model : 'llama3.2:1b');
-      if (url.includes('8080')) {
-        setSelectedPreset('llamacpp');
-      } else if (url.includes('11434')) {
-        setSelectedPreset('ollama');
-      } else {
-        setSelectedPreset('custom');
-      }
+      const l = localStart(form);
+      setLocalUrl(l.url);
+      setLocalModel(l.model);
+      setSelectedPreset(l.preset);
       setActiveModal('local_config');
     }
   };
@@ -158,6 +158,7 @@ export function SettingsPage() {
       setForm(next);
       setActiveModal(null);
       toast({ kind: 'ok', title: 'Provider set to None' });
+      tourSignal('provider');
       await refresh();
     } catch (e) {
       const msg = errMessage(e);
@@ -185,6 +186,7 @@ export function SettingsPage() {
       setForm(next);
       setApiKey('');
       toast({ kind: 'ok', title: 'Gemini settings saved' });
+      tourSignal('provider');
       await refresh();
 
       setBusy('test');
@@ -237,6 +239,7 @@ export function SettingsPage() {
       apply(next);
       setForm(next);
       toast({ kind: 'ok', title: 'Local model settings saved' });
+      tourSignal('provider');
       await refresh();
 
       setBusy('test');

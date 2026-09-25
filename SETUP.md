@@ -25,13 +25,12 @@ continue with the [README](README.md): [connect an AI provider](README.md#connec
 
 ### Pull and run
 
-> The image name below, `<docker-repo>/aletheia:1.0.0`, is a placeholder until the registry URL is
-> published. Replace it in the commands in this section.
+The image is published on Docker Hub as [`ritesh2006/aletheia`](https://hub.docker.com/r/ritesh2006/aletheia).
 
 ```bash
-docker pull <docker-repo>/aletheia:1.0.0
+docker pull ritesh2006/aletheia
 
-docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data --add-host=host.docker.internal:host-gateway <docker-repo>/aletheia:1.0.0
+docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data --add-host=host.docker.internal:host-gateway ritesh2006/aletheia
 ```
 
 The command is one line so it pastes unchanged into bash, zsh, PowerShell and Command Prompt.
@@ -97,14 +96,14 @@ new tag. The volume carries your data and settings over.
 
 ```bash
 # on a machine with internet
-docker pull <docker-repo>/aletheia:1.0.0
-docker save -o aletheia-1.0.0.tar <docker-repo>/aletheia:1.0.0
-sha256sum aletheia-1.0.0.tar
+docker pull ritesh2006/aletheia
+docker save -o aletheia.tar ritesh2006/aletheia
+sha256sum aletheia.tar
 
 # on the air-gapped machine, after copying the file across
-sha256sum aletheia-1.0.0.tar          # must match
-docker load -i aletheia-1.0.0.tar
-docker run -d --name aletheia -e ALETHEIA_AIRGAP=true -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data <docker-repo>/aletheia:1.0.0
+sha256sum aletheia.tar          # must match
+docker load -i aletheia.tar
+docker run -d --name aletheia -e ALETHEIA_AIRGAP=true -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data ritesh2006/aletheia
 ```
 
 Nothing is downloaded at start or run time. `ALETHEIA_AIRGAP=true` refuses cloud AI providers; a

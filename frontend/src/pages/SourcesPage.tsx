@@ -19,6 +19,9 @@ const SEV_COLOR: Record<string, string> = {
   info: 'var(--sev-info)', notice: 'var(--sev-notice)', warn: 'var(--sev-warn)', risk: 'var(--sev-risk)',
 };
 const MIN_LINES = 100;
+/** Enough lines collected; the server is masking samples and building the mapping in the background. */
+const preparing = (s: SourceInfo) => s.state === 'collecting' && (s.ready_for_review || s.lines >= MIN_LINES);
+const PREP_TEXT = 'Masking sensitive values and mapping fields to OCSF…';
 const TYPE_LABEL: Record<string, string> = {
   tcp: 'TCP stream', udp_listen: 'UDP listener', http_stream: 'HTTP stream', websocket: 'WebSocket',
   loki_pull: 'Loki pull', rest_cursor: 'REST API', push: 'Pushed to Aletheia',
@@ -58,6 +61,14 @@ export function SeverityBar({ by, fill }: { by: Record<string, number>; fill?: b
 function StatusCell({ s }: { s: SourceInfo }) {
   const kind: Record<SourceState, BadgeKind> = { collecting: 'plain', review: 'info', approved: 'ok', rejected: 'bad' };
   if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
+  if (preparing(s)) {
+    return (
+      <div className="stack-sm" style={{ gap: 4 }} title={PREP_TEXT}>
+        <Badge kind="info">Masking…</Badge>
+        <div className="progress indet"><i /></div>
+      </div>
+    );
+  }
   if (s.state === 'collecting') {
     return (
       <div className="stack-sm" style={{ gap: 4 }}>
@@ -140,7 +151,10 @@ function AddDialog({ types, prefill, onClose, onDone }: {
   const [cfg, setCfg] = useState<Record<string, string>>(prefill?.cfg ?? {});
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const fields = TYPE_FIELDS[type] ?? [];
+  const missing = !id.trim() || fields.some((f) => !(cfg[f.k] ?? '').trim());
   const submit = async () => {
+    if (missing) { setErr('Fill in every field to connect.'); return; }
     setBusy(true); setErr(null);
     try { await api.createSource({ id: id.trim(), type, config: cfg }); onDone(id.trim()); }
     catch (e) { setErr(errMessage(e)); setBusy(false); }
@@ -150,19 +164,20 @@ function AddDialog({ types, prefill, onClose, onDone }: {
       subtitle={prefill ? 'Filled in from the demo. Check it and press Connect.' : 'Pull from an external system, or point a shipper at Aletheia.'}
       footer={<>
         <button onClick={onClose}>Cancel</button>
-        <button className="primary" disabled={!id.trim() || busy} onClick={() => void submit()}>{busy ? 'Connecting…' : 'Connect'}</button>
+        <button className="primary" disabled={missing || busy} title={missing ? 'All fields are required' : undefined} onClick={() => void submit()}>{busy ? 'Connecting…' : 'Connect'}</button>
       </>}>
       <form className="stack" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-        <label className="field"><span className="lbl">Name</span>
-          <input autoFocus value={id} onChange={(e) => setId(e.target.value)} placeholder="edge-firewall" />
+        <p className="hint req-note"><span className="req" aria-hidden="true">*</span> All fields are required.</p>
+        <label className="field"><span className="lbl">Name <span className="req" aria-hidden="true">*</span></span>
+          <input autoFocus required aria-required="true" value={id} onChange={(e) => setId(e.target.value)} placeholder="edge-firewall" />
           <span className="help">Letters, digits and - _ . : only. This is how the source appears everywhere.</span></label>
         <div className="field"><span className="lbl">How to connect</span>
           <TypePicker types={types} value={type} onChange={(t) => { if (t !== type) { setType(t); setCfg({}); } }} /></div>
-        {(TYPE_FIELDS[type] ?? []).length > 0 && (
+        {fields.length > 0 && (
           <div className="cfg-grid">
-            {(TYPE_FIELDS[type] ?? []).map((f) => (
-              <label className="field" key={f.k}><span className="lbl">{f.label}</span>
-                <input value={cfg[f.k] ?? ''} placeholder={f.ph} onChange={(e) => setCfg({ ...cfg, [f.k]: e.target.value })} /></label>
+            {fields.map((f) => (
+              <label className="field" key={f.k}><span className="lbl">{f.label} <span className="req" aria-hidden="true">*</span></span>
+                <input required aria-required="true" value={cfg[f.k] ?? ''} placeholder={f.ph} onChange={(e) => setCfg({ ...cfg, [f.k]: e.target.value })} /></label>
             ))}
           </div>
         )}
@@ -366,8 +381,10 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
       {rev.error && <ErrorState error={rev.error} what="the proposal" />}
       {!proposal && !rev.loading && (
         <div className="btn-row">
-          <p className="hint" style={{ margin: 0 }}>{src.lines < MIN_LINES ? `Collecting logs: ${src.lines} of about ${MIN_LINES} needed.` : 'Enough logs collected.'}</p>
-          <button className="primary" disabled={busy || src.lines === 0} onClick={() => void act('propose')}>Generate proposal</button>
+          {busy || preparing(src)
+            ? <p className="hint sn-prep" style={{ margin: 0 }} aria-live="polite"><i />{PREP_TEXT}</p>
+            : <p className="hint" style={{ margin: 0 }}>{`Collecting logs: ${src.lines} of about ${MIN_LINES} needed.`}</p>}
+          <button className="primary" disabled={busy || src.lines === 0} onClick={() => void act('propose')}>{busy ? 'Working…' : 'Generate proposal'}</button>
         </div>
       )}
       {proposal && (
@@ -540,6 +557,7 @@ function ConnStatus({ s }: { s: SourceInfo }) {
 
 function StateBadge({ s }: { s: SourceInfo }) {
   if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
+  if (preparing(s)) return <Badge kind="info">Masking…</Badge>;
   if (s.state === 'collecting') return <Badge kind="plain">Collecting</Badge>;
   return <Badge kind={s.state === 'approved' ? 'ok' : 'bad'}>{s.state === 'approved' ? 'Approved' : 'Rejected'}</Badge>;
 }
@@ -566,7 +584,12 @@ function SourceCard({ s, onOpen, onToggle, onRemove }: {
         <div><dt>Errors</dt><dd className={s.errors ? 'bad' : ''}>{s.errors}</dd></div>
       </dl>
 
-      {s.state === 'collecting' ? (
+      {preparing(s) ? (
+        <div className="sn-block" aria-live="polite">
+          <div className="sn-block-h"><span className="sn-prep"><i />{PREP_TEXT}</span></div>
+          <div className="progress indet"><i /></div>
+        </div>
+      ) : s.state === 'collecting' ? (
         <div className="sn-block">
           <div className="sn-block-h"><span>Collecting a sample</span><span className="mono">{Math.min(s.lines, MIN_LINES)} / {MIN_LINES}</span></div>
           <div className="progress"><i style={{ width: `${Math.min(100, (s.lines / MIN_LINES) * 100)}%` }} /></div>

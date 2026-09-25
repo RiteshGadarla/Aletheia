@@ -40,7 +40,8 @@ You only need Docker (4+ cores, **8 GB RAM for Docker**, 10 GB disk). One comman
 pipeline:
 
 ```bash
-docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data --add-host=host.docker.internal:host-gateway <docker-repo>/aletheia:1.0.0
+docker pull ritesh2006/aletheia
+docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data --add-host=host.docker.internal:host-gateway ritesh2006/aletheia
 ```
 
 After one to two minutes, `docker ps` shows the container as **healthy**. Then open:
@@ -53,7 +54,7 @@ After one to two minutes, `docker ps` shows the container as **healthy**. Then o
 | **Syslog input** for your own logs | `localhost:26514` UDP/TCP |
 
 > [!NOTE]
-> `<docker-repo>` is a placeholder until the registry URL is published. **[SETUP.md](SETUP.md)** has
+> The image is on Docker Hub as [`ritesh2006/aletheia`](https://hub.docker.com/r/ritesh2006/aletheia). **[SETUP.md](SETUP.md)** has
 > the full installation guide: Docker, Linux / macOS and Windows from source, air-gapped install,
 > ports and troubleshooting.
 

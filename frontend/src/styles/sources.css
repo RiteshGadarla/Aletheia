@@ -514,3 +514,16 @@
     overflow-x: auto;
   }
 }
+
+/* Required-field marker in the connect dialog */
+.src-connect .req { color: var(--bad); font-weight: var(--fw-semi); }
+.src-connect .req-note { margin: 0; }
+
+/* Masking / mapping phase: indeterminate bar and a pulsing dot */
+.progress.indet { overflow: hidden; position: relative; }
+.progress.indet i { position: absolute; width: 35% !important; animation: src-indet 1.3s ease-in-out infinite; }
+.sn-prep { display: inline-flex; align-items: center; gap: var(--s2); color: var(--accent); }
+.sn-prep i { width: 7px; height: 7px; border-radius: var(--r-pill); background: currentColor; animation: src-blink 1.1s ease-in-out infinite; }
+@keyframes src-indet { from { left: -35%; } to { left: 100%; } }
+@keyframes src-blink { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .progress.indet i, .sn-prep i { animation: none; } }

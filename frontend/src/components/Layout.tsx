@@ -4,11 +4,12 @@ import { USE_MOCKS, api } from '../lib/api';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../lib/theme';
 import { ErrorBoundary } from './ErrorBoundary';
+import { Tour, restartTour } from './Tour';
 import { NotifyProvider, useNotify } from '../lib/notify';
 import { useAlertingStatus } from '../lib/alerting';
 import {
   IconBell, IconClose, IconDemo, IconEvents, IconExport, IconHome, IconInfo, IconLock, IconMenu, IconMoon,
-  IconLyra, IconSettings, IconSources, IconSun,
+  IconLyra, IconSettings, IconSources, IconSparkles, IconSun,
 } from './Icons';
 
 
@@ -152,6 +153,9 @@ function LayoutInner() {
               <span className="truncate">Strict Offline Active</span>
             </div>
           )}
+          <button type="button" className="ghost tour-replay" onClick={restartTour}>
+            <IconSparkles size={13} /> Take the tour
+          </button>
           <Health />
         </div>
       </aside>
@@ -196,6 +200,7 @@ function LayoutInner() {
           </ErrorBoundary>
         </main>
       </div>
+      <Tour />
     </div>
   );
 }
