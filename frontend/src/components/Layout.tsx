@@ -49,15 +49,13 @@ function Health() {
     return () => { alive = false; window.clearTimeout(t); };
   }, []);
 
-  const label = state === 'pending' ? 'Checking…'
-    : state === 'down' ? (errorMsg === 'Pack verification failed' ? 'Pack check failed' : 'API unreachable')
-      : 'Engine healthy';
+  // Stays hidden while checking or healthy; only surfaces when something is actually wrong.
+  if (state !== 'down') return null;
+
+  const label = errorMsg === 'Pack verification failed' ? 'Pack check failed' : 'API unreachable';
 
   return (
-    <div
-      className={`health ${state}`}
-      title={state === 'up' ? 'Engine healthy and operational' : (errorMsg ?? 'checking the Studio API')}
-    >
+    <div className="health down" title={errorMsg ?? 'API unreachable'}>
       <span className="dot" />
       <span className="label truncate">{label}</span>
     </div>

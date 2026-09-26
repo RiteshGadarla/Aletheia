@@ -58,7 +58,7 @@
   stroke-width: 1;
 }
 
-.chart .axis-t {
+.axis-t {
   fill: var(--text-muted);
   font-size: 11px;
 }

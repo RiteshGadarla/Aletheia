@@ -34,10 +34,30 @@ prove that for every event.
 
 Built by **Team ORCA#26** for **Smart India Hackathon 2026, Problem Statement 26156**.
 
-## Quick start
+## Quick start (For Judge Evaluation)
 
 You only need Docker (4+ cores, **8 GB RAM for Docker**, 10 GB disk). One command starts the whole
-pipeline:
+pipeline.
+
+> [!IMPORTANT]
+> **Free these host ports before you run it.** Nothing else on the host needs to be free: every datastore
+> runs inside the container and is never published.
+>
+> | Host port | Protocol | Used for |
+> | :--- | :--- | :--- |
+> | **6156** | TCP | UI, Studio API (`/api/`) and Grafana (`/grafana/`) |
+> | **26514** | UDP + TCP | Syslog input for your own logs |
+>
+> Check that they are free (no output means free):
+>
+> ```bash
+> # Linux / macOS
+> sudo lsof -nP -i :6156 -i :26514
+> # Windows (PowerShell)
+> netstat -ano | findstr ":6156 :26514"
+> ```
+>
+> If one is taken, change only the host side, e.g. `-p 16156:6156`, and open `http://localhost:16156`.
 
 ```bash
 docker pull ritesh2006/aletheia
@@ -185,6 +205,13 @@ cloud providers). `ALETHEIA_AIRGAP=true` refuses Gemini outright. Measured provi
 [docs/llm-provider-notes.md](docs/llm-provider-notes.md).
 
 ## Guided evaluation
+
+> [!TIP]
+> **For judges.** Before starting, make sure host ports **6156** (TCP) and **26514** (UDP + TCP) are
+> free ([how to check](#quick-start)), then run the [Quick start](#quick-start) command and wait for
+> `docker ps` to show **healthy**. Once the image is pulled, no AI key and no internet access are needed
+> for any scenario except the optional 5c. If the sidebar shows *API unreachable*, the container is
+> still starting or has stopped; see [Troubleshooting](#troubleshooting).
 
 Open the **Demo Console** (<http://localhost:6156/dashboard/demo>) and run the scenarios in order.
 Each card states what it proves, what success looks like, and the equivalent CLI command.
@@ -388,6 +415,7 @@ Installation problems (memory, ports, line endings) are covered in
 | Gemini: *Connection failed* | Check the key, internet access, and that `ALETHEIA_AIRGAP` is not `true` |
 | Settings rejects the model | The `gemini` provider accepts only `gemini-*` models |
 | "AI suggestion unavailable" | Expected fallback: heuristic proposals still work. Check the connection in Settings |
+| Sidebar shows *API unreachable* | The container is still starting or has stopped. Check `docker ps` and `docker logs aletheia` |
 | Sidebar shows *Pack check failed* | The parser-pack self-test failed. Open `/api/v1/packs/verify` for the reason |
 | Sources added by `make seed` do not appear | Studio loads sources at startup. Run `make seed` before `make dev`, or restart Studio |
 | Alerts fire in Grafana but never reach the browser (from source) | A firewall blocks Grafana → Studio; see [docs/alerting.md](docs/alerting.md#troubleshooting) |
