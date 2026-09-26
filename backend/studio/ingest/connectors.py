@@ -48,11 +48,15 @@ class Runner:
     def _emit(self, lines: list[str]):
         return self.pipe.submit(self.src.id, lines, self.src.type)
 
+    def _up(self) -> None:
+        """Called by a connector once its transport is actually established, never before."""
+        self.status, self.error = "connected", ""
+
     async def _loop(self) -> None:
         delay = 1.0
         while True:
             try:
-                self.status, self.error = "connected", ""
+                self.status = "connecting"
                 await getattr(self, f"_{self.src.type}")(self.src.config)
                 delay = 1.0
             except asyncio.CancelledError:
@@ -66,6 +70,7 @@ class Runner:
 
     async def _tcp(self, c) -> None:
         r, w = await asyncio.open_connection(c["host"], int(c["port"]))
+        self._up()
         try:
             while line := await r.readline():
                 await self._emit([line.rstrip(b"\r\n").decode("utf-8", "replace")])
@@ -81,6 +86,7 @@ class Runner:
                 asyncio.ensure_future(pipe.submit(sid, [data.decode("utf-8", "replace").rstrip("\r\n")], "udp"))
 
         tr, _ = await loop.create_datagram_endpoint(P, local_addr=(c.get("bind", "0.0.0.0"), int(c["port"])))
+        self._up()
         try:
             await asyncio.Event().wait()
         finally:
@@ -90,6 +96,7 @@ class Runner:
         async with httpx.AsyncClient(timeout=None, headers=c.get("headers") or {}) as cl:
             async with cl.stream("GET", c["url"]) as resp:
                 resp.raise_for_status()
+                self._up()
                 async for text in resp.aiter_lines():
                     if text.strip():
                         await self._emit(_lines_from_obj(json.loads(text), c.get("line_field", "line")))
@@ -97,6 +104,7 @@ class Runner:
     async def _websocket(self, c) -> None:
         import websockets
         async with websockets.connect(c["url"], ping_interval=20) as ws:
+            self._up()
             async for msg in ws:
                 try:
                     await self._emit(_lines_from_obj(json.loads(msg), c.get("line_field", "line")))
@@ -111,6 +119,7 @@ class Runner:
                     "query": c.get("query", '{job=~".+"}'), "start": last + 1, "end": time.time_ns(),
                     "limit": 5000, "direction": "forward"})
                 r.raise_for_status()
+                self._up()
                 rows = sorted((int(t), ln) for s in r.json()["data"]["result"] for t, ln, *_ in s["values"])
                 if rows:
                     last = rows[-1][0]
@@ -123,6 +132,7 @@ class Runner:
             while True:
                 r = await cl.get(c["url"], params={c.get("cursor_param", "after"): cursor, "limit": 1000})
                 r.raise_for_status()
+                self._up()
                 d = r.json()
                 items = d.get(c.get("items_key", "items"), [])
                 if items:

@@ -156,8 +156,8 @@ def _send(writer, status: int, obj) -> None:
                  f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n".encode() + body)
 
 
-def _ws_frame(text: str, op: int = 0x1) -> bytes:
-    b = text.encode()
+def _ws_frame(payload: str | bytes, op: int = 0x1) -> bytes:
+    b = payload.encode() if isinstance(payload, str) else payload
     n = len(b)
     hdr = (bytes([0x80 | op, n]) if n < 126 else bytes([0x80 | op, 126]) + n.to_bytes(2, "big")
            if n < 65536 else bytes([0x80 | op, 127]) + n.to_bytes(8, "big"))
@@ -243,22 +243,56 @@ def _control(feed: Feed, method: str, path: str, q: dict, body: bytes):
     return None
 
 
-async def _stream(feed: Feed, writer, kind: str, loki: bool) -> None:
+async def _ws_reader(reader, writer) -> None:
+    """Drain client frames and answer ping with pong. Clients (the studio connector included) send
+    keepalive pings and drop the connection when no pong comes back, so this half cannot be skipped."""
+    while True:
+        h = await reader.readexactly(2)
+        op, n, masked = h[0] & 0x0F, h[1] & 0x7F, h[1] & 0x80
+        if n == 126:
+            n = int.from_bytes(await reader.readexactly(2), "big")
+        elif n == 127:
+            n = int.from_bytes(await reader.readexactly(8), "big")
+        mask = await reader.readexactly(4) if masked else b""
+        data = await reader.readexactly(n) if n else b""
+        if mask:
+            data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+        if op == 0x8:                      # close
+            return
+        if op == 0x9:                      # ping -> pong, echoing the payload
+            writer.write(_ws_frame(data, 0xA))
+            await writer.drain()
+
+
+async def _ws_writer(feed: Feed, q: asyncio.Queue, writer, loki: bool) -> None:
+    while True:
+        try:
+            _, ts, line, sev = await asyncio.wait_for(q.get(), 15)
+        except asyncio.TimeoutError:
+            writer.write(_ws_frame(b"", 0x9))
+            await writer.drain()
+            continue
+        msg = ({"streams": [{"stream": {"job": feed.name, "severity": sev},
+                             "values": [[str(ts), line]]}]} if loki else
+               {"ts": ts, "severity": sev, "line": line})
+        writer.write(_ws_frame(json.dumps(msg)))
+        await writer.drain()
+
+
+async def _stream(feed: Feed, reader, writer, kind: str, loki: bool) -> None:
     q = feed.subscribe()
     try:
         if kind == "ws":
-            while True:
-                try:
-                    _, ts, line, sev = await asyncio.wait_for(q.get(), 15)
-                except asyncio.TimeoutError:
-                    writer.write(_ws_frame("", 0x9))
-                    await writer.drain()
-                    continue
-                msg = ({"streams": [{"stream": {"job": feed.name, "severity": sev},
-                                     "values": [[str(ts), line]]}]} if loki else
-                       {"ts": ts, "severity": sev, "line": line})
-                writer.write(_ws_frame(json.dumps(msg)))
-                await writer.drain()
+            # Both halves run together; whichever ends first (close frame, dead peer) ends the stream.
+            half = [asyncio.create_task(_ws_writer(feed, q, writer, loki)),
+                    asyncio.create_task(_ws_reader(reader, writer))]
+            try:
+                await asyncio.wait(half, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                for t in half:
+                    t.cancel()
+                await asyncio.gather(*half, return_exceptions=True)
+            return
         writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/x-ndjson\r\n"
                      b"Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n")
         while True:
@@ -280,9 +314,9 @@ def http_handler(feed: Feed):
                 acc = base64.b64encode(hashlib.sha1(headers["sec-websocket-key"].encode() + WS_GUID).digest())
                 writer.write(b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
                              b"Connection: Upgrade\r\nSec-WebSocket-Accept: " + acc + b"\r\n\r\n")
-                await _stream(feed, writer, "ws", u.path.startswith("/loki"))
+                await _stream(feed, reader, writer, "ws", u.path.startswith("/loki"))
             elif u.path == "/stream":
-                await _stream(feed, writer, "ndjson", False)
+                await _stream(feed, reader, writer, "ndjson", False)
             else:
                 res = _control(feed, method, u.path, q, body)
                 _send(writer, *(res or (404, {"error": "not found"})))
