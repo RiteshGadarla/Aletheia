@@ -457,7 +457,7 @@ export function SettingsPage() {
             disabled={busy !== null}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: '6px',
-              background: 'var(--bad)', borderColor: 'var(--bad-border)', color: '#ffffff',
+              background: '#b0241d', borderColor: '#8c1c17', color: '#ffffff',
               whiteSpace: 'nowrap',
             }}
           >

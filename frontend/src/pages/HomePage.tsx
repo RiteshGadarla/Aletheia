@@ -6,7 +6,7 @@ import { useTheme } from '../lib/theme';
 import {
   IconEvents, IconSources, IconLineage, IconDemo, IconSettings, IconHome, IconLyra, IconExport,
   IconBell, IconShield, IconMoon, IconSun, IconLock, IconNested, IconLink, IconHash, IconCpu,
-  IconOff, IconServer,
+  IconOff, IconServer, IconSparkles,
 } from '../components/Icons';
 import {
   SiGo, SiClickhouse, SiPostgresql, SiPython, SiFastapi, SiGrafana, SiPrometheus, SiNginx,
@@ -21,6 +21,7 @@ import { BlurText } from '../components/BlurText';
 import { ClickSpark } from '../components/ClickSpark';
 import { CopyButton } from '../components/Bits';
 import { Reveal } from '../components/Reveal';
+import { restartTour } from '../components/Tour';
 import { LogAnatomy } from '../components/landing/LogAnatomy';
 import { SealedLedger } from '../components/landing/SealedLedger';
 import { ProofTerminal } from '../components/landing/ProofTerminal';
@@ -43,10 +44,16 @@ const FIBERS = {
   light: { lineColor: '#123f9e', glowColor: '#6aa5ff', backdrop: '#f4f6f9', lightMode: true, ink: 0.6 },
 } as const;
 
-type Spec = Pick<SpecularButtonProps, 'tint' | 'tintOpacity' | 'textColor' | 'lineColor' | 'baseColor'>;
+type Spec = Pick<SpecularButtonProps, 'tint' | 'tintOpacity' | 'blur' | 'textColor' | 'lineColor' | 'baseColor'>;
 const CTA: Record<'dark' | 'light', Spec> = {
-  dark: { tint: '#2c5fd6', tintOpacity: 0.92, textColor: '#ffffff', lineColor: '#dbe8ff', baseColor: '#6aa5ff' },
-  light: { tint: '#1c58c9', tintOpacity: 1, textColor: '#ffffff', lineColor: '#ffffff', baseColor: '#1749a8' },
+  dark: { tint: '#ffffff', tintOpacity: 1, textColor: '#0c1014', lineColor: '#eaf2ff', baseColor: '#9fc4ff' },
+  light: { tint: '#0c1014', tintOpacity: 1, textColor: '#ffffff', lineColor: '#9fb8e8', baseColor: '#2c5fd6' },
+};
+
+// Secondary hero action: smoked glass, so it reads as the quieter of the two next to the solid CTA.
+const TOUR: Record<'dark' | 'light', Spec> = {
+  dark: { tint: '#ffffff', tintOpacity: 0.07, blur: 10, textColor: '#e8eefb', lineColor: '#cfe0ff', baseColor: '#6aa5ff' },
+  light: { tint: '#0c1014', tintOpacity: 0.05, blur: 10, textColor: '#10203f', lineColor: '#2c5fd6', baseColor: '#1c58c9' },
 };
 
 // "Prove it." particles, in the accent: blue easing toward a lighter blue (dark) or violet (light).
@@ -199,6 +206,9 @@ export function HomePage() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  // Rewind the saved tour state, then land on the dashboard where Tour mounts and opens at step one.
+  const startTour = () => { restartTour(); navigate('/dashboard'); };
+
   return (
     <MotionConfig reducedMotion="user">
       <div className="lp">
@@ -277,6 +287,9 @@ export function HomePage() {
             <div className="lp-hero-actions">
               <SpecularButton size="lg" radius={14} {...CTA[theme]} onClick={() => navigate('/dashboard')}>
                 Open Dashboard <span aria-hidden="true">→</span>
+              </SpecularButton>
+              <SpecularButton size="lg" radius={14} {...TOUR[theme]} onClick={startTour}>
+                <IconSparkles size={17} /> Take a tour
               </SpecularButton>
             </div>
           </div>
@@ -443,8 +456,6 @@ export function HomePage() {
               <span>OCSF 1.3</span>
               <span className="lp-dot">·</span>
               <span><IconLock size={12} /> Byte-exact · Merkle-sealed</span>
-              <span className="lp-dot">·</span>
-              <span>MIT License</span>
             </div>
             <div className="lp-footer-tagline">ἀλήθεια: Greek for "truth", literally "un-concealment": nothing hidden, nothing lost.</div>
           </div>

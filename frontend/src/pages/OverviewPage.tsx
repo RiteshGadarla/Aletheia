@@ -190,20 +190,22 @@ function Body({ d, stale }: { d: Overview; stale: boolean }) {
           title={d.store === 'memory' ? 'Raw lines are lost when Studio restarts' : undefined} />
       </div>
 
-      <Section id="glance" title="At a glance" desc="One score, and the findings behind it, written from the live numbers.">
-        <div className="hero">
-          <Panel title="Posture score" subtitle="onboarding · health · risk">
-            <Gauge value={ins.posture} label={ins.posture >= 80 ? 'healthy' : ins.posture >= 55 ? 'attention' : 'at risk'} />
-            <div className="hint" style={{ textAlign: 'center' }}>{ins.onboarded_pct}% onboarded · {ins.health_pct}% connected</div>
-          </Panel>
-          <Panel title="Key findings" subtitle="auto-generated">
-            <ul className="findings">
-              {fnd.map((f: Finding) => <li key={f.title} className={`f-${f.tone}`}><b>{f.title}</b><span>{f.body}</span></li>)}
-              {fnd.length === 0 && <li className="f-info"><b>Waiting for data</b><span>Start a sample server on the Demo page to see findings.</span></li>}
-            </ul>
-          </Panel>
-        </div>
-      </Section>
+      {hasData && (
+        <Section id="glance" title="At a glance" desc="One score, and the findings behind it, written from the live numbers.">
+          <div className="hero">
+            <Panel title="Posture score" subtitle="onboarding · health · risk">
+              <Gauge value={ins.posture} label={ins.posture >= 80 ? 'healthy' : ins.posture >= 55 ? 'attention' : 'at risk'} />
+              <div className="hint" style={{ textAlign: 'center' }}>{ins.onboarded_pct}% onboarded · {ins.health_pct}% connected</div>
+            </Panel>
+            <Panel title="Key findings" subtitle="auto-generated">
+              <ul className="findings">
+                {fnd.map((f: Finding) => <li key={f.title} className={`f-${f.tone}`}><b>{f.title}</b><span>{f.body}</span></li>)}
+                {fnd.length === 0 && <li className="f-info"><b>Waiting for data</b><span>Findings appear once lines start arriving.</span></li>}
+              </ul>
+            </Panel>
+          </div>
+        </Section>
+      )}
 
       {!hasData ? (
         <EmptyState title="Nothing ingesting yet">

@@ -132,7 +132,7 @@ export function EventsPage() {
           </div>
         }
       >
-        Every normalized OCSF record in ClickHouse. Search by source, class or raw bytes.
+        Every normalized OCSF (Open Cybersecurity Schema Framework) record in ClickHouse. Search by source or template.
       </PageHead>
 
 
@@ -180,7 +180,7 @@ export function EventsPage() {
               <span className="lbl"><IconSearch size={12} /> Search</span>
               <div className="lineage-search-box" style={{ width: '100%', minWidth: 0 }}>
                 <input
-                  placeholder="Filter across IP, user, message, host..."
+                  placeholder="Filter by source or template..."
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                 />

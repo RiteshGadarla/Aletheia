@@ -1,0 +1,267 @@
+/* =========================================================================
+   Sidebar: modern console styling, matching the dashboard's card language.
+   Loaded last, so every rule here overrides 02-app-shell.css by cascade
+   order. Drop the @import in global.css to fall back to the plain sidebar.
+   ========================================================================= */
+
+.sidebar {
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--accent) 5%, var(--surface)) 0%,
+      var(--surface) 22%,
+      var(--bg-sunken) 100%);
+  border-right: 1px solid var(--border);
+  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+/* ---- brand ---- */
+
+.sidebar-brand {
+  position: relative;
+  gap: var(--s3);
+  padding: var(--s4) var(--s4) var(--s3);
+  border-bottom: 0;
+}
+
+/* A fading hairline reads lighter than a full-width rule. */
+.sidebar-brand::after {
+  content: "";
+  position: absolute;
+  left: var(--s4);
+  right: var(--s4);
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+
+.sidebar-brand .mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: linear-gradient(145deg, var(--accent-hover), var(--accent));
+  box-shadow:
+    0 2px 8px color-mix(in srgb, var(--accent) 34%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 26%, transparent);
+  transition: transform var(--t-med), box-shadow var(--t-med);
+}
+
+.sidebar-brand-link:hover .mark {
+  transform: translateY(-1px) rotate(-3deg);
+  box-shadow:
+    0 4px 14px color-mix(in srgb, var(--accent) 44%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 30%, transparent);
+}
+
+.sidebar-brand .name {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.015em;
+}
+
+.sidebar-brand .tag {
+  margin-top: 1px;
+  letter-spacing: 0.01em;
+  color: var(--text-faint);
+}
+
+/* ---- nav ---- */
+
+.sidebar-nav {
+  gap: 3px;
+  padding: var(--s4) var(--s3) var(--s3);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-pill);
+}
+
+.sidebar .nav-section {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 0 var(--s2) var(--s3);
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.sidebar .nav-section::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border-soft);
+}
+
+.sidebar .nav-item {
+  position: relative;
+  gap: var(--s3);
+  padding: 7px var(--s3) 7px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: background var(--t-fast), color var(--t-fast),
+    border-color var(--t-fast), transform var(--t-fast);
+}
+
+/* The rail grows out of the active row instead of appearing all at once. */
+.sidebar .nav-item::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s3) * -1);
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+  transition: height var(--t-med);
+}
+
+.sidebar .nav-item:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-soft);
+  transform: translateX(2px);
+}
+
+.sidebar .nav-item.active {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 16%, var(--surface)),
+    color-mix(in srgb, var(--accent) 5%, var(--surface)));
+  border-color: var(--accent-border);
+  color: var(--accent);
+  font-weight: var(--fw-semi);
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.sidebar .nav-item.active::before {
+  height: 22px;
+}
+
+/* Icons sit in their own tile, the way the dashboard frames its stat glyphs. */
+.sidebar .nav-item svg {
+  width: 16px;
+  height: 16px;
+  padding: 6px;
+  box-sizing: content-box;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  color: var(--text-faint);
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+
+.sidebar .nav-item:hover svg {
+  background: var(--surface-3);
+  border-color: var(--border);
+  color: var(--accent);
+}
+
+.sidebar .nav-item.active svg {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.sidebar .nav-item .desc {
+  margin-top: 1px;
+  color: var(--text-faint);
+  font-weight: var(--fw-normal);
+}
+
+.sidebar .nav-item.active .desc {
+  color: color-mix(in srgb, var(--accent) 66%, var(--text-muted));
+}
+
+.sidebar .nav-badge {
+  min-width: 19px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: var(--fs-2xs);
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar .nav-item.active .nav-badge {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.sidebar .nav-badge.bad {
+  background: var(--bad-soft);
+  border-color: var(--bad-border);
+  color: var(--bad);
+}
+
+/* ---- foot ---- */
+
+.sidebar-foot {
+  position: relative;
+  padding: var(--s3) var(--s4) var(--s4);
+  border-top: 0;
+}
+
+.sidebar-foot::before {
+  content: "";
+  position: absolute;
+  left: var(--s4);
+  right: var(--s4);
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+}
+
+.sidebar-airgap-pill {
+  border-radius: 10px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 16%, var(--surface)),
+    color-mix(in srgb, var(--accent) 6%, var(--surface)));
+}
+
+.sidebar-foot .tour-replay {
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+
+.sidebar-foot .tour-replay:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.sidebar .health {
+  border-radius: 10px;
+}
+
+.theme-box-toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .sidebar .nav-item,
+  .sidebar .nav-item::before,
+  .sidebar .nav-item svg,
+  .sidebar-brand .mark {
+    transition: none;
+  }
+
+  .sidebar .nav-item:hover {
+    transform: none;
+  }
+}
