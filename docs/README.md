@@ -22,8 +22,8 @@ the measurements behind its claims.
 **Evaluating Aletheia:** the [README](../README.md) (quick start and guided evaluation), then
 [Architecture](architecture.md), then [Benchmarks](benchmarks.md).
 
-**Operating it:** the [Setup guide](../SETUP.md), the configuration section of the
-[README](../README.md#configuration), then [Alerting](alerting.md).
+**Operating it:** the [Setup guide](../SETUP.md) and its
+[configuration section](../SETUP.md#6-configuration), then [Alerting](alerting.md).
 
 **Changing the code:** [Architecture](architecture.md), then the [Shared contracts](CONTRACTS.md)
 for the component you are working on, then the relevant sections of the

@@ -8,7 +8,8 @@ How to install and start Aletheia. Pick one:
 | **[2. Linux / macOS from source](#2-linux--macos-from-source)** | Development with hot reload | Docker, Python, Node.js, Go |
 | **[3. Windows from source](#3-windows-from-source)** | Development in PowerShell | Docker Desktop, Python, Node.js, Go |
 
-Then see the [port map](#4-port-map) and [troubleshooting](#5-troubleshooting). Once it runs,
+Then see the [port map](#4-port-map), [troubleshooting](#5-troubleshooting) and
+[configuration](#6-configuration). Once it runs,
 continue with the [README](README.md): [connect an AI provider](README.md#connect-an-ai-provider)
 (optional) and the [guided evaluation](README.md#guided-evaluation).
 
@@ -345,11 +346,43 @@ For problems after installation (AI provider, Settings, alerts), see
 
 ---
 
+## 6. Configuration
+
+All state lives under `/data` in the container. Without `-v aletheia-data:/data`, every `docker run`
+starts a fresh demo.
+
+| Variable | Default | Effect |
+| :--- | :--- | :--- |
+| `ALETHEIA_DEMO_AUTOSTART` | `true` | Start demo traffic once healthy |
+| `ALETHEIA_DEMO_RATE` | `200` | Demo events per second |
+| `ALETHEIA_WORKERS` | `2` | Worker processes in the container |
+| `ALETHEIA_ADMIN_PASSWORD` | `aletheia` | Grafana admin password |
+| `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud AI providers |
+| `ALETHEIA_SECRET` | generated on first start | AES-GCM key for settings stored via the UI |
+| `ALETHEIA_PUBLIC_URL` | `http://localhost:6156` | Browser-facing origin, used in links Grafana writes (alert emails) |
+| `ALETHEIA_GRAFANA_PUBLIC_URL` | `/grafana` | Grafana as the browser reaches it; relative, so it works on any host or port |
+| `ALETHEIA_SMTP_ENABLED` / `_HOST` / `_USER` / `_PASSWORD` / `_FROM_ADDRESS` | off | Grafana SMTP for email alerts ([docs/alerting.md](docs/alerting.md)) |
+| `ALETHEIA_SUPPLY_ENABLED` / `_HOST` / `_PORT` / `_FORMAT` / `_MODE` / `_TARGET` / `_ALLOW` | off | Supply stream defaults; normally set on the Export page |
+| `ALETHEIA_HEC_ENDPOINT` / `_TOKEN` / `_INDEX` | unset (off) | Splunk HEC fan-out, e.g. `http://splunk:8088`; the sink is loaded only when set |
+| `ALETHEIA_CEF_SYSLOG_ADDR` | unset (off) | CEF re-emit over TCP syslog, e.g. `siem:514`; the sink is loaded only when set |
+
+AI provider variables, also read from `deploy/secrets/aletheia.env` when running from source:
+
+| Variable | Default | Effect |
+| :--- | :--- | :--- |
+| `ALETHEIA_LLM_PROVIDER` | `none` (image) · `gemini` (example file) | `none`, `gemini` or `local` |
+| `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` | On `gemini`, only `gemini-*` models are accepted |
+| `ALETHEIA_LLM_API_KEY` / `_FILE` | empty | Gemini key, inline or from a mounted file (preferred) |
+| `ALETHEIA_LLM_BASE_URL` | `http://localhost:11434/v1` | For `local`; use `host.docker.internal` from Docker |
+| `ALETHEIA_LLM_SEND_SAMPLES` | `masked` | `masked`, `none` or `raw` (local providers only) |
+
+---
+
 ## Next steps
 
 1. **Connect an AI provider** (optional): Google Gemini or a local model. See
    [README → Connect an AI provider](README.md#connect-an-ai-provider).
 2. **Run the guided evaluation** in the Demo Console. See
    [README → Guided evaluation](README.md#guided-evaluation).
-3. **Configuration reference** (environment variables, `deploy/secrets/aletheia.env`): see
-   [README → Configuration](README.md#configuration).
+3. **Configuration reference**: environment variables and `deploy/secrets/aletheia.env` are in
+   [Configuration](#6-configuration) above.

@@ -76,7 +76,7 @@ After one to two minutes, `docker ps` shows the container as **healthy**. Then o
 > [!NOTE]
 > The image is on Docker Hub as [`ritesh2006/aletheia`](https://hub.docker.com/r/ritesh2006/aletheia). **[SETUP.md](SETUP.md)** has
 > the full installation guide: Docker, Linux / macOS and Windows from source, air-gapped install,
-> ports and troubleshooting.
+> ports, troubleshooting and the configuration reference.
 
 After installing, optionally [connect an AI provider](#connect-an-ai-provider) and follow the
 [guided evaluation](#guided-evaluation).
@@ -92,7 +92,6 @@ After installing, optionally [connect an AI provider](#connect-an-ai-provider) a
 - [Connect an AI provider](#connect-an-ai-provider)
 - [Guided evaluation](#guided-evaluation)
 - [Features](#features)
-- [Configuration](#configuration)
 - [Command-line tools](#command-line-tools)
 - [Development](#development)
 - [Project structure](#project-structure)
@@ -278,36 +277,6 @@ The **Export** page downloads raw lines, OCSF events or the audit trail, and bui
 `ocsf`), either listening on `127.0.0.1:9099` (optional IP/CIDR allowlist) or pushing to a
 collector. Raw lines are always carried whole, so a receiver can re-check the SHA-256.
 
-## Configuration
-
-All state lives under `/data` in the container. Without `-v aletheia-data:/data`, every `docker run`
-starts a fresh demo.
-
-| Variable | Default | Effect |
-| :--- | :--- | :--- |
-| `ALETHEIA_DEMO_AUTOSTART` | `true` | Start demo traffic once healthy |
-| `ALETHEIA_DEMO_RATE` | `200` | Demo events per second |
-| `ALETHEIA_WORKERS` | `2` | Worker processes in the container |
-| `ALETHEIA_ADMIN_PASSWORD` | `aletheia` | Grafana admin password |
-| `ALETHEIA_AIRGAP` | `false` | `true` refuses all cloud AI providers |
-| `ALETHEIA_SECRET` | generated on first start | AES-GCM key for settings stored via the UI |
-| `ALETHEIA_PUBLIC_URL` | `http://localhost:6156` | Browser-facing origin, used in links Grafana writes (alert emails) |
-| `ALETHEIA_GRAFANA_PUBLIC_URL` | `/grafana` | Grafana as the browser reaches it; relative, so it works on any host or port |
-| `ALETHEIA_SMTP_ENABLED` / `_HOST` / `_USER` / `_PASSWORD` / `_FROM_ADDRESS` | off | Grafana SMTP for email alerts ([docs/alerting.md](docs/alerting.md)) |
-| `ALETHEIA_SUPPLY_ENABLED` / `_HOST` / `_PORT` / `_FORMAT` / `_MODE` / `_TARGET` / `_ALLOW` | off | Supply stream defaults; normally set on the Export page |
-| `ALETHEIA_HEC_ENDPOINT` / `_TOKEN` / `_INDEX` | unset (off) | Splunk HEC fan-out, e.g. `http://splunk:8088`; the sink is loaded only when set |
-| `ALETHEIA_CEF_SYSLOG_ADDR` | unset (off) | CEF re-emit over TCP syslog, e.g. `siem:514`; the sink is loaded only when set |
-
-AI provider variables, also read from `deploy/secrets/aletheia.env` when running from source:
-
-| Variable | Default | Effect |
-| :--- | :--- | :--- |
-| `ALETHEIA_LLM_PROVIDER` | `none` (image) · `gemini` (example file) | `none`, `gemini` or `local` |
-| `ALETHEIA_LLM_MODEL` | `gemini-3.5-flash-lite` | On `gemini`, only `gemini-*` models are accepted |
-| `ALETHEIA_LLM_API_KEY` / `_FILE` | empty | Gemini key, inline or from a mounted file (preferred) |
-| `ALETHEIA_LLM_BASE_URL` | `http://localhost:11434/v1` | For `local`; use `host.docker.internal` from Docker |
-| `ALETHEIA_LLM_SEND_SAMPLES` | `masked` | `masked`, `none` or `raw` (local providers only) |
-
 ## Command-line tools
 
 ```bash
@@ -376,7 +345,7 @@ docs               design, contracts, alerting, benchmarks
 
 | Document | What it covers |
 | :--- | :--- |
-| [SETUP.md](SETUP.md) | Installation: Docker, Linux / macOS, Windows, air-gapped, ports, troubleshooting |
+| [SETUP.md](SETUP.md) | Installation: Docker, Linux / macOS, Windows, air-gapped, ports, troubleshooting, configuration |
 | [docs/architecture.md](docs/architecture.md) | Two-page architecture: components, data flow, integrity model, deployment |
 | [docs/technical-specification.md](docs/technical-specification.md) | The complete design: algorithms, formats, trade-offs and limitations |
 | [docs/CONTRACTS.md](docs/CONTRACTS.md) | Frozen interfaces between components: bus topics, schemas, APIs, environment |
