@@ -325,6 +325,21 @@
   margin: 0 auto;
 }
 
+/* BlurText (components/BlurText.tsx) lays words out as flex items, so centring is justify. */
+.blur-text {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.blur-text-seg {
+  display: inline-block;
+  will-change: transform, filter, opacity;
+}
+
+.lp-section h2.lp-section-title {
+  justify-content: center;
+}
+
 .lp-section h2 {
   font-size: var(--fs-2xl);
   font-weight: var(--fw-bold);
@@ -380,6 +395,94 @@
   min-width: 0;
 }
 
+/* ---- SpotlightCard (components/SpotlightCard.tsx) ---- */
+.card-spotlight {
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+  --spotlight-color: color-mix(in srgb, var(--accent) 16%, transparent);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  transition: border-color var(--t-med);
+}
+
+.card-spotlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--mouse-x) var(--mouse-y), var(--spotlight-color), transparent 80%);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.card-spotlight:hover,
+.card-spotlight:focus-within {
+  border-color: var(--accent-border);
+}
+
+.card-spotlight:hover::before,
+.card-spotlight:focus-within::before {
+  opacity: 1;
+}
+
+/* ---- GlareHover (components/GlareHover.tsx) ---- */
+.glare-hover {
+  position: relative;
+  display: grid;
+  width: var(--gh-width);
+  height: var(--gh-height);
+  overflow: hidden;
+  background: var(--gh-bg);
+  border: 1px solid var(--gh-border);
+  border-radius: var(--gh-br);
+}
+
+.glare-hover::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(var(--gh-angle), transparent 60%, var(--gh-rgba) 70%, transparent, transparent 100%);
+  background-size: var(--gh-size) var(--gh-size), 100% 100%;
+  background-repeat: no-repeat;
+  background-position: -100% -100%, 0 0;
+  transition: var(--gh-duration) ease;
+}
+
+.glare-hover:hover::before {
+  background-position: 100% 100%, 0 0;
+}
+
+.glare-hover--play-once::before {
+  transition: none;
+}
+
+.glare-hover--play-once:hover::before {
+  transition: var(--gh-duration) ease;
+}
+
+/* ---- ClickSpark (components/ClickSpark.tsx); canvas overhangs by the component's PAD (32px) ---- */
+.click-spark {
+  position: relative;
+  display: inline-flex;
+}
+
+.click-spark-canvas {
+  position: absolute;
+  inset: -32px;
+  pointer-events: none;
+}
+
+/* DecryptedText (components/DecryptedText.tsx) */
+.decrypted-text {
+  display: inline-block;
+  white-space: pre-wrap;
+}
+
 /* ---- core insight ---- */
 .lp-results-grid {
   display: grid;
@@ -428,6 +531,42 @@
   color: var(--text-muted);
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-soft);
+}
+
+.lp-code-verdict {
+  display: grid;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-top: 1px dashed var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.lp-code-verdict > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s3);
+  color: var(--text-muted);
+}
+
+.lp-code-verdict code {
+  font-family: inherit;
+  color: var(--text-secondary);
+}
+
+.lp-verdict-ok {
+  color: var(--ok);
+  font-weight: var(--fw-semi);
+}
+
+.lp-verdict-warn {
+  color: var(--warn);
+  font-weight: var(--fw-semi);
+}
+
+.lp-verdict-enc {
+  color: var(--text-faint);
 }
 
 .lp-code-block pre {
@@ -799,16 +938,28 @@
 }
 
 .lp-quickstart-cmd {
+  position: relative;
+  min-width: 0;
+  background: var(--surface-inset);
+  border-right: 1px solid var(--border-soft);
+  border-radius: 12px 0 0 12px;
+}
+
+.lp-quickstart-cmd pre {
   margin: 0;
   padding: var(--s5);
+  padding-right: 56px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   line-height: var(--lh-loose);
   color: var(--text);
-  background: var(--surface-inset);
-  border-right: 1px solid var(--border-soft);
-  border-radius: 12px 0 0 12px;
+}
+
+.lp-copy {
+  position: absolute;
+  top: var(--s3);
+  right: var(--s3);
 }
 
 .lp-quickstart-side {
@@ -925,8 +1076,16 @@
 
 .lp-nav-card:hover {
   border-color: var(--accent-border);
-  box-shadow: var(--shadow-md);
+}
+
+/* lift and shadow sit on the GlareHover wrapper, whose overflow:hidden would clip them on the card */
+.lp-nav-grid .glare-hover {
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+}
+
+.lp-nav-grid .glare-hover:hover {
   transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .lp-nav-icon {

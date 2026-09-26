@@ -1,5 +1,6 @@
 // Aletheia product landing page — standalone, no sidebar. Copy tracks README.md and docs/.
 import { useEffect, useState } from 'react';
+import { MotionConfig, motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../lib/theme';
 import {
@@ -16,6 +17,13 @@ import { SpecularButton } from '../components/SpecularButton';
 import { BorderGlow } from '../components/BorderGlow';
 import { LogoLoop } from '../components/LogoLoop';
 import { ParticleText } from '../components/ParticleText';
+import { BlurText } from '../components/BlurText';
+import { CountUp } from '../components/CountUp';
+import { DecryptedText } from '../components/DecryptedText';
+import { SpotlightCard } from '../components/SpotlightCard';
+import { GlareHover } from '../components/GlareHover';
+import { ClickSpark } from '../components/ClickSpark';
+import { CopyButton } from '../components/Bits';
 import type { LogoItem } from '../components/LogoLoop';
 import type { SpecularButtonProps } from '../components/SpecularButton';
 import type { BorderGlowProps } from '../components/BorderGlow';
@@ -48,6 +56,8 @@ const GLOW: Record<'dark' | 'light', BorderGlowProps> = {
   light: { glowColor: '217 75 45', colors: ['#1c58c9', '#0a6f62', '#4a3aa7'], lightSurface: true },
 };
 
+const SPOT = { dark: 'rgba(106, 165, 255, 0.18)', light: 'rgba(28, 88, 201, 0.10)' } as const;
+
 /* ---------------------------------------------------------------- helpers */
 
 function Box({ children, className }: { children: ReactNode; className?: string }) {
@@ -67,17 +77,29 @@ function Box({ children, className }: { children: ReactNode; className?: string 
   );
 }
 
+function SectionHead({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <>
+      <BlurText as="h2" text={title} className="lp-section-title" delay={70} direction="bottom" />
+      {children && <p className="lp-section-sub">{children}</p>}
+    </>
+  );
+}
+
 function NavCard({ to, icon, title, desc }: { to: string; icon: ReactNode; title: string; desc: string }) {
   const navigate = useNavigate();
+  const { theme } = useTheme();
   return (
-    <button type="button" className="lp-nav-card" onClick={() => navigate(to)}>
-      <span className="lp-nav-icon">{icon}</span>
-      <span className="lp-nav-body">
-        <strong>{title}</strong>
-        <span>{desc}</span>
-      </span>
-      <span className="lp-nav-arrow" aria-hidden="true">→</span>
-    </button>
+    <GlareHover glareColor={theme === 'dark' ? '#6aa5ff' : '#1c58c9'} glareOpacity={0.22} glareSize={300}>
+      <button type="button" className="lp-nav-card" onClick={() => navigate(to)}>
+        <span className="lp-nav-icon">{icon}</span>
+        <span className="lp-nav-body">
+          <strong>{title}</strong>
+          <span>{desc}</span>
+        </span>
+        <span className="lp-nav-arrow" aria-hidden="true">→</span>
+      </button>
+    </GlareHover>
   );
 }
 
@@ -99,11 +121,11 @@ const PILLARS: { icon: ReactNode; title: string; desc: string }[] = [
 ];
 
 // docs/benchmarks.md — measured on an i7-1360P; every figure is reproducible with the bench harness.
-const METRICS = [
-  { value: '19,329', unit: 'events/s', label: 'on one worker', note: '46,040 on eight · in-memory engine path' },
+const METRICS: { value: string; count?: number; unit: string; label: string; note: string }[] = [
+  { value: '19,329', count: 19329, unit: 'events/s', label: 'on one worker', note: '46,040 on eight · in-memory engine path' },
   { value: '0', unit: 'mismatches', label: 'across 2.04 M reconstructed events', note: 'every event rebuilt and hash-checked' },
   { value: '0', unit: 'dropped', label: 'of 120,000 generated events', note: 'generated count equals stored count' },
-  { value: '0.27', unit: 's', label: 'to find one tampered byte', note: 'names the exact Merkle batch and event' },
+  { value: '0.27', count: 0.27, unit: 's', label: 'to find one tampered byte', note: 'names the exact Merkle batch and event' },
 ];
 
 const LIMITS = [
@@ -194,109 +216,109 @@ export function HomePage() {
   }, []);
 
   return (
-    <div className="lp">
-      {/* ---- top bar ---- */}
-      <header className={`lp-topbar${scrolled ? ' scrolled' : ''}`}>
-        <div className="lp-topbar-inner">
-          <div className="lp-brand">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-              <path d="M12 8.2l3.4 7.6H8.6z" />
-            </svg>
-            <span>Aletheia</span>
+    <MotionConfig reducedMotion="user">
+      <div className="lp">
+        {/* ---- top bar ---- */}
+        <header className={`lp-topbar${scrolled ? ' scrolled' : ''}`}>
+          <div className="lp-topbar-inner">
+            <div className="lp-brand">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                <path d="M12 8.2l3.4 7.6H8.6z" />
+              </svg>
+              <span>Aletheia</span>
+            </div>
+            <nav className="lp-topnav">
+              <a href="#features">Features</a>
+              <a href="#proof">Proof</a>
+              <a href="#architecture">Architecture</a>
+              <a href="#quickstart">Quick start</a>
+              <a href="#requirements">Requirements</a>
+              <button type="button" className="lp-theme-btn" onClick={toggle} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
+                {theme === 'dark' ? <IconMoon size={15} /> : <IconSun size={15} />}
+              </button>
+              <SpecularButton size="sm" radius={10} {...CTA[theme]} onClick={() => navigate('/dashboard')}>
+                Open Dashboard <span aria-hidden="true">→</span>
+              </SpecularButton>
+            </nav>
           </div>
-          <nav className="lp-topnav">
-            <a href="#features">Features</a>
-            <a href="#proof">Proof</a>
-            <a href="#architecture">Architecture</a>
-            <a href="#quickstart">Quick start</a>
-            <a href="#requirements">Requirements</a>
-            <button type="button" className="lp-theme-btn" onClick={toggle} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}>
-              {theme === 'dark' ? <IconMoon size={15} /> : <IconSun size={15} />}
-            </button>
-            <SpecularButton size="sm" radius={10} {...CTA[theme]} onClick={() => navigate('/dashboard')}>
-              Open Dashboard <span aria-hidden="true">→</span>
-            </SpecularButton>
-          </nav>
-        </div>
-      </header>
+        </header>
 
-      {/* ---- hero ---- */}
-      <section className="lp-hero">
-        <div className="lp-hero-bg" aria-hidden="true" />
-        <GhostFibers
-          className="lp-hero-fibers"
-          {...FIBERS[theme]}
-          speed={0.18}
-          scale={2.2}
-          layers={5}
-          glowIntensity={theme === 'dark' ? 1.3 : 1.6}
-          brightness={theme === 'dark' ? 1.8 : 2}
-          vignette={0.85}
-          grain={theme === 'dark' ? 0.05 : 0.03}
-        />
-        <div className="lp-hero-scrim" aria-hidden="true" />
-
-        <div className="lp-hero-inner">
-          <h1>
-            Normalize everything.<br />
-            Lose nothing.<br />
-            <span className="sr-only">Prove it.</span>
-          </h1>
-          <ParticleText
-            className="lp-hero-title"
-            text="Prove it."
-            {...PROVE[theme]}
-            fontSize="clamp(40px, 7.2vw, 80px)"
-            fontWeight={800}
-            letterSpacing="-0.035em"
-            lineHeight={1.02}
-            density={2}
-            particleSize={2}
-            scatter={200}
-            gatherDuration={1500}
-            stagger={500}
-            pointerRepel={28}
-            repelRadius={90}
-            idleDrift={0.5}
-            maxParticles={7000}
-            glow={false}
+        {/* ---- hero ---- */}
+        <section className="lp-hero">
+          <div className="lp-hero-bg" aria-hidden="true" />
+          <GhostFibers
+            className="lp-hero-fibers"
+            {...FIBERS[theme]}
+            speed={0.18}
+            scale={2.2}
+            layers={5}
+            glowIntensity={theme === 'dark' ? 1.3 : 1.6}
+            brightness={theme === 'dark' ? 1.8 : 2}
+            vignette={0.85}
+            grain={theme === 'dark' ? 0.05 : 0.03}
           />
-          <p className="lp-hero-sub">
-            <strong>Aletheia</strong> turns any perimeter-device log, from any vendor, format or firmware,
-            into a standard <strong>OCSF</strong> event <strong>without losing a single byte of the
-            original</strong>, and proves it for every event.
-          </p>
-          <div className="lp-hero-actions">
-            <SpecularButton size="lg" radius={14} {...CTA[theme]} onClick={() => navigate('/dashboard')}>
-              Open Dashboard <span aria-hidden="true">→</span>
-            </SpecularButton>
-          </div>
-        </div>
-      </section>
+          <div className="lp-hero-scrim" aria-hidden="true" />
 
-      {/* ---- the core insight ---- */}
-      <section className="lp-section" id="features">
-        <div className="lp-section-inner">
-          <h2>The Core Insight</h2>
-          <p className="lp-section-sub">
-            A log line is literal text that repeats on every event of its type, plus variable values that
-            change. Separate the two and one representation does three jobs.
-          </p>
-          <div className="lp-results-grid">
-            {RESULTS.map((r, i) => (
-              <Box key={r.title}>
-                <div className="lp-result">
-                  <span className="lp-result-num">0{i + 1}</span>
-                  <h3>{r.title}</h3>
-                  <p>{r.desc}</p>
-                </div>
-              </Box>
-            ))}
+          <div className="lp-hero-inner">
+            <h1>
+              Normalize everything.<br />
+              Lose nothing.<br />
+              <span className="sr-only">Prove it.</span>
+            </h1>
+            <ParticleText
+              className="lp-hero-title"
+              text="Prove it."
+              {...PROVE[theme]}
+              fontSize="clamp(40px, 7.2vw, 80px)"
+              fontWeight={800}
+              letterSpacing="-0.035em"
+              lineHeight={1.02}
+              density={2}
+              particleSize={2}
+              scatter={200}
+              gatherDuration={1500}
+              stagger={500}
+              pointerRepel={28}
+              repelRadius={90}
+              idleDrift={0.5}
+              maxParticles={7000}
+              glow={false}
+            />
+            <p className="lp-hero-sub">
+              <strong>Aletheia</strong> turns any perimeter-device log, from any vendor, format or firmware,
+              into a standard <strong>OCSF</strong> event <strong>without losing a single byte of the
+              original</strong>, and proves it for every event.
+            </p>
+            <div className="lp-hero-actions">
+              <SpecularButton size="lg" radius={14} {...CTA[theme]} onClick={() => navigate('/dashboard')}>
+                Open Dashboard <span aria-hidden="true">→</span>
+              </SpecularButton>
+            </div>
           </div>
-          <div className="lp-code-block">
-            <div className="lp-code-label">Cisco ASA log line → template + variables</div>
-            <pre><code>{`raw:   <166>Sep 19 14:31:02 fw01 %ASA-6-302013: Built outbound TCP connection 1234
+        </section>
+
+        {/* ---- the core insight ---- */}
+        <section className="lp-section" id="features">
+          <div className="lp-section-inner">
+            <SectionHead title="The Core Insight">
+              A log line is literal text that repeats on every event of its type, plus variable values that
+              change. Separate the two and one representation does three jobs.
+            </SectionHead>
+            <div className="lp-results-grid">
+              {RESULTS.map((r, i) => (
+                <Box key={r.title}>
+                  <div className="lp-result">
+                    <span className="lp-result-num">0{i + 1}</span>
+                    <h3>{r.title}</h3>
+                    <p>{r.desc}</p>
+                  </div>
+                </Box>
+              ))}
+            </div>
+            <div className="lp-code-block">
+              <div className="lp-code-label">Cisco ASA log line → template + variables</div>
+              <pre><code>{`raw:   <166>Sep 19 14:31:02 fw01 %ASA-6-302013: Built outbound TCP connection 1234
        for outside:203.0.113.5/443 to inside:10.0.0.5/52144
 
 template (stored once):
@@ -305,202 +327,227 @@ template (stored once):
 
 vars (stored per event):
        ["166", "Sep 19 14:31:02", "fw01", "outbound", "1234", "outside",
-        "203.0.113.5", "443", "inside", "10.0.0.5", "52144"]
-
-sha256(literals + vars) == sha256(raw)   →   provably lossless
-                        !=               →   raw stored verbatim, nothing lost`}</code></pre>
+        "203.0.113.5", "443", "inside", "10.0.0.5", "52144"]`}</code></pre>
+              <div className="lp-code-verdict">
+                <div>
+                  <code>sha256(literals + vars) == sha256(raw)</code>
+                  <span aria-hidden="true">→</span>
+                  <DecryptedText text="provably lossless" animateOn="inViewHover" sequential speed={40} className="lp-verdict-ok" encryptedClassName="lp-verdict-enc" />
+                </div>
+                <div>
+                  <code>sha256(literals + vars) != sha256(raw)</code>
+                  <span aria-hidden="true">→</span>
+                  <DecryptedText text="raw stored verbatim, nothing lost" animateOn="inViewHover" sequential speed={30} className="lp-verdict-warn" encryptedClassName="lp-verdict-enc" />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ---- design pillars ---- */}
-      <section className="lp-section">
-        <div className="lp-section-inner">
-          <h2>Design Pillars</h2>
-          <p className="lp-section-sub">Six guarantees that define the architecture.</p>
-          <div className="lp-features-grid">
-            {PILLARS.map((p) => (
-              <Box key={p.title}>
-                <div className="lp-feature">
+        {/* ---- design pillars ---- */}
+        <section className="lp-section">
+          <div className="lp-section-inner">
+            <SectionHead title="Design Pillars">Six guarantees that define the architecture.</SectionHead>
+            <div className="lp-features-grid">
+              {PILLARS.map((p) => (
+                <SpotlightCard key={p.title} className="lp-feature" spotlightColor={SPOT[theme]}>
                   <span className="lp-feature-icon">{p.icon}</span>
                   <h3>{p.title}</h3>
                   <p>{p.desc}</p>
-                </div>
-              </Box>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ---- measured proof ---- */}
-      <section className="lp-section" id="proof">
-        <div className="lp-section-inner">
-          <h2>Measured, Not Estimated</h2>
-          <p className="lp-section-sub">
-            Every figure comes from the benchmark harness in the repository, recorded with the machine it ran on.
-          </p>
-          <div className="lp-metrics-grid">
-            {METRICS.map((m) => (
-              <Box key={m.label}>
-                <div className="lp-metric">
-                  <span className="lp-metric-val">
-                    {m.value}<span className="lp-metric-unit">{m.unit}</span>
-                  </span>
-                  <strong>{m.label}</strong>
-                  <span className="lp-metric-note">{m.note}</span>
-                </div>
-              </Box>
-            ))}
-          </div>
-          <div className="lp-limits">
-            <h3>Stated plainly</h3>
-            <ul>
-              {LIMITS.map((l) => <li key={l}>{l}</li>)}
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* ---- architecture ---- */}
-      <section className="lp-section" id="architecture">
-        <div className="lp-section-inner">
-          <h2>Architecture &amp; Technology Stack</h2>
-          <p className="lp-section-sub">Eight stages from raw syslog to a normalized, verified, queryable event.</p>
-          <div className="lp-pipeline">
-            {STAGES.map((s, i) => (
-              <div key={s} className="lp-pipeline-step">
-                <span className="lp-pipeline-num">{i + 1}</span>
-                <span className="lp-pipeline-name">{s}</span>
-              </div>
-            ))}
-          </div>
-          <LogoLoop
-            className="lp-stack"
-            logos={TECH_LOGOS}
-            speed={40}
-            logoHeight={22}
-            gap={48}
-            hoverSpeed={0}
-            fadeOut
-            fadeOutColor="var(--bg)"
-            ariaLabel="Technology stack"
-          />
-        </div>
-      </section>
-
-      {/* ---- supported sources ---- */}
-      <section className="lp-section" id="sources">
-        <div className="lp-section-inner">
-          <h2>Supported Sources</h2>
-          <p className="lp-section-sub">
-            Eight parser packs ship today. Any other format is onboarded through the Studio: never dropped,
-            stored verbatim until a template passes the byte-exact gate.
-          </p>
-          <div className="lp-sources-grid">
-            {SOURCES.map((s) => (
-              <div key={s} className="lp-source-chip">{s}</div>
-            ))}
-          </div>
-          <div className="lp-byol">
-            <span>Bring your own log</span>
-            <code>logger --server localhost --port 26514 --udp "&lt;your log line&gt;"</code>
-          </div>
-        </div>
-      </section>
-
-      {/* ---- quick start ---- */}
-      <section className="lp-section" id="quickstart">
-        <div className="lp-section-inner">
-          <h2>Run It in One Command</h2>
-          <p className="lp-section-sub">
-            Docker with 4+ cores, 8 GB RAM and 10 GB disk. The container reports healthy after one to two minutes.
-          </p>
-          <Box className="lp-quickstart">
-            <div className="lp-quickstart-body">
-              <pre className="lp-quickstart-cmd"><code>{DOCKER_RUN}</code></pre>
-              <div className="lp-quickstart-side">
-                <h3>Free these host ports</h3>
-                <table className="lp-ports">
-                  <tbody>
-                    {PORTS.map((p) => (
-                      <tr key={p.port}>
-                        <td><code>{p.port}</code></td>
-                        <td>{p.proto}</td>
-                        <td>{p.use}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p>
-                  Then open <code>localhost:6156</code>. Grafana is at <code>/grafana/</code> (admin / aletheia).
-                  No AI key and no internet access are needed.
-                </p>
-              </div>
+                </SpotlightCard>
+              ))}
             </div>
-          </Box>
-        </div>
-      </section>
+          </div>
+        </section>
 
-      {/* ---- requirements traceability ---- */}
-      <section className="lp-section" id="requirements">
-        <div className="lp-section-inner">
-          <h2>Requirement Traceability (a – k)</h2>
-          <p className="lp-section-sub">Every requirement of PS 26156 is addressed and verifiable.</p>
-          <div className="lp-reqs-grid">
-            {REQS.map((r) => (
-              <div key={r.id} className="lp-req">
-                <span className="lp-req-id">{r.id}</span>
-                <div>
-                  <strong>{r.title}</strong>
-                  <span>{r.desc}</span>
+        {/* ---- measured proof ---- */}
+        <section className="lp-section" id="proof">
+          <div className="lp-section-inner">
+            <SectionHead title="Measured, Not Estimated">
+              Every figure comes from the benchmark harness in the repository, recorded with the machine it ran on.
+            </SectionHead>
+            <div className="lp-metrics-grid">
+              {METRICS.map((m) => (
+                <Box key={m.label}>
+                  <div className="lp-metric">
+                    <span className="lp-metric-val">
+                      {m.count !== undefined
+                        ? <CountUp to={m.count} separator="," duration={1.6} />
+                        : m.value}
+                      <span className="lp-metric-unit">{m.unit}</span>
+                    </span>
+                    <strong>{m.label}</strong>
+                    <span className="lp-metric-note">{m.note}</span>
+                  </div>
+                </Box>
+              ))}
+            </div>
+            <div className="lp-limits">
+              <h3>Stated plainly</h3>
+              <ul>
+                {LIMITS.map((l) => <li key={l}>{l}</li>)}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* ---- architecture ---- */}
+        <section className="lp-section" id="architecture">
+          <div className="lp-section-inner">
+            <SectionHead title="Architecture & Technology Stack">
+              Eight stages from raw syslog to a normalized, verified, queryable event.
+            </SectionHead>
+            <motion.div
+              className="lp-pipeline"
+              initial="hidden"
+              whileInView="shown"
+              viewport={{ once: true, amount: 0.5 }}
+              variants={{ shown: { transition: { staggerChildren: 0.08 } } }}
+            >
+              {STAGES.map((s, i) => (
+                <motion.div
+                  key={s}
+                  className="lp-pipeline-step"
+                  variants={{ hidden: { opacity: 0, y: 14, filter: 'blur(6px)' }, shown: { opacity: 1, y: 0, filter: 'blur(0px)' } }}
+                >
+                  <span className="lp-pipeline-num">{i + 1}</span>
+                  <span className="lp-pipeline-name">{s}</span>
+                </motion.div>
+              ))}
+            </motion.div>
+            <LogoLoop
+              className="lp-stack"
+              logos={TECH_LOGOS}
+              speed={40}
+              logoHeight={22}
+              gap={48}
+              hoverSpeed={0}
+              fadeOut
+              fadeOutColor="var(--bg)"
+              ariaLabel="Technology stack"
+            />
+          </div>
+        </section>
+
+        {/* ---- supported sources ---- */}
+        <section className="lp-section" id="sources">
+          <div className="lp-section-inner">
+            <SectionHead title="Supported Sources">
+              Eight parser packs ship today. Any other format is onboarded through the Studio: never dropped,
+              stored verbatim until a template passes the byte-exact gate.
+            </SectionHead>
+            <div className="lp-sources-grid">
+              {SOURCES.map((s) => (
+                <GlareHover key={s} borderRadius="var(--r-pill)" glareColor={theme === 'dark' ? '#ffffff' : '#1c58c9'} glareOpacity={0.25}>
+                  <div className="lp-source-chip">{s}</div>
+                </GlareHover>
+              ))}
+            </div>
+            <div className="lp-byol">
+              <span>Bring your own log</span>
+              <code>logger --server localhost --port 26514 --udp "&lt;your log line&gt;"</code>
+            </div>
+          </div>
+        </section>
+
+        {/* ---- quick start ---- */}
+        <section className="lp-section" id="quickstart">
+          <div className="lp-section-inner">
+            <SectionHead title="Run It in One Command">
+              Docker with 4+ cores, 8 GB RAM and 10 GB disk. The container reports healthy after one to two minutes.
+            </SectionHead>
+            <Box className="lp-quickstart">
+              <div className="lp-quickstart-body">
+                <div className="lp-quickstart-cmd">
+                  <pre><code>{DOCKER_RUN}</code></pre>
+                  <ClickSpark className="lp-copy" sparkColor={theme === 'dark' ? '#6aa5ff' : '#1c58c9'} sparkRadius={18} sparkCount={10}>
+                    <CopyButton text={DOCKER_RUN} label="Copy command" />
+                  </ClickSpark>
+                </div>
+                <div className="lp-quickstart-side">
+                  <h3>Free these host ports</h3>
+                  <table className="lp-ports">
+                    <tbody>
+                      {PORTS.map((p) => (
+                        <tr key={p.port}>
+                          <td><code>{p.port}</code></td>
+                          <td>{p.proto}</td>
+                          <td>{p.use}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p>
+                    Then open <code>localhost:6156</code>. Grafana is at <code>/grafana/</code> (admin / aletheia).
+                    No AI key and no internet access are needed.
+                  </p>
                 </div>
               </div>
-            ))}
+            </Box>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ---- console nav cards ---- */}
-      <section className="lp-section">
-        <div className="lp-section-inner">
-          <h2>Explore the Console</h2>
-          <p className="lp-section-sub">Every part of the pipeline has its own page.</p>
-          <div className="lp-nav-grid">
-            <NavCard to="/dashboard" icon={<IconHome size={20} />} title="Overview" desc="Live ingest, posture score and auto-generated findings." />
-            <NavCard to="/dashboard/events" icon={<IconEvents size={20} />} title="Events Explorer" desc="One OCSF table across every source: filter, search, paginate." />
-            <NavCard to="/dashboard/lineage" icon={<IconLineage size={20} />} title="Lineage" desc="Click a field and the exact source bytes highlight." />
-            <NavCard to="/dashboard/lyra" icon={<IconLyra size={20} />} title="Lyra" desc="Ask questions of your data through guarded, read-only SQL." />
-            <NavCard to="/dashboard/sources" icon={<IconSources size={20} />} title="Sources" desc="Connect log systems; approve the derived template and mapping." />
-            <NavCard to="/dashboard/export" icon={<IconExport size={20} />} title="Export & Supply" desc="Download logs and reports, or stream to a SIEM over TCP." />
-            <NavCard to="/dashboard/alerting" icon={<IconBell size={20} />} title="Alerting" desc="Rules, contact points and policies, evaluated by Grafana." />
-            <NavCard to="/dashboard/demo" icon={<IconDemo size={20} />} title="Demo Console" desc="The guided evaluation scenarios, each with its CLI equivalent." />
-            <NavCard to="/dashboard/settings" icon={<IconSettings size={20} />} title="Settings" desc="AI provider (optional), air-gap mode, connection test." />
+        {/* ---- requirements traceability ---- */}
+        <section className="lp-section" id="requirements">
+          <div className="lp-section-inner">
+            <SectionHead title="Requirement Traceability (a – k)">
+              Every requirement of PS 26156 is addressed and verifiable.
+            </SectionHead>
+            <div className="lp-reqs-grid">
+              {REQS.map((r) => (
+                <SpotlightCard key={r.id} className="lp-req" spotlightColor={SPOT[theme]}>
+                  <span className="lp-req-id">{r.id}</span>
+                  <div>
+                    <strong>{r.title}</strong>
+                    <span>{r.desc}</span>
+                  </div>
+                </SpotlightCard>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ---- footer ---- */}
-      <footer className="lp-footer">
-        <div className="lp-footer-inner">
-          <div className="lp-footer-brand">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
-              <path d="M12 8.2l3.4 7.6H8.6z" />
-            </svg>
-            <span>Aletheia</span>
+        {/* ---- console nav cards ---- */}
+        <section className="lp-section">
+          <div className="lp-section-inner">
+            <SectionHead title="Explore the Console">Every part of the pipeline has its own page.</SectionHead>
+            <div className="lp-nav-grid">
+              <NavCard to="/dashboard" icon={<IconHome size={20} />} title="Overview" desc="Live ingest, posture score and auto-generated findings." />
+              <NavCard to="/dashboard/events" icon={<IconEvents size={20} />} title="Events Explorer" desc="One OCSF table across every source: filter, search, paginate." />
+              <NavCard to="/dashboard/lineage" icon={<IconLineage size={20} />} title="Lineage" desc="Click a field and the exact source bytes highlight." />
+              <NavCard to="/dashboard/lyra" icon={<IconLyra size={20} />} title="Lyra" desc="Ask questions of your data through guarded, read-only SQL." />
+              <NavCard to="/dashboard/sources" icon={<IconSources size={20} />} title="Sources" desc="Connect log systems; approve the derived template and mapping." />
+              <NavCard to="/dashboard/export" icon={<IconExport size={20} />} title="Export & Supply" desc="Download logs and reports, or stream to a SIEM over TCP." />
+              <NavCard to="/dashboard/alerting" icon={<IconBell size={20} />} title="Alerting" desc="Rules, contact points and policies, evaluated by Grafana." />
+              <NavCard to="/dashboard/demo" icon={<IconDemo size={20} />} title="Demo Console" desc="The guided evaluation scenarios, each with its CLI equivalent." />
+              <NavCard to="/dashboard/settings" icon={<IconSettings size={20} />} title="Settings" desc="AI provider (optional), air-gap mode, connection test." />
+            </div>
           </div>
-          <div className="lp-footer-meta">
-            <span>Team ORCA#26 · SIH 2026 · PS 26156</span>
-            <span className="lp-dot">·</span>
-            <span>OCSF 1.3</span>
-            <span className="lp-dot">·</span>
-            <span><IconLock size={12} /> Byte-exact · Merkle-sealed</span>
-            <span className="lp-dot">·</span>
-            <span>MIT License</span>
+        </section>
+
+        {/* ---- footer ---- */}
+        <footer className="lp-footer">
+          <div className="lp-footer-inner">
+            <div className="lp-footer-brand">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z" />
+                <path d="M12 8.2l3.4 7.6H8.6z" />
+              </svg>
+              <span>Aletheia</span>
+            </div>
+            <div className="lp-footer-meta">
+              <span>Team ORCA#26 · SIH 2026 · PS 26156</span>
+              <span className="lp-dot">·</span>
+              <span>OCSF 1.3</span>
+              <span className="lp-dot">·</span>
+              <span><IconLock size={12} /> Byte-exact · Merkle-sealed</span>
+              <span className="lp-dot">·</span>
+              <span>MIT License</span>
+            </div>
+            <div className="lp-footer-tagline">ἀλήθεια — Greek for "truth", literally "un-concealment": nothing hidden, nothing lost.</div>
           </div>
-          <div className="lp-footer-tagline">ἀλήθεια — Greek for "truth", literally "un-concealment": nothing hidden, nothing lost.</div>
-        </div>
-      </footer>
-    </div>
+        </footer>
+      </div>
+    </MotionConfig>
   );
 }
