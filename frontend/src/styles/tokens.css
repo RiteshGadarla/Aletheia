@@ -1,4 +1,5 @@
-/* Design tokens. Light is the default; [data-theme="dark"] redefines the same names.
+/* Design tokens. :root holds the light values; [data-theme="dark"] (the product default, set on
+   <html> in index.html) redefines the same names.
    Nothing outside this file may hard-code a colour, a gap or a font size. */
 
 :root {

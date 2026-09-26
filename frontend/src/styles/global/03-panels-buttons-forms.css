@@ -152,6 +152,14 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* The default look, named: pages write .secondary as the counterpart to .primary. */
+button.secondary,
+.btn.secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
 button.primary,
 .btn.primary {
   background: var(--accent);

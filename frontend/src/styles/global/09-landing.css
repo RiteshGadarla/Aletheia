@@ -3,21 +3,31 @@
    ========================================================================= */
 
 .lp {
+  /* card glows overhang their boxes by 28px; clip (not hidden) so no scroll container is created */
+  overflow-x: clip;
   min-height: 100vh;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
 }
 
-/* ---- top bar ---- */
+/* ---- top bar: clear over the hero, frosted once the page scrolls under it ---- */
 .lp-topbar {
-  position: sticky;
+  position: fixed;
   top: 0;
+  left: 0;
+  right: 0;
   z-index: 100;
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background var(--t-med), border-color var(--t-med), backdrop-filter var(--t-med);
+}
+
+.lp-topbar.scrolled {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom-color: var(--border-soft);
 }
 
 .lp-topbar-inner {
@@ -65,6 +75,8 @@
   justify-content: center;
   width: 32px;
   height: 32px;
+  /* the global button padding (8px 16px) would leave a 32px box zero width and hide the icon */
+  padding: 0;
   border-radius: var(--r-md);
   background: transparent;
   border: 1px solid var(--border);
@@ -78,82 +90,115 @@
   color: var(--text);
 }
 
-.lp-cta-btn {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semi);
-  padding: var(--s2) var(--s4);
-  border-radius: var(--r-md);
-  background: var(--accent);
-  color: var(--accent-fg);
-  border: none;
-  cursor: pointer;
-  transition: background var(--t-fast);
-}
-
-.lp-cta-btn:hover {
-  background: var(--accent-hover);
-}
-
-/* ---- hero ---- */
+/* ---- hero: full-viewport, GhostFibers canvas behind the copy ---- */
 .lp-hero {
   position: relative;
   overflow: hidden;
-  padding: 80px var(--s5) 64px;
+  isolation: isolate;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 112px var(--s5) 96px;
   text-align: center;
 }
 
+/* Fallback when WebGL2 is unavailable; the fibers canvas paints over it otherwise. */
 .lp-hero-bg {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: -3;
   background:
     radial-gradient(ellipse 70% 50% at 50% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
     radial-gradient(ellipse 50% 80% at 80% 100%, color-mix(in srgb, var(--ok) 6%, transparent), transparent);
 }
 
-.lp-hero-inner {
+.ghost-fibers {
   position: relative;
-  z-index: 1;
-  max-width: 800px;
-  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
-.lp-hero-badge {
-  display: inline-block;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semi);
-  padding: var(--s1) var(--s3);
-  border-radius: var(--r-pill);
-  background: var(--accent-soft);
-  color: var(--accent);
-  border: 1px solid var(--accent-border);
-  margin-bottom: var(--s5);
+.lp-hero-fibers {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  animation: lp-fade-in 1.2s ease both;
+}
+
+/* Calms the centre behind the headline and fades the bottom edge into the page. */
+.lp-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 46% 40% at 50% 44%, color-mix(in srgb, var(--bg) 55%, transparent), transparent 70%),
+    linear-gradient(to bottom, transparent 62%, var(--bg));
+}
+
+.lp-hero-inner {
+  position: relative;
+  /* a flex item with auto margins shrinks to its widest child; the headline canvas needs the room */
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  animation: lp-rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+/* ParticleText (components/ParticleText.tsx) sizes its own height from the font. */
+.particle-text {
+  position: relative;
+  display: block;
+  width: 100%;
+  touch-action: pan-y;
+}
+
+.particle-text-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .lp-hero h1 {
-  font-size: clamp(28px, 5vw, 46px);
-  font-weight: var(--fw-bold);
-  line-height: 1.15;
-  margin: 0 0 var(--s4);
-  background: linear-gradient(135deg, var(--text) 40%, var(--accent));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  font-size: clamp(40px, 7.2vw, 80px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  margin: 0;
+  color: var(--text);
+  text-wrap: balance;
 }
 
-.lp-hero-tag {
-  font-size: var(--fs-xl);
-  color: var(--accent);
-  font-weight: var(--fw-medium);
-  margin: 0 0 var(--s4);
+/* Same size as the h1 so "Prove it." reads as its third line; the negative margin takes back the
+   canvas's own glyph padding (0.12em) so the line spacing matches. */
+.lp-hero-title {
+  font-size: clamp(40px, 7.2vw, 80px);
+  font-family: var(--font-ui);
+  margin: -0.06em auto var(--s4);
+}
+
+/* One composited bloom instead of a canvas shadowBlur per particle, which costs every frame. */
+.lp-hero-title canvas {
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 45%, transparent));
 }
 
 .lp-hero-sub {
-  font-size: var(--fs-md);
+  font-size: var(--fs-lg);
   line-height: var(--lh-loose);
   color: var(--text-secondary);
-  max-width: 640px;
+  max-width: 620px;
   margin: 0 auto var(--s6);
+  text-wrap: pretty;
+}
+
+.lp-hero-sub strong {
+  color: var(--text);
+  font-weight: var(--fw-semi);
 }
 
 .lp-hero-actions {
@@ -163,45 +208,115 @@
   flex-wrap: wrap;
 }
 
-/* buttons */
-.lp-btn {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semi);
-  padding: var(--s3) var(--s5);
-  border-radius: var(--r-md);
+/* ---- SpecularButton (components/SpecularButton.tsx); colours arrive as --sb-* props ---- */
+.spec-btn {
+  position: relative;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
   border: none;
+  border-radius: var(--sb-radius);
+  color: var(--sb-text-color);
+  background: color-mix(in srgb, var(--sb-tint) calc(var(--sb-tint-opacity) * 100%), transparent);
+  backdrop-filter: blur(var(--sb-blur));
+  -webkit-backdrop-filter: blur(var(--sb-blur));
+  box-shadow: var(--shadow-md);
+  font-family: inherit;
+  font-weight: var(--fw-semi);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
   cursor: pointer;
-  transition: all var(--t-fast);
+  outline: none;
+  transition: transform 150ms ease, filter var(--t-fast);
 }
 
-.lp-btn.primary {
-  background: var(--accent);
-  color: var(--accent-fg);
-  box-shadow: 0 2px 12px color-mix(in srgb, var(--accent) 30%, transparent);
+/* :not(:disabled) matches the specificity of the global button hover, which would repaint it */
+.spec-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--sb-tint) calc(var(--sb-tint-opacity) * 100%), transparent);
+  color: var(--sb-text-color);
+  filter: brightness(1.08);
 }
 
-.lp-btn.primary:hover {
-  background: var(--accent-hover);
-  transform: translateY(-1px);
+.spec-btn:active {
+  transform: scale(0.97);
 }
 
-.lp-btn.secondary {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
+.spec-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
-.lp-btn.secondary:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
+.spec-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+  transform: none;
+}
+
+.spec-btn-sm {
+  font-size: var(--fs-sm);
+  padding: var(--s2) var(--s4);
+}
+
+.spec-btn-md {
+  font-size: var(--fs-md);
+  padding: var(--s3) var(--s5);
+}
+
+.spec-btn-lg {
+  font-size: var(--fs-lg);
+  padding: var(--s4) var(--s6);
+}
+
+/* Canvas overhangs the button by the component's PAD (20px) so the rim glow is not clipped. */
+.spec-btn-fx {
+  position: absolute;
+  inset: -20px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.spec-btn-fx canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.spec-btn-label {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+@keyframes lp-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes lp-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-hero-inner,
+  .lp-hero-fibers {
+    animation: none;
+  }
 }
 
 /* ---- sections ---- */
 .lp-section {
   padding: 64px var(--s5);
+  scroll-margin-top: var(--header-h);
 }
 
-.lp-section:nth-child(even) {
+/* odd, not even: topbar and hero come first, so this keeps insight/arch/reqs on the surface band */
+.lp-section:nth-child(odd) {
   background: var(--surface);
 }
 
@@ -227,63 +342,77 @@
   margin-right: auto;
 }
 
-/* ---- stats bar ---- */
-.lp-stats-bar {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--r-xl);
-  padding: var(--s5);
-  box-shadow: var(--shadow-md);
-}
-
-.lp-stats-status {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--ok);
-  margin-bottom: var(--s4);
-}
-
-.lp-stats-grid {
+/* ---- BorderGlow (components/BorderGlow.tsx); per-instance colours arrive inline ---- */
+.border-glow {
+  position: relative;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--s4);
+  isolation: isolate;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-sm);
+  transform: translate3d(0, 0, 0.01px);
 }
 
-.lp-stat {
+.border-glow-layer {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px solid transparent;
+  border-radius: inherit;
+}
+
+.border-glow-outer {
+  position: absolute;
+  z-index: 1;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.border-glow-outer-ring {
+  position: absolute;
+  border-radius: inherit;
+}
+
+.border-glow-body {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
-  padding: var(--s3);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
+  min-width: 0;
 }
 
-.lp-stat-val {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
+/* ---- core insight ---- */
+.lp-results-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s4);
+  margin-bottom: var(--s5);
 }
 
-.lp-stat-label {
-  font-size: var(--fs-sm);
-  color: var(--text-secondary);
+.lp-result {
+  padding: var(--s5);
 }
 
-.lp-stat-sub {
+.lp-result-num {
+  display: block;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  color: var(--text-muted);
+  font-weight: var(--fw-semi);
+  color: var(--accent);
+  margin-bottom: var(--s3);
 }
 
-/* ---- core insight / code block ---- */
-.lp-insight {}
+.lp-result h3 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semi);
+  margin: 0 0 var(--s2);
+}
 
-.lp-arch {}
-
-.lp-reqs {}
+.lp-result p {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-loose);
+  color: var(--text-muted);
+  margin: 0;
+}
 
 .lp-code-block {
   background: var(--surface-inset);
@@ -320,21 +449,19 @@
 
 .lp-feature {
   padding: var(--s5);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
-}
-
-.lp-feature:hover {
-  border-color: var(--accent-border);
-  box-shadow: var(--shadow-sm);
 }
 
 .lp-feature-icon {
-  font-size: 28px;
-  display: block;
-  margin-bottom: var(--s3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  margin-bottom: var(--s4);
 }
 
 .lp-feature h3 {
@@ -348,6 +475,77 @@
   line-height: var(--lh-loose);
   color: var(--text-muted);
   margin: 0;
+}
+
+/* ---- measured proof ---- */
+.lp-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--s4);
+}
+
+.lp-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s5);
+}
+
+.lp-metric-val {
+  font-size: var(--fs-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--s2);
+}
+
+.lp-metric-unit {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  letter-spacing: 0;
+  color: var(--accent);
+  margin-left: var(--s1);
+}
+
+.lp-metric strong {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--text-secondary);
+}
+
+.lp-metric-note {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.lp-limits {
+  margin-top: var(--s6);
+  padding: var(--s4) var(--s5);
+  border-left: 3px solid var(--warn-border);
+  border-radius: var(--r-sm);
+  background: var(--warn-soft);
+}
+
+.lp-limits h3 {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  color: var(--warn);
+  margin: 0 0 var(--s2);
+}
+
+.lp-limits ul {
+  margin: 0;
+  padding-left: var(--s5);
+  display: grid;
+  gap: var(--s1);
+}
+
+.lp-limits li {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
 }
 
 /* ---- pipeline ---- */
@@ -387,31 +585,163 @@
   font-weight: var(--fw-medium);
 }
 
-/* ---- tech grid ---- */
-.lp-tech-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--s3);
+/* ---- tech stack loop ---- */
+.lp-stack {
+  margin-top: var(--s7);
+  padding: var(--s4) 0;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
 }
 
-.lp-tech {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s1);
-  padding: var(--s3) var(--s4);
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
+.lp-stack-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semi);
+  color: var(--text-muted);
+  transition: color var(--t-fast);
 }
 
-.lp-tech strong {
-  font-size: var(--fs-sm);
+.lp-stack-item svg {
+  width: 20px;
+  height: 20px;
+}
+
+.lp-stack-item:hover {
   color: var(--text);
 }
 
-.lp-tech span {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
+/* ---- LogoLoop (components/LogoLoop.tsx) ---- */
+.logoloop {
+  position: relative;
+}
+
+.logoloop.horizontal {
+  overflow-x: hidden;
+}
+
+.logoloop.vertical {
+  display: inline-block;
+  height: 100%;
+  overflow: hidden;
+}
+
+.logoloop.scalable {
+  padding-block: calc(var(--logoloop-logoHeight) * 0.1);
+}
+
+.logoloop-track {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  flex-direction: row;
+  width: max-content;
+  will-change: transform;
+  user-select: none;
+}
+
+.logoloop-track.vertical {
+  flex-direction: column;
+  width: 100%;
+  height: max-content;
+}
+
+.logoloop-list {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logoloop-list.vertical {
+  flex-direction: column;
+}
+
+.logoloop-item {
+  flex: none;
+  margin-right: var(--logoloop-gap);
+  font-size: var(--logoloop-logoHeight);
+  line-height: 1;
+}
+
+.logoloop-item.vertical {
+  margin-right: 0;
+  margin-bottom: var(--logoloop-gap);
+}
+
+.logoloop-node {
+  display: inline-flex;
+  align-items: center;
+}
+
+.logoloop-img {
+  display: block;
+  width: auto;
+  height: var(--logoloop-logoHeight);
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.logoloop-item.scalable .logoloop-node,
+.logoloop-item.scalable .logoloop-img {
+  transition: transform 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.logoloop-item.scalable:hover .logoloop-node,
+.logoloop-item.scalable:hover .logoloop-img {
+  transform: scale(1.2);
+}
+
+.logoloop-link {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+  text-decoration: none;
+  transition: opacity 200ms linear;
+}
+
+.logoloop-link:hover {
+  opacity: 0.8;
+}
+
+.logoloop-fade {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  --logoloop-fade: var(--logoloop-fadeColor, var(--bg));
+}
+
+.logoloop-fade.left,
+.logoloop-fade.right {
+  top: 0;
+  bottom: 0;
+  width: clamp(24px, 8%, 120px);
+}
+
+.logoloop-fade.top,
+.logoloop-fade.bottom {
+  left: 0;
+  right: 0;
+  height: clamp(24px, 8%, 120px);
+}
+
+.logoloop-fade.left { left: 0; background: linear-gradient(to right, var(--logoloop-fade), transparent); }
+.logoloop-fade.right { right: 0; background: linear-gradient(to left, var(--logoloop-fade), transparent); }
+.logoloop-fade.top { top: 0; background: linear-gradient(to bottom, var(--logoloop-fade), transparent); }
+.logoloop-fade.bottom { bottom: 0; background: linear-gradient(to top, var(--logoloop-fade), transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .logoloop-track {
+    transform: none !important;
+  }
+
+  .logoloop-item.scalable .logoloop-node,
+  .logoloop-item.scalable .logoloop-img {
+    transition: none;
+  }
 }
 
 /* ---- sources ---- */
@@ -429,6 +759,97 @@
   border: 1px solid var(--border);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+}
+
+/* ---- bring your own log ---- */
+.lp-byol {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-top: var(--s5);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.lp-byol code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  padding: var(--s1) var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-soft);
+  color: var(--text-secondary);
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* ---- quick start ---- */
+.lp-quickstart {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.lp-quickstart-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+
+.lp-quickstart-cmd {
+  margin: 0;
+  padding: var(--s5);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-loose);
+  color: var(--text);
+  background: var(--surface-inset);
+  border-right: 1px solid var(--border-soft);
+  border-radius: 12px 0 0 12px;
+}
+
+.lp-quickstart-side {
+  padding: var(--s5);
+}
+
+.lp-quickstart-side h3 {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semi);
+  margin: 0 0 var(--s3);
+}
+
+.lp-quickstart-side p {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-muted);
+  margin: var(--s4) 0 0;
+}
+
+.lp-quickstart-side code,
+.lp-ports code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text);
+}
+
+.lp-ports {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-xs);
+}
+
+.lp-ports td {
+  padding: var(--s2) var(--s2) var(--s2) 0;
+  border-top: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  vertical-align: top;
+}
+
+.lp-ports td:first-child {
+  font-weight: var(--fw-semi);
 }
 
 /* ---- requirements ---- */
@@ -473,7 +894,8 @@
   font-size: var(--fs-sm);
 }
 
-.lp-req span {
+/* div-scoped so it does not also recolour the .lp-req-id letter */
+.lp-req div span {
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
@@ -494,6 +916,8 @@
   background: var(--surface);
   border: 1px solid var(--border);
   text-align: left;
+  /* the global button rule sets nowrap, which ran descriptions out of the card */
+  white-space: normal;
   cursor: pointer;
   width: 100%;
   transition: all var(--t-fast);
@@ -591,17 +1015,35 @@
 }
 
 /* ---- landing responsive ---- */
+@media (max-width: 1024px) {
+  .lp-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 760px) {
   .lp-topnav a {
     display: none;
   }
 
   .lp-hero {
-    padding: 48px var(--s4) 40px;
+    padding: 96px var(--s4) var(--s7);
   }
 
-  .lp-hero h1 {
-    font-size: 26px;
+  .lp-hero-sub {
+    font-size: var(--fs-md);
+  }
+
+  .lp-results-grid,
+  .lp-metrics-grid,
+  .lp-quickstart-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lp-quickstart-cmd {
+    border-right: none;
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 12px 12px 0 0;
   }
 
   .lp-section {

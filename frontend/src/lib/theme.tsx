@@ -29,11 +29,11 @@ interface Ctx {
   toggle: () => void;
 }
 
-const ThemeCtx = createContext<Ctx>({ theme: 'light', setTheme: () => {}, toggle: () => {} });
+const ThemeCtx = createContext<Ctx>({ theme: 'dark', setTheme: () => {}, toggle: () => {} });
 
-/** Light is the product default; a stored choice wins over it. */
+/** Dark is the product default; a stored choice wins over it. */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => readStored() ?? 'light');
+  const [theme, setThemeState] = useState<Theme>(() => readStored() ?? 'dark');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
