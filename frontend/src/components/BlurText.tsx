@@ -1,5 +1,5 @@
-// BlurText — words (or letters) blur and drop into place when scrolled into view. Ported from
-// React Bits (TS + CSS); adds `as` so it can render a real heading instead of a <p>.
+// BlurText (React Bits, TS port): words blur and drop into place on scroll.
+// Adds `as` so it can render a real heading instead of a <p>.
 import { motion } from 'motion/react';
 import type { Transition } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';

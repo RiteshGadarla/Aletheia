@@ -1,6 +1,6 @@
-// Aletheia product landing page — standalone, no sidebar. Copy tracks README.md and docs/.
+// Aletheia product landing page: standalone, no sidebar. Copy and figures track README.md and docs/.
 import { useEffect, useState } from 'react';
-import { MotionConfig, motion } from 'motion/react';
+import { MotionConfig } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../lib/theme';
 import {
@@ -18,15 +18,20 @@ import { BorderGlow } from '../components/BorderGlow';
 import { LogoLoop } from '../components/LogoLoop';
 import { ParticleText } from '../components/ParticleText';
 import { BlurText } from '../components/BlurText';
-import { CountUp } from '../components/CountUp';
-import { DecryptedText } from '../components/DecryptedText';
-import { SpotlightCard } from '../components/SpotlightCard';
-import { GlareHover } from '../components/GlareHover';
 import { ClickSpark } from '../components/ClickSpark';
 import { CopyButton } from '../components/Bits';
+import { Reveal } from '../components/Reveal';
+import { LogAnatomy } from '../components/landing/LogAnatomy';
+import { SealedLedger } from '../components/landing/SealedLedger';
+import { ProofTerminal } from '../components/landing/ProofTerminal';
+import { PipelineFlow } from '../components/landing/PipelineFlow';
+import { TraceMatrix } from '../components/landing/TraceMatrix';
+import { ConsoleIndex } from '../components/landing/ConsoleIndex';
 import type { LogoItem } from '../components/LogoLoop';
 import type { SpecularButtonProps } from '../components/SpecularButton';
-import type { BorderGlowProps } from '../components/BorderGlow';
+import type { Pillar } from '../components/landing/SealedLedger';
+import type { Req } from '../components/landing/TraceMatrix';
+import type { ConsolePage } from '../components/landing/ConsoleIndex';
 import type { ReactNode } from 'react';
 
 /* ---------------------------------------------------------------- theme-bound colours */
@@ -50,93 +55,42 @@ const PROVE: Record<'dark' | 'light', { color: string; highlightColor: string }>
   light: { color: '#1c58c9', highlightColor: '#4a3aa7' },
 };
 
-// Mesh colours are the categorical blue, teal and violet from tokens.css.
-const GLOW: Record<'dark' | 'light', BorderGlowProps> = {
+// Mesh colours for the one glowing object (the run command): categorical blue, teal, violet.
+const GLOW = {
   dark: { glowColor: '217 90 70', colors: ['#6aa5ff', '#4fc9b6', '#9085e9'], lightSurface: false },
   light: { glowColor: '217 75 45', colors: ['#1c58c9', '#0a6f62', '#4a3aa7'], lightSurface: true },
 };
 
-const SPOT = { dark: 'rgba(106, 165, 255, 0.18)', light: 'rgba(28, 88, 201, 0.10)' } as const;
-
 /* ---------------------------------------------------------------- helpers */
 
-function Box({ children, className }: { children: ReactNode; className?: string }) {
-  const { theme } = useTheme();
+/** Editorial section head: numbered eyebrow and title on the left, the lede on the right. */
+function SectionHead({ index, eyebrow, title, children }: { index: string; eyebrow: string; title: string; children?: ReactNode }) {
   return (
-    <BorderGlow
-      {...GLOW[theme]}
-      className={className}
-      backgroundColor="var(--surface-2)"
-      borderRadius={12}
-      glowRadius={28}
-      edgeSensitivity={28}
-      glowIntensity={theme === 'dark' ? 1 : 0.6}
-    >
-      {children}
-    </BorderGlow>
-  );
-}
-
-function SectionHead({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <>
-      <BlurText as="h2" text={title} className="lp-section-title" delay={70} direction="bottom" />
-      {children && <p className="lp-section-sub">{children}</p>}
-    </>
-  );
-}
-
-function NavCard({ to, icon, title, desc }: { to: string; icon: ReactNode; title: string; desc: string }) {
-  const navigate = useNavigate();
-  const { theme } = useTheme();
-  return (
-    <GlareHover glareColor={theme === 'dark' ? '#6aa5ff' : '#1c58c9'} glareOpacity={0.22} glareSize={300}>
-      <button type="button" className="lp-nav-card" onClick={() => navigate(to)}>
-        <span className="lp-nav-icon">{icon}</span>
-        <span className="lp-nav-body">
-          <strong>{title}</strong>
-          <span>{desc}</span>
-        </span>
-        <span className="lp-nav-arrow" aria-hidden="true">→</span>
-      </button>
-    </GlareHover>
+    <header className="lp-head">
+      <div>
+        <span className="lp-eyebrow">{index} / {eyebrow}</span>
+        <BlurText as="h2" text={title} className="lp-head-title" delay={60} direction="bottom" />
+      </div>
+      {children && <Reveal delay={0.15} y={16}><p className="lp-head-sub">{children}</p></Reveal>}
+    </header>
   );
 }
 
 /* ---------------------------------------------------------------- data */
 
-const RESULTS = [
-  { title: 'Normalization', desc: 'Every variable slot has a meaning, so it maps to an OCSF field: IP_B becomes src_endpoint.ip.' },
-  { title: 'Compression', desc: 'The literal text is stored once per template, not once per event. Only the variables repeat.' },
-  { title: 'Reconstruction', desc: 'Literals + variables rebuild the original line byte for byte, checked against the SHA-256 taken on arrival.' },
-];
-
-const PILLARS: { icon: ReactNode; title: string; desc: string }[] = [
-  { icon: <IconHash size={18} />, title: 'Hash before parse', desc: 'Raw bytes are hashed and written to the bus before anything is parsed. Nothing is ever dropped: a line that fails to match is stored verbatim.' },
+const PILLARS: Pillar[] = [
+  { icon: <IconHash size={18} />, title: 'Hash before parse', desc: 'Raw bytes are hashed and written to the bus before anything is parsed. Nothing is ever dropped: a line that fails to match is kept exactly as received.' },
   { icon: <IconNested size={18} />, title: 'Template engine', desc: 'One parse yields normalization, compression and exact reconstruction. Literals stored once, variables per event.' },
-  { icon: <IconLink size={18} />, title: 'Byte-level lineage', desc: 'Trace any normalized OCSF field back to the exact byte offsets it came from in the original line.' },
+  { icon: <IconLink size={18} />, title: 'Byte-level lineage', desc: 'Any normalized OCSF field traces back to the exact byte offsets it came from in the original line.' },
   { icon: <IconShield size={18} />, title: 'Tamper evidence', desc: 'Per-minute Merkle roots chained over time, with Ed25519-signed daily anchors held off-system.' },
   { icon: <IconCpu size={18} />, title: 'Deterministic hot path', desc: 'Compiled RE2 with linear-time matching. No model ever touches a live event; AI only proposes mappings behind a gate.' },
   { icon: <IconOff size={18} />, title: 'Air-gap ready', desc: 'One image, nothing fetched at run time, telemetry off. A packet capture showed no outbound connections and no DNS lookups.' },
-];
-
-// docs/benchmarks.md — measured on an i7-1360P; every figure is reproducible with the bench harness.
-const METRICS: { value: string; count?: number; unit: string; label: string; note: string }[] = [
-  { value: '19,329', count: 19329, unit: 'events/s', label: 'on one worker', note: '46,040 on eight · in-memory engine path' },
-  { value: '0', unit: 'mismatches', label: 'across 2.04 M reconstructed events', note: 'every event rebuilt and hash-checked' },
-  { value: '0', unit: 'dropped', label: 'of 120,000 generated events', note: 'generated count equals stored count' },
-  { value: '0.27', count: 0.27, unit: 's', label: 'to find one tampered byte', note: 'names the exact Merkle batch and event' },
 ];
 
 const LIMITS = [
   'Reconstruction proves no loss, not correct meaning. Golden tests, replay diff and human review cover mappings.',
   'The per-event SHA-256 costs storage: 1.52× a plain baseline. The template form itself is 10.7% smaller than the text it rebuilds.',
   'The Merkle chain proves stored data has not changed since sealing, not that a device logged the truth.',
-];
-
-const STAGES = [
-  'Collectors (Vector)', 'Ingest bus (Redpanda)', 'Evidence stamp', 'Envelope decoder',
-  'Template matcher', 'Reconstruct + verify', 'OCSF normalizer', 'Sinks',
 ];
 
 // Brand marks are bundled SVG (react-icons), so nothing is fetched. Redpanda, Vector and Loki have
@@ -170,19 +124,37 @@ const TECH_LOGOS: LogoItem[] = TECH.map((t) => ({
   ),
 }));
 
-
-const SOURCES = [
-  'Cisco ASA', 'FortiGate', 'pfSense filterlog', 'Suricata EVE',
-  'OpenVPN', 'Squid access', 'CEF (generic)', 'LEEF (generic)',
+// One real line per shipped parser pack, from backend/packs/tests.
+const SAMPLES: { vendor: string; line: string }[] = [
+  { vendor: 'Cisco ASA', line: '<166>Sep 19 14:31:02 fw01 %ASA-6-302013: Built outbound TCP connection 1234 for outside:203.0.113.5/443' },
+  { vendor: 'FortiGate', line: '<189>date=2026-09-19 time=14:31:05 devname="FGT-EDGE" type="traffic" subtype="forward" srcip=10.0.0.5 dstip=8.8.8.8 dstport=53' },
+  { vendor: 'pfSense', line: '<134>Sep 19 14:31:02 filterlog[1234]: 5,,,1000000103,em0,match,block,in,4,0x0,,64,0,0,DF,6,tcp,60,198.51.100.9,10.0.0.5' },
+  { vendor: 'Suricata EVE', line: '{"timestamp":"2026-09-19T14:31:02.123456+0530","event_type":"alert","src_ip":"198.51.100.9","dest_port":22,"alert":{"signature_id":2001219}}' },
+  { vendor: 'OpenVPN', line: "<29>Sep 19 14:32:11 vpn01 openvpn[812]: 198.51.100.20:50118 TLS: Username/Password authentication failed for username 'analyst1'" },
+  { vendor: 'Squid', line: '1789828262.123    245 10.0.0.5 TCP_TUNNEL/200 5120 CONNECT example.com:443 - HIER_DIRECT/93.184.216.34 -' },
+  { vendor: 'CEF', line: 'CEF:0|VendorX|NGFW|4.2|1002|Connection denied|6|rt=1758359462000 src=198.51.100.9 spt=51514 dst=10.0.0.5 dpt=22 act=deny' },
+  { vendor: 'LEEF', line: 'LEEF:1.0|VendorZ|FWALL|1.4|ACCEPT|cat=traffic  src=10.0.0.5  srcPort=52144  dst=203.0.113.5  dstPort=443  action=accept' },
 ];
+
+const sampleItems = (list: typeof SAMPLES): LogoItem[] => list.map((s) => ({
+  title: s.vendor,
+  node: (
+    <span className="lp-logline">
+      <span className="lp-logline-vendor">{s.vendor}</span>
+      <code>{s.line}</code>
+    </span>
+  ),
+}));
+const SAMPLE_ROW_A = sampleItems(SAMPLES.slice(0, 4).concat(SAMPLES.slice(4)));
+const SAMPLE_ROW_B = sampleItems(SAMPLES.slice(4).concat(SAMPLES.slice(0, 4)));
 
 const PORTS = [
   { port: '6156', proto: 'TCP', use: 'UI, Studio API (/api/) and Grafana (/grafana/)' },
   { port: '26514', proto: 'UDP + TCP', use: 'Syslog input for your own logs' },
 ];
 
-const REQS: { id: string; title: string; desc: string }[] = [
-  { id: 'a', title: 'Preserve raw data without loss', desc: 'Hashed and committed to the bus before parsing; stored verified or verbatim; never dropped' },
+const REQS: Req[] = [
+  { id: 'a', title: 'Preserve raw data without loss', desc: 'Hashed and committed to the bus before parsing; stored verified or exactly as received; never dropped' },
   { id: 'b', title: 'Extract source attributes', desc: 'Templates capture every variable; unmapped slots kept in unmapped' },
   { id: 'c', title: 'Normalize to a taxonomy', desc: 'OCSF, pinned version, typed columns' },
   { id: 'd', title: 'Traceability', desc: 'event_uid, raw_sha256, pack version, byte-level lineage' },
@@ -193,6 +165,18 @@ const REQS: { id: string; title: string; desc: string }[] = [
   { id: 'i', title: 'Reduced parser effort', desc: 'Automatic template derivation, slot typing, mapping proposals' },
   { id: 'j', title: 'Air-gapped', desc: 'docker save / load, nothing fetched at run time, telemetry off, AI optional' },
   { id: 'k', title: 'Containerized', desc: 'All-in-one multi-arch image; per-component images with Docker Compose' },
+];
+
+const CONSOLE: ConsolePage[] = [
+  { to: '/dashboard', icon: <IconHome size={18} />, title: 'Overview', desc: 'Live ingest, posture score and auto-generated findings.' },
+  { to: '/dashboard/events', icon: <IconEvents size={18} />, title: 'Events Explorer', desc: 'One OCSF table across every source: filter, search, paginate.' },
+  { to: '/dashboard/lineage', icon: <IconLineage size={18} />, title: 'Lineage', desc: 'Click a field and the exact source bytes highlight.' },
+  { to: '/dashboard/lyra', icon: <IconLyra size={18} />, title: 'Lyra', desc: 'Ask questions of your data through guarded, read-only SQL.' },
+  { to: '/dashboard/sources', icon: <IconSources size={18} />, title: 'Sources', desc: 'Connect log systems; approve the derived template and mapping.' },
+  { to: '/dashboard/export', icon: <IconExport size={18} />, title: 'Export & Supply', desc: 'Download logs and reports, or stream to a SIEM over TCP.' },
+  { to: '/dashboard/alerting', icon: <IconBell size={18} />, title: 'Alerting', desc: 'Rules, contact points and policies, evaluated by Grafana.' },
+  { to: '/dashboard/demo', icon: <IconDemo size={18} />, title: 'Demo Console', desc: 'The guided evaluation scenarios, each with its CLI equivalent.' },
+  { to: '/dashboard/settings', icon: <IconSettings size={18} />, title: 'Settings', desc: 'AI provider (optional), air-gap mode, connection test.' },
 ];
 
 const DOCKER_RUN = `docker pull ritesh2006/aletheia
@@ -281,7 +265,7 @@ export function HomePage() {
               stagger={500}
               pointerRepel={28}
               repelRadius={90}
-              idleDrift={0.5}
+              idleDrift={0.3}
               maxParticles={7000}
               glow={false}
             />
@@ -298,235 +282,153 @@ export function HomePage() {
           </div>
         </section>
 
-        {/* ---- the core insight ---- */}
+        {/* ---- 01 the core insight: one real line, three readings ---- */}
         <section className="lp-section" id="features">
           <div className="lp-section-inner">
-            <SectionHead title="The Core Insight">
+            <SectionHead index="01" eyebrow="The core insight" title="One parse. Three results.">
               A log line is literal text that repeats on every event of its type, plus variable values that
-              change. Separate the two and one representation does three jobs.
+              change. Separate the two and one representation normalizes, compresses and rebuilds. Hover a
+              value to trace it.
             </SectionHead>
-            <div className="lp-results-grid">
-              {RESULTS.map((r, i) => (
-                <Box key={r.title}>
-                  <div className="lp-result">
-                    <span className="lp-result-num">0{i + 1}</span>
-                    <h3>{r.title}</h3>
-                    <p>{r.desc}</p>
-                  </div>
-                </Box>
-              ))}
-            </div>
-            <div className="lp-code-block">
-              <div className="lp-code-label">Cisco ASA log line → template + variables</div>
-              <pre><code>{`raw:   <166>Sep 19 14:31:02 fw01 %ASA-6-302013: Built outbound TCP connection 1234
-       for outside:203.0.113.5/443 to inside:10.0.0.5/52144
-
-template (stored once):
-       "<" PRI ">" TS " " HOST " %ASA-6-302013: Built " DIR " TCP connection "
-       CONN_ID " for " IF_A ":" IP_A "/" PORT_A " to " IF_B ":" IP_B "/" PORT_B
-
-vars (stored per event):
-       ["166", "Sep 19 14:31:02", "fw01", "outbound", "1234", "outside",
-        "203.0.113.5", "443", "inside", "10.0.0.5", "52144"]`}</code></pre>
-              <div className="lp-code-verdict">
-                <div>
-                  <code>sha256(literals + vars) == sha256(raw)</code>
-                  <span aria-hidden="true">→</span>
-                  <DecryptedText text="provably lossless" animateOn="inViewHover" sequential speed={40} className="lp-verdict-ok" encryptedClassName="lp-verdict-enc" />
-                </div>
-                <div>
-                  <code>sha256(literals + vars) != sha256(raw)</code>
-                  <span aria-hidden="true">→</span>
-                  <DecryptedText text="raw stored verbatim, nothing lost" animateOn="inViewHover" sequential speed={30} className="lp-verdict-warn" encryptedClassName="lp-verdict-enc" />
-                </div>
-              </div>
-            </div>
+            <Reveal amount={0.15}>
+              <LogAnatomy />
+            </Reveal>
           </div>
         </section>
 
-        {/* ---- design pillars ---- */}
+        {/* ---- 02 design pillars as a sealed ledger ---- */}
         <section className="lp-section">
           <div className="lp-section-inner">
-            <SectionHead title="Design Pillars">Six guarantees that define the architecture.</SectionHead>
-            <div className="lp-features-grid">
-              {PILLARS.map((p) => (
-                <SpotlightCard key={p.title} className="lp-feature" spotlightColor={SPOT[theme]}>
-                  <span className="lp-feature-icon">{p.icon}</span>
-                  <h3>{p.title}</h3>
-                  <p>{p.desc}</p>
-                </SpotlightCard>
-              ))}
-            </div>
+            <SectionHead index="02" eyebrow="Design pillars" title="Six guarantees, sealed.">
+              Each guarantee below is sealed with SHA-256 over its own text and the seal before it, the way
+              Aletheia chains its Merkle roots. Change one word and watch what happens.
+            </SectionHead>
+            <SealedLedger pillars={PILLARS} />
           </div>
         </section>
 
-        {/* ---- measured proof ---- */}
+        {/* ---- 03 measured proof ---- */}
         <section className="lp-section" id="proof">
           <div className="lp-section-inner">
-            <SectionHead title="Measured, Not Estimated">
-              Every figure comes from the benchmark harness in the repository, recorded with the machine it ran on.
+            <SectionHead index="03" eyebrow="Proof" title="Measured, not estimated.">
+              Every figure comes from the benchmark harness in the repository, recorded with the machine it
+              ran on (i7-1360P).
             </SectionHead>
-            <div className="lp-metrics-grid">
-              {METRICS.map((m) => (
-                <Box key={m.label}>
-                  <div className="lp-metric">
-                    <span className="lp-metric-val">
-                      {m.count !== undefined
-                        ? <CountUp to={m.count} separator="," duration={1.6} />
-                        : m.value}
-                      <span className="lp-metric-unit">{m.unit}</span>
-                    </span>
-                    <strong>{m.label}</strong>
-                    <span className="lp-metric-note">{m.note}</span>
-                  </div>
-                </Box>
-              ))}
-            </div>
-            <div className="lp-limits">
-              <h3>Stated plainly</h3>
-              <ul>
+            <Reveal amount={0.15}>
+              <ProofTerminal />
+            </Reveal>
+            <Reveal>
+              <ol className="lp-limits">
                 {LIMITS.map((l) => <li key={l}>{l}</li>)}
-              </ul>
-            </div>
+              </ol>
+            </Reveal>
           </div>
         </section>
 
-        {/* ---- architecture ---- */}
+        {/* ---- 04 architecture ---- */}
         <section className="lp-section" id="architecture">
           <div className="lp-section-inner">
-            <SectionHead title="Architecture & Technology Stack">
-              Eight stages from raw syslog to a normalized, verified, queryable event.
+            <SectionHead index="04" eyebrow="Architecture" title="Eight stages, raw first.">
+              The raw bytes are on disk and hashed before any parsing starts. Nothing past that point can
+              lose them: a line that fails to match or to rebuild is kept exactly as received.
             </SectionHead>
-            <motion.div
-              className="lp-pipeline"
-              initial="hidden"
-              whileInView="shown"
-              viewport={{ once: true, amount: 0.5 }}
-              variants={{ shown: { transition: { staggerChildren: 0.08 } } }}
-            >
-              {STAGES.map((s, i) => (
-                <motion.div
-                  key={s}
-                  className="lp-pipeline-step"
-                  variants={{ hidden: { opacity: 0, y: 14, filter: 'blur(6px)' }, shown: { opacity: 1, y: 0, filter: 'blur(0px)' } }}
-                >
-                  <span className="lp-pipeline-num">{i + 1}</span>
-                  <span className="lp-pipeline-name">{s}</span>
-                </motion.div>
-              ))}
-            </motion.div>
-            <LogoLoop
-              className="lp-stack"
-              logos={TECH_LOGOS}
-              speed={40}
-              logoHeight={22}
-              gap={48}
-              hoverSpeed={0}
-              fadeOut
-              fadeOutColor="var(--bg)"
-              ariaLabel="Technology stack"
-            />
+            <PipelineFlow />
+            <Reveal delay={0.2}>
+              <LogoLoop
+                className="lp-stack"
+                logos={TECH_LOGOS}
+                speed={40}
+                logoHeight={22}
+                gap={48}
+                hoverSpeed={0}
+                fadeOut
+                fadeOutColor="var(--bg)"
+                ariaLabel="Technology stack"
+              />
+            </Reveal>
           </div>
         </section>
 
-        {/* ---- supported sources ---- */}
-        <section className="lp-section" id="sources">
+        {/* ---- 05 supported sources: real lines scrolling past ---- */}
+        <section className="lp-section lp-section-bleed" id="sources">
           <div className="lp-section-inner">
-            <SectionHead title="Supported Sources">
-              Eight parser packs ship today. Any other format is onboarded through the Studio: never dropped,
-              stored verbatim until a template passes the byte-exact gate.
+            <SectionHead index="05" eyebrow="Sources" title="Eight formats today. Any tomorrow.">
+              These are real lines from the shipped parser packs. An unknown format is never dropped: it is
+              kept exactly as received and onboarded through the Studio once a template passes the
+              byte-exact gate.
             </SectionHead>
-            <div className="lp-sources-grid">
-              {SOURCES.map((s) => (
-                <GlareHover key={s} borderRadius="var(--r-pill)" glareColor={theme === 'dark' ? '#ffffff' : '#1c58c9'} glareOpacity={0.25}>
-                  <div className="lp-source-chip">{s}</div>
-                </GlareHover>
-              ))}
+          </div>
+          <Reveal amount={0.1}>
+            <div className="lp-loglines">
+              <LogoLoop logos={SAMPLE_ROW_A} speed={32} logoHeight={13} gap={40} hoverSpeed={0} fadeOut fadeOutColor="var(--bg)" ariaLabel="Sample log lines" />
+              <LogoLoop logos={SAMPLE_ROW_B} speed={32} direction="right" logoHeight={13} gap={40} hoverSpeed={0} fadeOut fadeOutColor="var(--bg)" ariaLabel="More sample log lines" />
             </div>
-            <div className="lp-byol">
-              <span>Bring your own log</span>
-              <code>logger --server localhost --port 26514 --udp "&lt;your log line&gt;"</code>
-            </div>
+          </Reveal>
+          <div className="lp-section-inner">
+            <Reveal delay={0.1} y={16}>
+              <div className="lp-byol">
+                <span>Bring your own log</span>
+                <code>logger --server localhost --port 26514 --udp "&lt;your log line&gt;"</code>
+              </div>
+            </Reveal>
           </div>
         </section>
 
-        {/* ---- quick start ---- */}
+        {/* ---- 06 quick start ---- */}
         <section className="lp-section" id="quickstart">
           <div className="lp-section-inner">
-            <SectionHead title="Run It in One Command">
-              Docker with 4+ cores, 8 GB RAM and 10 GB disk. The container reports healthy after one to two minutes.
+            <SectionHead index="06" eyebrow="Quick start" title="Run it in one command.">
+              Docker with 4+ cores, 8 GB RAM and 10 GB disk. The container reports healthy after one to two
+              minutes. No AI key and no internet access are needed.
             </SectionHead>
-            <Box className="lp-quickstart">
-              <div className="lp-quickstart-body">
+            <Reveal amount={0.15}>
+              <BorderGlow
+                {...GLOW[theme]}
+                className="lp-quickstart"
+                backgroundColor="var(--surface-inset)"
+                borderRadius={12}
+                glowRadius={28}
+                edgeSensitivity={28}
+                glowIntensity={theme === 'dark' ? 1 : 0.6}
+              >
                 <div className="lp-quickstart-cmd">
                   <pre><code>{DOCKER_RUN}</code></pre>
                   <ClickSpark className="lp-copy" sparkColor={theme === 'dark' ? '#6aa5ff' : '#1c58c9'} sparkRadius={18} sparkCount={10}>
                     <CopyButton text={DOCKER_RUN} label="Copy command" />
                   </ClickSpark>
                 </div>
-                <div className="lp-quickstart-side">
-                  <h3>Free these host ports</h3>
-                  <table className="lp-ports">
-                    <tbody>
-                      {PORTS.map((p) => (
-                        <tr key={p.port}>
-                          <td><code>{p.port}</code></td>
-                          <td>{p.proto}</td>
-                          <td>{p.use}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <p>
-                    Then open <code>localhost:6156</code>. Grafana is at <code>/grafana/</code> (admin / aletheia).
-                    No AI key and no internet access are needed.
-                  </p>
+                <div className="lp-quickstart-foot">
+                  {PORTS.map((p) => (
+                    <span key={p.port}><code>{p.port}</code> {p.proto}: {p.use}</span>
+                  ))}
+                  <span>Then open <code>localhost:6156</code>; Grafana is at <code>/grafana/</code> (admin / aletheia).</span>
                 </div>
-              </div>
-            </Box>
+              </BorderGlow>
+            </Reveal>
           </div>
         </section>
 
-        {/* ---- requirements traceability ---- */}
+        {/* ---- 07 requirements traceability ---- */}
         <section className="lp-section" id="requirements">
           <div className="lp-section-inner">
-            <SectionHead title="Requirement Traceability (a – k)">
-              Every requirement of PS 26156 is addressed and verifiable.
+            <SectionHead index="07" eyebrow="Traceability" title="Requirements (a) to (k), met.">
+              Every requirement of SIH Problem Statement 26156 and where Aletheia answers it.
             </SectionHead>
-            <div className="lp-reqs-grid">
-              {REQS.map((r) => (
-                <SpotlightCard key={r.id} className="lp-req" spotlightColor={SPOT[theme]}>
-                  <span className="lp-req-id">{r.id}</span>
-                  <div>
-                    <strong>{r.title}</strong>
-                    <span>{r.desc}</span>
-                  </div>
-                </SpotlightCard>
-              ))}
-            </div>
+            <TraceMatrix reqs={REQS} />
           </div>
         </section>
 
-        {/* ---- console nav cards ---- */}
+        {/* ---- 08 console index ---- */}
         <section className="lp-section">
           <div className="lp-section-inner">
-            <SectionHead title="Explore the Console">Every part of the pipeline has its own page.</SectionHead>
-            <div className="lp-nav-grid">
-              <NavCard to="/dashboard" icon={<IconHome size={20} />} title="Overview" desc="Live ingest, posture score and auto-generated findings." />
-              <NavCard to="/dashboard/events" icon={<IconEvents size={20} />} title="Events Explorer" desc="One OCSF table across every source: filter, search, paginate." />
-              <NavCard to="/dashboard/lineage" icon={<IconLineage size={20} />} title="Lineage" desc="Click a field and the exact source bytes highlight." />
-              <NavCard to="/dashboard/lyra" icon={<IconLyra size={20} />} title="Lyra" desc="Ask questions of your data through guarded, read-only SQL." />
-              <NavCard to="/dashboard/sources" icon={<IconSources size={20} />} title="Sources" desc="Connect log systems; approve the derived template and mapping." />
-              <NavCard to="/dashboard/export" icon={<IconExport size={20} />} title="Export & Supply" desc="Download logs and reports, or stream to a SIEM over TCP." />
-              <NavCard to="/dashboard/alerting" icon={<IconBell size={20} />} title="Alerting" desc="Rules, contact points and policies, evaluated by Grafana." />
-              <NavCard to="/dashboard/demo" icon={<IconDemo size={20} />} title="Demo Console" desc="The guided evaluation scenarios, each with its CLI equivalent." />
-              <NavCard to="/dashboard/settings" icon={<IconSettings size={20} />} title="Settings" desc="AI provider (optional), air-gap mode, connection test." />
-            </div>
+            <SectionHead index="08" eyebrow="The console" title="Every stage has a page." />
+            <ConsoleIndex pages={CONSOLE} />
           </div>
         </section>
 
         {/* ---- footer ---- */}
         <footer className="lp-footer">
+          <Reveal y={16} amount={0.4}>
           <div className="lp-footer-inner">
             <div className="lp-footer-brand">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -544,8 +446,9 @@ vars (stored per event):
               <span className="lp-dot">·</span>
               <span>MIT License</span>
             </div>
-            <div className="lp-footer-tagline">ἀλήθεια — Greek for "truth", literally "un-concealment": nothing hidden, nothing lost.</div>
+            <div className="lp-footer-tagline">ἀλήθεια: Greek for "truth", literally "un-concealment": nothing hidden, nothing lost.</div>
           </div>
+          </Reveal>
         </footer>
       </div>
     </MotionConfig>
