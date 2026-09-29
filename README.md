@@ -5,7 +5,7 @@
   <img alt="Aletheia" src="docs/assets/aletheia-logo-light.png" width="420">
 </picture>
 
-### Universal Log Pre-processing Framework
+### Universal Log Pre-Processing Framework
 
 **Normalize everything. Lose nothing. Prove it.**
 
