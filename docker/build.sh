@@ -684,7 +684,7 @@ there; it is stored encrypted in the container and never leaves it otherwise.
 | 26514 udp/tcp | Syslog input — send your own logs |
 | 26515 tcp | Syslog, octet-counted framing |
 | 26516 tcp | Syslog over TLS |
-| 29099 tcp | Supply stream out — point a SIEM or collector here once the Export page enables it |
+| 29099 tcp | Supply stream out: point a SIEM or collector here once the Export page enables it |
 
 Send a log line:
 
