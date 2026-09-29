@@ -22,6 +22,12 @@ Normalized OCSF records, each traceable back to its raw line.
 
 ![Events Explorer](images/02-events-explorer-dark.png)
 
+### 02b. Event lineage
+
+Clicking an event opens its byte map: each raw slot highlights the OCSF field it filled.
+
+![Event lineage](images/02b-event-lineage-dark.png)
+
 ### 03. Sources
 
 Five transports at once, each with its own severity mix and error count.
