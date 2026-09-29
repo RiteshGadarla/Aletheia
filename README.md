@@ -5,7 +5,7 @@
   <img alt="Aletheia" src="docs/assets/aletheia-logo-light.png" width="420">
 </picture>
 
-### Universal Lossless Log Pre-processing Framework
+### Universal Log Pre-processing Framework
 
 **Normalize everything. Lose nothing. Prove it.**
 
@@ -39,29 +39,21 @@ Built by **Team ORCA#26** for **Smart India Hackathon 2026, Problem Statement 26
 You only need Docker (4+ cores, **8 GB RAM for Docker**, 10 GB disk). One command starts the whole
 pipeline.
 
-> [!IMPORTANT]
-> **Free these host ports before you run it.** Nothing else on the host needs to be free: every datastore
-> runs inside the container and is never published.
->
-> | Host port | Protocol | Used for |
-> | :--- | :--- | :--- |
-> | **6156** | TCP | UI, Studio API (`/api/`) and Grafana (`/grafana/`) |
-> | **26514** | UDP + TCP | Syslog input for your own logs |
-> | **29099** | TCP | Optional. Supply stream out to a SIEM or collector, off until the Export page enables it |
->
-> Check that they are free (no output means free):
->
-> ```bash
-> # Linux / macOS
-> sudo lsof -nP -i :6156 -i :26514
-> # Windows (PowerShell)
-> netstat -ano | findstr ":6156 :26514"
-> ```
->
-> If one is taken, change only the host side, e.g. `-p 16156:6156`, and open `http://localhost:16156`.
+Kill conflicting ports
+ ```bash
+ # Linux / macOS
+ sudo lsof -nP -i :6156 -i :26514
+ # Windows (PowerShell)
+ netstat -ano | findstr ":6156 :26514"
+ ```
 
+Pull Docker Image
 ```bash
 docker pull ritesh2006/aletheia
+```
+
+Run Docker Image
+```bash
 docker run -d --name aletheia -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -v aletheia-data:/data --add-host=host.docker.internal:host-gateway ritesh2006/aletheia
 ```
 
