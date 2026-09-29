@@ -15,6 +15,7 @@ from ..ingest import onboarding
 from ..ingest.forward import backfill
 from ..ingest.sources import Source, TYPES, validate
 from ..llm.assistant import ask_ai
+from .samples import INTERNAL_SOURCE_IDS
 from .state import get_state
 
 router = APIRouter()
@@ -40,6 +41,7 @@ def _view(s: Source) -> dict[str, Any]:
     recent = sum(n for sec, n in (ps.series if ps else []) if sec >= now - 10)
     return {
         "id": s.id, "name": s.name or s.id, "type": s.type, "config": s.config, "enabled": s.enabled,
+        "rules_only": s.rules_only,
         "state": s.state, "attempts": s.attempts, "created_at": s.created_at, "history": s.history[-10:],
         **st.connectors.status(s.id),
         "lines": ps.lines if ps else 0, "bytes": ps.bytes if ps else 0, "errors": ps.errors if ps else 0,
@@ -56,12 +58,14 @@ class SourceIn(BaseModel):
     name: str = ""
     config: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = True
+    rules_only: bool | None = None       # unset: on for our own generators, off for anything else
 
 
 class SourcePatch(BaseModel):
     name: str | None = None
     config: dict[str, Any] | None = None
     enabled: bool | None = None
+    rules_only: bool | None = None
 
 
 @router.get("/sources")
@@ -75,8 +79,11 @@ def list_sources() -> dict[str, Any]:
 def create_source(body: SourceIn) -> dict[str, Any]:
     st = get_state()
     try:
+        rules_only = (body.id in INTERNAL_SOURCE_IDS if body.rules_only is None
+                      else body.rules_only)
         src = st.registry.add(Source(id=body.id, type=body.type, name=body.name,
-                                     config=body.config, enabled=body.enabled))
+                                     config=body.config, enabled=body.enabled,
+                                     rules_only=rules_only))
     except KeyError as e:
         raise HTTPException(409, str(e)) from e
     except (ValueError, TypeError) as e:
@@ -188,18 +195,22 @@ class DecisionIn(BaseModel):
 
 
 def _ai_mapper() -> onboarding.AIMapper:
-    """The configured LLM maps each unique format; ask_ai never raises and reports why it declined."""
+    """The LLM is asked only about the slots the heuristics left unmapped, one request per unique
+    format. ask_ai never raises and reports why it declined."""
     st = get_state()
     cfg = st.settings.llm_config()
-    return lambda tpl, hint, feedback: ask_ai(tpl, cfg, counter=st.usage, class_hint=hint, feedback=feedback)
+    return lambda tpl, hint, feedback, only_slots: ask_ai(
+        tpl, cfg, counter=st.usage, class_hint=hint, feedback=feedback, only_slots=only_slots)
 
 
 def _run_proposal(s: Source, class_hint: int | None, feedback: str) -> dict[str, Any]:
     st = get_state()
     if not any(True for _ in st.raw.query(s.id, limit=1)):
         raise HTTPException(409, "no raw lines collected yet")
+    # rules_only sources never reach the LLM, whatever Settings says, so an outage or a rate
+    # limit cannot stall their onboarding.
     prop = onboarding.propose(st.raw, s.id, s.attempts, class_hint=class_hint, feedback=feedback,
-                              repo=st.repo, ai=_ai_mapper())
+                              repo=st.repo, ai=None if s.rules_only else _ai_mapper())
     st.registry.update(s.id, state="review")
     return prop
 

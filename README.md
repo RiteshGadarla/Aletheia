@@ -47,6 +47,7 @@ pipeline.
 > | :--- | :--- | :--- |
 > | **6156** | TCP | UI, Studio API (`/api/`) and Grafana (`/grafana/`) |
 > | **26514** | UDP + TCP | Syslog input for your own logs |
+> | **29099** | TCP | Optional. Supply stream out to a SIEM or collector, off until the Export page enables it |
 >
 > Check that they are free (no output means free):
 >
@@ -274,7 +275,8 @@ writes, deletes or changes settings.
 
 The **Export** page downloads raw lines, OCSF events or the audit trail, and builds reports. The
 **supply stream** feeds a SIEM or collector over TCP (`raw`, `tagged`, `json`, `syslog`, `cef` or
-`ocsf`), either listening on `127.0.0.1:9099` (optional IP/CIDR allowlist) or pushing to a
+`ocsf`), either listening on `:9099` (optional IP/CIDR allowlist; publish it with `-p 29099:9099`
+to reach it from outside the container) or pushing to a
 collector. Raw lines are always carried whole, so a receiver can re-check the SHA-256.
 
 ## Command-line tools

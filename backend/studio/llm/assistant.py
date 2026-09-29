@@ -91,10 +91,20 @@ def build_user_prompt(template: TemplateProposal, slots: list[SlotInfo], send_mo
 
 def ask_ai(template: TemplateProposal, cfg: LLMConfig, *, provider: Provider | None = None,
            counter: UsageCounter | None = None, class_hint: int | None = None,
-           feedback: str = "") -> AIResult:
-    """One request per cluster plus at most one validation retry. Never raises."""
+           feedback: str = "", only_slots: list[str] | None = None) -> AIResult:
+    """One request per cluster plus at most one validation retry. Never raises.
+
+    `only_slots` restricts the question to the slots the heuristics could not map. The whole
+    template still goes in the prompt, so the model keeps the surrounding literals as context,
+    but it is asked about, and may answer for, those slots alone.
+    """
     origin = origin_tag(cfg)
     slots = template.slots or []
+    if only_slots is not None:
+        want = set(only_slots)
+        slots = [s for s in slots if s.name in want]
+        if not slots:
+            return AIResult(ok=False, origin="heuristic", reason="no unmapped slots to ask about")
     slot_names = [s.name for s in slots]
 
     try:

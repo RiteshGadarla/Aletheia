@@ -19,9 +19,44 @@ const SEV_COLOR: Record<string, string> = {
   info: 'var(--sev-info)', notice: 'var(--sev-notice)', warn: 'var(--sev-warn)', risk: 'var(--sev-risk)',
 };
 const MIN_LINES = 100;
-/** Enough lines collected; the server is masking samples and building the mapping in the background. */
-const preparing = (s: SourceInfo) => s.state === 'collecting' && (s.ready_for_review || s.lines >= MIN_LINES);
 const PREP_TEXT = 'Masking sensitive values and mapping fields to OCSF…';
+const COLLECTED_TEXT = 'All logs are collected';
+/** The sample is complete, so the server is masking and mapping in the background. */
+const sampleFull = (s: SourceInfo) => s.state !== 'collecting' || s.ready_for_review || s.lines >= MIN_LINES;
+
+/**
+ * Onboarding stages, held long enough to read: the collected note for a second, then masking
+ * for two more, even when the server finishes the mapping sooner than that.
+ */
+type Stage = 'collecting' | 'collected' | 'masking' | 'live';
+const COLLECTED_MS = 1000;
+const HOLD_MS = COLLECTED_MS + 2000;
+
+function useStage(s: SourceInfo): Stage {
+  const full = sampleFull(s);
+  const seenPartial = useRef(false);
+  const fullAt = useRef<number | null>(null);
+  const [, bump] = useState(0);
+  // A source already past collecting when this mounted is never held back.
+  if (!full) { seenPartial.current = true; fullAt.current = null; }
+  else if (seenPartial.current && fullAt.current === null) fullAt.current = Date.now();
+
+  const since = fullAt.current === null ? HOLD_MS : Date.now() - fullAt.current;
+  const stage: Stage = !full ? 'collecting'
+    : since < COLLECTED_MS ? 'collected'
+      : since < HOLD_MS || s.state === 'collecting' ? 'masking' : 'live';
+
+  useEffect(() => {
+    const at = fullAt.current;
+    if (at === null || (stage !== 'collected' && stage !== 'masking')) return;
+    const wait = (stage === 'collected' ? COLLECTED_MS : HOLD_MS) - (Date.now() - at);
+    if (wait <= 0) return;
+    const t = setTimeout(() => bump((n) => n + 1), wait);
+    return () => clearTimeout(t);
+  }, [stage]);
+
+  return stage;
+}
 const TYPE_LABEL: Record<string, string> = {
   tcp: 'TCP stream', udp_listen: 'UDP listener', http_stream: 'HTTP stream', websocket: 'WebSocket',
   loki_pull: 'Loki pull', rest_cursor: 'REST API', push: 'Pushed to Aletheia',
@@ -60,8 +95,16 @@ export function SeverityBar({ by, fill }: { by: Record<string, number>; fill?: b
 
 function StatusCell({ s }: { s: SourceInfo }) {
   const kind: Record<SourceState, BadgeKind> = { collecting: 'plain', review: 'info', approved: 'ok', rejected: 'bad' };
-  if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
-  if (preparing(s)) {
+  const stage = useStage(s);
+  if (stage === 'collected') {
+    return (
+      <div className="stack-sm" style={{ gap: 4 }} title={COLLECTED_TEXT}>
+        <Badge kind="info">Collected</Badge>
+        <div className="progress"><i style={{ width: '100%' }} /></div>
+      </div>
+    );
+  }
+  if (stage === 'masking') {
     return (
       <div className="stack-sm" style={{ gap: 4 }} title={PREP_TEXT}>
         <Badge kind="info">Masking…</Badge>
@@ -69,7 +112,7 @@ function StatusCell({ s }: { s: SourceInfo }) {
       </div>
     );
   }
-  if (s.state === 'collecting') {
+  if (stage === 'collecting') {
     return (
       <div className="stack-sm" style={{ gap: 4 }}>
         <Badge kind="plain">Collecting</Badge>
@@ -77,6 +120,7 @@ function StatusCell({ s }: { s: SourceInfo }) {
       </div>
     );
   }
+  if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
   return <Badge kind={kind[s.state]}>{s.state === 'approved' ? 'Approved' : 'Rejected'}</Badge>;
 }
 
@@ -256,15 +300,9 @@ function PatternWalk({ clusters }: { clusters: SourceCluster[] }) {
         </div>
         <div className="panel-right row-tight">
           <Badge kind={g === null ? 'plain' : g.ok ? 'ok' : 'bad'}>{g === null ? 'check not run' : g.ok ? 'rebuilds byte-for-byte' : 'check failed'}</Badge>
-          {c.mapping.origin.startsWith('ai:')
-            ? <Badge kind="info" title="Mapped by the LLM from this format's samples; rules filled any gaps">AI · {c.mapping.origin.slice(3)}</Badge>
-            : <Badge kind="plain" title={c.mapping.ai_note ?? undefined}>Rules{c.mapping.ai_note ? ' (AI not used)' : ''}</Badge>}
           <Confidence value={c.mapping.confidence} />
         </div>
       </header>
-      {c.mapping.ai_note && (
-        <p className="hint panel-pad">Mapped by rules: {c.mapping.ai_note}. Retry after fixing the AI settings to get an LLM mapping.</p>
-      )}
       <div className="panel-body wk-body">
         <div className="wk-nav">
           <button onClick={() => go(-1)} disabled={clusters.length < 2}>← Previous</button>
@@ -331,6 +369,7 @@ function PatternWalk({ clusters }: { clusters: SourceCluster[] }) {
 function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: () => void; onClose: () => void }) {
   const { toast } = useNotify();
   const rev = useAsync(() => api.sourceReview(src.id), [src.id, src.state, src.attempts]);
+  const stage = useStage(src);
   const [approver, setApprover] = useState(() => { try { return localStorage.getItem('aletheia.approver') ?? ''; } catch { return ''; } });
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -381,9 +420,11 @@ function ReviewTab({ src, onChanged, onClose }: { src: SourceInfo; onChanged: ()
       {rev.error && <ErrorState error={rev.error} what="the proposal" />}
       {!proposal && !rev.loading && (
         <div className="btn-row">
-          {busy || preparing(src)
-            ? <p className="hint sn-prep" style={{ margin: 0 }} aria-live="polite"><i />{PREP_TEXT}</p>
-            : <p className="hint" style={{ margin: 0 }}>{`Collecting logs: ${src.lines} of about ${MIN_LINES} needed.`}</p>}
+          {stage === 'collected'
+            ? <p className="hint" style={{ margin: 0 }} aria-live="polite">{COLLECTED_TEXT}.</p>
+            : busy || stage === 'masking'
+              ? <p className="hint sn-prep" style={{ margin: 0 }} aria-live="polite"><i />{PREP_TEXT}</p>
+              : <p className="hint" style={{ margin: 0 }}>{`Collecting logs: ${src.lines} of about ${MIN_LINES} needed.`}</p>}
           <button className="primary" disabled={busy || src.lines === 0} onClick={() => void act('propose')}>{busy ? 'Working…' : 'Generate proposal'}</button>
         </div>
       )}
@@ -555,10 +596,11 @@ function ConnStatus({ s }: { s: SourceInfo }) {
   return <span className={`conn ${tone}`} title={s.error || undefined}><i />{s.enabled ? s.status : 'paused'}</span>;
 }
 
-function StateBadge({ s }: { s: SourceInfo }) {
+function StateBadge({ stage, s }: { stage: Stage; s: SourceInfo }) {
+  if (stage === 'collected') return <Badge kind="info">Collected</Badge>;
+  if (stage === 'masking') return <Badge kind="info">Masking…</Badge>;
+  if (stage === 'collecting') return <Badge kind="plain">Collecting</Badge>;
   if (s.state === 'review') return <Badge kind="info">Ready to approve</Badge>;
-  if (preparing(s)) return <Badge kind="info">Masking…</Badge>;
-  if (s.state === 'collecting') return <Badge kind="plain">Collecting</Badge>;
   return <Badge kind={s.state === 'approved' ? 'ok' : 'bad'}>{s.state === 'approved' ? 'Approved' : 'Rejected'}</Badge>;
 }
 
@@ -566,7 +608,8 @@ function SourceCard({ s, onOpen, onToggle, onRemove }: {
   s: SourceInfo; onOpen: () => void; onToggle: () => void; onRemove: () => void;
 }) {
   const Icon = TYPE_ICON[s.type] ?? IconSources;
-  const ready = s.state === 'review';
+  const stage = useStage(s);
+  const ready = stage === 'live' && s.state === 'review';
   return (
     <article className={`src-card${ready ? ' ready' : ''}${s.enabled ? '' : ' paused'}`} onClick={onOpen}>
       <header className="sn-head">
@@ -575,7 +618,7 @@ function SourceCard({ s, onOpen, onToggle, onRemove }: {
           <div className="sn-name truncate" title={s.id}>{s.name || s.id}</div>
           <div className="sn-meta">{TYPE_LABEL[s.type] ?? s.type}<span aria-hidden="true">·</span><ConnStatus s={s} /></div>
         </div>
-        <StateBadge s={s} />
+        <StateBadge stage={stage} s={s} />
       </header>
 
       <dl className="sn-metrics">
@@ -584,12 +627,17 @@ function SourceCard({ s, onOpen, onToggle, onRemove }: {
         <div><dt>Errors</dt><dd className={s.errors ? 'bad' : ''}>{s.errors}</dd></div>
       </dl>
 
-      {preparing(s) ? (
+      {stage === 'collected' ? (
+        <div className="sn-block" aria-live="polite">
+          <div className="sn-block-h"><span>{COLLECTED_TEXT}</span><span className="mono">{MIN_LINES} / {MIN_LINES}</span></div>
+          <div className="progress"><i style={{ width: '100%' }} /></div>
+        </div>
+      ) : stage === 'masking' ? (
         <div className="sn-block" aria-live="polite">
           <div className="sn-block-h"><span className="sn-prep"><i />{PREP_TEXT}</span></div>
           <div className="progress indet"><i /></div>
         </div>
-      ) : s.state === 'collecting' ? (
+      ) : stage === 'collecting' ? (
         <div className="sn-block">
           <div className="sn-block-h"><span>Collecting a sample</span><span className="mono">{Math.min(s.lines, MIN_LINES)} / {MIN_LINES}</span></div>
           <div className="progress"><i style={{ width: `${Math.min(100, (s.lines / MIN_LINES) * 100)}%` }} /></div>

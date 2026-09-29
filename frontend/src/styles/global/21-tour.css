@@ -95,6 +95,11 @@
   font-weight: var(--fw-bold);
 }
 
+/* The provider step lists three equal options rather than ordered steps, so the items carry no
+   number pill and each label sits inline with its one-line explanation. */
+.tour-choices li { align-items: baseline; gap: var(--s1); color: var(--text-muted); font-size: var(--fs-sm); }
+.tour-choices b { color: var(--text); }
+
 .tour-status {
   display: flex;
   align-items: center;

@@ -1,4 +1,5 @@
-"""Onboarding maps each unique format with the LLM first, and falls back to rules (no network)."""
+"""Onboarding maps each unique format with the rules first, asking the LLM only about the slots
+the rules could not map (no network)."""
 
 from __future__ import annotations
 
@@ -33,42 +34,52 @@ def _slot_of(tpl: Any, prev_word: str) -> str:
     return next(s.name for s in tpl.slots if (s.prev_lit or "").strip().endswith(prev_word))
 
 
+def _slot_of_name(rows: list[dict[str, Any]], type_prefix: str) -> str:
+    return next(r["slot"] for r in rows if r["type"].startswith(type_prefix))
+
+
 class FakeAI:
-    """Maps `outcome` to status_id the way an LLM should; records every call."""
+    """Fills whichever slots it is asked about; records every call."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[Any, int | None, str]] = []
+        self.calls: list[tuple[Any, int | None, str, list[str] | None]] = []
 
-    def __call__(self, tpl: Any, hint: int | None, feedback: str) -> AIResult:
-        self.calls.append((tpl, hint, feedback))
-        slot = _slot_of(tpl, "outcome")
+    def __call__(self, tpl: Any, hint: int | None, feedback: str,
+                 only_slots: list[str] | None = None) -> AIResult:
+        self.calls.append((tpl, hint, feedback, only_slots))
+        asked = list(only_slots or [s.name for s in tpl.slots])
         mp = MappingProposal(class_uid=3002, activity_id=1, origin="ai:fake/model", confidence=0.9,
-                             mappings=[FieldMapping(slot=slot, path="status_id", confidence=0.9,
-                                                    enum={"success": 1, "failure": 2},
-                                                    evidence=["outcome words are auth status"])])
+                             mappings=[FieldMapping(slot=asked[0], path="user.name", confidence=0.9,
+                                                    evidence=["the digits after `user u` name the account"])])
         return AIResult(ok=True, proposal=mp, origin="ai:fake/model")
 
 
-def test_ai_maps_each_unique_format_once(store: MemoryRawStore) -> None:
+def test_ai_is_asked_only_about_the_slots_the_rules_could_not_map(store: MemoryRawStore) -> None:
     ai = FakeAI()
     prop = onboarding.propose(store, "src", ai=ai, feedback="outcome is a status, not an action")
-    assert prop["clusters"] and len(ai.calls) == len(prop["clusters"])   # per format, not per line
-    assert all(fb == "outcome is a status, not an action" for _, _, fb in ai.calls)
+    assert prop["clusters"] and ai.calls                        # per format, not per line
+    for tpl, hint, fb, only in ai.calls:
+        assert only and set(only) < {s.name for s in tpl.slots}          # a strict subset
+        assert hint == 4001                                              # the rules' own class
+        assert fb == "outcome is a status, not an action"
     m = prop["clusters"][0]["mapping"]
-    assert m["origin"] == "ai:fake/model" and m["ai_note"] is None
-    row = next(r for r in m["rows"] if r["path"] == "status_id")
-    assert row["evidence"] == ["outcome words are auth status"]
+    assert m["origin"] == "heuristic+ai:fake/model" and m["ai_note"] is None
 
 
-def test_rules_fill_slots_the_ai_left_unmapped(store: MemoryRawStore) -> None:
+def test_heuristic_mappings_stand_and_the_ai_only_fills_gaps(store: MemoryRawStore) -> None:
     rows = onboarding.propose(store, "src", ai=FakeAI())["clusters"][0]["mapping"]["rows"]
     ip = next(r for r in rows if r["type"].startswith("ip"))
     assert ip["path"] == "src_endpoint.ip"                      # from the rules' `from` context
-    assert ip["evidence"][0].startswith("rules: ")
+    assert not ip["evidence"][0].startswith("origin=")          # untouched by the model
+    outcome = next(r for r in rows if r["slot"] == _slot_of_name(rows, "enum"))
+    assert outcome["path"] == "status_id"                       # the rules got this one too
+    gap = next(r for r in rows if r["path"] == "user.name")
+    assert gap["evidence"][0].startswith("origin=ai:fake/model")
 
 
 def test_declined_ai_falls_back_to_rules_and_says_why(store: MemoryRawStore) -> None:
-    def off(tpl: Any, hint: int | None, feedback: str) -> AIResult:
+    def off(tpl: Any, hint: int | None, feedback: str,
+            only_slots: list[str] | None = None) -> AIResult:
         return AIResult(ok=False, reason="no AI provider configured")
     m = onboarding.propose(store, "src", ai=off)["clusters"][0]["mapping"]
     assert m["origin"] == "heuristic" and m["ai_note"] == "no AI provider configured"
@@ -82,24 +93,21 @@ def test_no_mapper_still_produces_a_rules_proposal(store: MemoryRawStore) -> Non
 def test_ai_mapping_that_fails_the_gate_is_replaced_by_rules(store: MemoryRawStore,
                                                               monkeypatch: pytest.MonkeyPatch) -> None:
     def gate(p: dict[str, Any], tokens: Any) -> dict[str, Any]:
-        return {"ok": p["mapping"]["origin"] != "ai:fake/model"}
+        return {"ok": "ai:fake/model" not in p["mapping"]["origin"]}
     monkeypatch.setattr(onboarding, "_gate", gate)
     c = onboarding.propose(store, "src", ai=FakeAI())["clusters"][0]
     assert c["gate"]["ok"] is True and c["mapping"]["origin"] == "heuristic"
     assert c["mapping"]["ai_note"] == "AI mapping failed the reconstruction gate"
 
 
-def test_merge_never_overrides_ai_slots_or_reuses_its_paths() -> None:
-    ai = MappingProposal(class_uid=4001, activity_id=1, origin="ai:x/y", unmapped_keep=["b", "c"],
-                         mappings=[FieldMapping(slot="a", path="src_endpoint.ip")])
-    rules = MappingProposal(class_uid=4001, activity_id=1, mappings=[
-        FieldMapping(slot="a", path="dst_endpoint.ip", evidence=["ctx"]),   # AI owns slot a
-        FieldMapping(slot="b", path="src_endpoint.ip", evidence=["ctx"]),   # AI owns this path
-        FieldMapping(slot="c", path="user.name", evidence=["key"]),         # a genuine gap
-    ])
-    got = onboarding._merge(ai, rules)
-    assert {(m.slot, m.path) for m in got.mappings} == {("a", "src_endpoint.ip"), ("c", "user.name")}
-    assert got.unmapped_keep == ["b"] and got.origin == "ai:x/y"
+def test_a_format_the_rules_fully_cover_costs_no_ai_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    full = MappingProposal(class_uid=4001, activity_id=1, unmapped_keep=[],
+                           mappings=[FieldMapping(slot="x", path="message")])
+    monkeypatch.setattr(onboarding, "propose_mapping", lambda t, h=None: full)
+    ai = FakeAI()
+    chosen, rules, why = onboarding._map_all([object()], None, "", ai)[0]
+    assert ai.calls == [] and chosen is rules is full
+    assert why == "rules mapped every slot; no AI request needed"
 
 
 # ------------------------------------------------------------------ rules and allow-list fixes

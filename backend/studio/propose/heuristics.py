@@ -21,7 +21,7 @@ from ..slottype.synonyms import ROLE_PATHS, context_role, lookup
 
 log = logging.getLogger("studio.propose")
 
-_KEY_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_.\-]*)\s*[:=]\s*$")
+_KEY_RE = re.compile(r"[\"']?([A-Za-z_][A-Za-z0-9_.\-]*)[\"']?\s*[:=]\s*[\"']?$")
 
 DEFAULT_CLASS_UID = 4001          # Network Activity: perimeter-device default (spec §10.2)
 CLASS_NAMES = {4001: "Network Activity", 4002: "HTTP Activity", 4003: "DNS Activity",
@@ -68,7 +68,11 @@ def _word_enum_lookup(table: Any) -> dict[str, int]:
 
 
 def _extract_kv_key(prev_lit: str) -> str | None:
-    """Trailing `key=` / `key:` in the literal right before a slot (KV, CEF, LEEF formats)."""
+    """Trailing `key=` / `key:` / `"key":` in the literal right before a slot.
+
+    The optional quotes are what make JSON sources work: a JSON line writes `,"latency_ms":` and
+    `,"service":"`, so a bare-key pattern matches neither.
+    """
     m = _KEY_RE.search(prev_lit or "")
     return m.group(1) if m else None
 

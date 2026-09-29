@@ -18,7 +18,6 @@ directly (2026-09):
 from __future__ import annotations
 
 import json
-import logging
 import time
 from typing import Any
 
@@ -30,8 +29,6 @@ from ..core.models import ConnTest
 from ..core.settings import is_gemini_model
 from .base import LLMError, parse_json_text, redact, with_retry
 from .schema import to_gemini_schema
-
-log = logging.getLogger("studio.llm.gemini")
 
 DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
@@ -142,12 +139,3 @@ class GeminiProvider:
         names = sorted(n for m in models if m.name and is_gemini_model(n := m.name.split("/")[-1]))
         return ConnTest(ok=True, latency_ms=latency, json_mode="response_schema", models=names,
                         provider=self.name, model=self.model)
-
-    def list_models(self) -> list[str]:
-        try:
-            models = list(self._client.models.list(config={"page_size": 200}))
-            names = [m.name.split("/")[-1] for m in models if m.name]
-            return sorted(n for n in names if is_gemini_model(n))      # Gemini only
-        except Exception as exc:                                                     # noqa: BLE001
-            log.info("model listing unavailable: %s", type(exc).__name__)
-            return []

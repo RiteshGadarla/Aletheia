@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from ..cluster.engine import ClusterEngine
 from ..core.models import MappingProposal, TemplateProposal
 from ..derive.exact import derive_exact
-from ..propose.heuristics import propose_mapping
+from ..propose.heuristics import merge_ai_suggestion, propose_mapping
 from .rawstore import RawStore
 
 log = logging.getLogger("studio.onboarding")
@@ -211,33 +211,38 @@ def _gate(p: dict[str, Any], tokens) -> dict[str, Any] | None:
 
 
 # (template, class_hint, reviewer feedback) -> llm.assistant.AIResult. Never raises.
-AIMapper = Callable[[TemplateProposal, "int | None", str], Any]
+AIMapper = Callable[[TemplateProposal, "int | None", str, "list[str] | None"], Any]
 AI_WORKERS = 2                                   # free tiers cap tokens per minute
-
-
-def _merge(ai: MappingProposal, rules: MappingProposal) -> MappingProposal:
-    """AI mapping first; rules fill only slots the AI left unmapped, never a path it already used."""
-    taken = {fm.slot for fm in ai.mappings}
-    used = {fm.path for fm in ai.mappings}
-    fills = [fm.model_copy(update={"evidence": ["rules: " + e for e in fm.evidence] or ["rules"]})
-             for fm in rules.mappings if fm.slot not in taken and fm.path not in used]
-    mapped = taken | {fm.slot for fm in fills}
-    return ai.model_copy(update={"mappings": [*ai.mappings, *fills],
-                                 "unmapped_keep": [s for s in ai.unmapped_keep if s not in mapped]})
 
 
 def _map_all(tpls: list[TemplateProposal], class_hint: int | None, feedback: str,
              ai: AIMapper | None) -> list[tuple[MappingProposal, MappingProposal, str | None]]:
-    """Per cluster: (chosen mapping, rules mapping, why rules were used or None). AI calls overlap."""
+    """Per cluster: (chosen mapping, rules mapping, why rules stood alone or None).
+
+    The heuristics map first and always stand. Only the slots they could not map are sent to the
+    model, narrowed to the class the heuristics chose, so a format the rules fully cover costs no
+    AI request at all. Calls for the remaining clusters overlap.
+    """
     rules = [propose_mapping(t, class_hint) for t in tpls]
     if ai is None:
         return [(r, r, "no AI mapper attached") for r in rules]
-    with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
-        results = list(pool.map(lambda t: ai(t, class_hint, feedback), tpls))
+
+    jobs = [(i, t, r) for i, (t, r) in enumerate(zip(tpls, rules)) if r.unmapped_keep]
+    answers: dict[int, Any] = {}
+    if jobs:
+        with ThreadPoolExecutor(max_workers=AI_WORKERS) as pool:
+            got = list(pool.map(
+                lambda j: ai(j[1], class_hint or j[2].class_uid, feedback, list(j[2].unmapped_keep)),
+                jobs))
+        answers = {j[0]: res for j, res in zip(jobs, got)}
+
     out = []
-    for r, res in zip(rules, results):
-        if getattr(res, "ok", False) and res.proposal is not None:
-            out.append((_merge(res.proposal, r), r, None))
+    for i, r in enumerate(rules):
+        res = answers.get(i)
+        if res is None:
+            out.append((r, r, "rules mapped every slot; no AI request needed"))
+        elif getattr(res, "ok", False) and res.proposal is not None:
+            out.append((merge_ai_suggestion(r, res.proposal, getattr(res, "origin", "")), r, None))
         else:
             out.append((r, r, getattr(res, "reason", None) or "AI mapping unavailable"))
     return out
@@ -267,8 +272,14 @@ def _cluster_payload(sid: str, cl: Any, tpl: TemplateProposal, mp: MappingPropos
     return p, c
 
 
+# Measured over the nine generators in sources/generators/servers at 2000 lines each: a cap of 8
+# parses 94% of lines (llm 71%, shop 86%), 16 reaches 99%, and 32 reaches 100% with no cluster
+# thinner than 5 samples. The tail is real formats, not noise, so truncating it strands them.
+MAX_CLUSTERS = 32
+
+
 def propose(store: RawStore, sid: str, attempt: int = 0, *, class_hint: int | None = None,
-            feedback: str = "", limit: int = 2000, max_clusters: int = 8,
+            feedback: str = "", limit: int = 2000, max_clusters: int = MAX_CLUSTERS,
             repo: Repo | None = None, ai: AIMapper | None = None) -> dict[str, Any]:
     """Cluster the stream, derive one byte-exact template per format, then map it.
 

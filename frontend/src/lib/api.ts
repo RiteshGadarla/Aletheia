@@ -51,6 +51,15 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** Masking and mapping can come back in a blink on small samples, too fast to read. */
+const MASK_MIN_MS = 2000;
+
+/** Resolves with the call's result, never before `ms` has passed. Failures surface at once. */
+async function atLeast<T>(ms: number, work: Promise<T>): Promise<T> {
+  const [out] = await Promise.all([work, new Promise((r) => setTimeout(r, ms))]);
+  return out;
+}
+
 const qs = (q: Record<string, string | number | undefined>): string => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(q)) if (v !== undefined && v !== '') p.set(k, String(v));
@@ -135,7 +144,7 @@ export const api = {
   sourceReview: (id: string): Promise<{ source: SourceInfo; proposal: SourceProposal | null }> =>
     http(`/sources/${encodeURIComponent(id)}/review`),
   sourcePropose: (id: string): Promise<SourceProposal> =>
-    http(`/sources/${encodeURIComponent(id)}/propose`, { method: 'POST', body: '{}' }),
+    atLeast(MASK_MIN_MS, http(`/sources/${encodeURIComponent(id)}/propose`, { method: 'POST', body: '{}' })),
   sourceDecide: (id: string, b: { action: 'approve' | 'reject' | 'retry'; approver: string; reason?: string; feedback?: string; class_hint?: number }): Promise<{ source: SourceInfo; proposal?: SourceProposal; backfilled?: number; packs?: string[]; bus?: boolean }> =>
     http(`/sources/${encodeURIComponent(id)}/decision`, { method: 'POST', body: JSON.stringify(b) }),
 

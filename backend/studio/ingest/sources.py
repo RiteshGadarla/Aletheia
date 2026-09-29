@@ -32,6 +32,7 @@ class Source:
     config: dict[str, Any] = field(default_factory=dict)
     name: str = ""
     enabled: bool = True
+    rules_only: bool = False      # never consult the LLM for this source; heuristics decide alone
     state: str = "collecting"
     attempts: int = 0
     approved_ns: int = 0          # lines at or after this go live; earlier ones are backfilled

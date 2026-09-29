@@ -243,6 +243,7 @@ ENV PATH=/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin 
     ALETHEIA_DEMO_RATE=200 \
     ALETHEIA_DEMO_SAMPLES=asa,fortigate,cef \
     ALETHEIA_SAMPLES_UDP_PORT=5516 \
+    ALETHEIA_SUPPLY_HOST=0.0.0.0 \
     ALETHEIA_RESERVED_UDP_PORTS=5514 \
     ALETHEIA_SERVE_PY=/opt/aletheia/sources/generators/servers/serve.py \
     ALETHEIA_DEMO_SCRIPT=/app/demo/scenarios.py \
@@ -275,9 +276,12 @@ ENV PATH=/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin 
 VOLUME ["/data"]
 
 # 6156 is the only HTTP port: nginx serves the UI, /api/ and /grafana/. The rest are syslog
-# ingest (5514 udp/tcp, 5515 octet-counted, 6514 TLS); publish them on uncommon host ports:
-#   -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -p 26515:5515 -p 26516:6514
-EXPOSE 6156 5514/udp 5514/tcp 5515/tcp 6514/tcp
+# ingest (5514 udp/tcp, 5515 octet-counted, 6514 TLS) and 9099, the Export page's supply stream
+# in listen mode; publish them on uncommon host ports:
+#   -p 6156:6156 -p 26514:5514/udp -p 26514:5514/tcp -p 26515:5515 -p 26516:6514 -p 29099:9099
+# 9099 stays shut until someone enables the stream on the Export page, and it honours that
+# page's IP/CIDR allow-list.
+EXPOSE 6156 5514/udp 5514/tcp 5515/tcp 6514/tcp 9099/tcp
 
 HEALTHCHECK --interval=15s --timeout=10s --start-period=180s --retries=10 \
   CMD /usr/local/bin/healthcheck.sh

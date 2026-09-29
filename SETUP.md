@@ -322,7 +322,7 @@ that runs Studio under the Python debugger with breakpoints.
 | Loki | internal | `:3100` |
 | Prometheus | internal | `:9090` |
 | Engine worker metrics | internal | `:9108` |
-| Supply stream | off by default | `127.0.0.1:9099` when enabled on the Export page |
+| Supply stream | off by default; `-p 29099:9099` to reach it | `127.0.0.1:9099` when enabled on the Export page |
 | Demo log servers | — | `:9101-9106` (`make gens`) |
 
 "Internal" means the service runs inside the container and is not reachable from the host.

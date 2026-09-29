@@ -1,4 +1,4 @@
-// First-visit guided tour: provider → any demo server → masking → human decision → dashboard + Grafana.
+// First-visit guided tour: provider → any demo server → collection → human decision → dashboard + Grafana.
 // Interactive: the ring and tip follow the exact next control live; nothing is forced, every step skippable.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -6,7 +6,7 @@ import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { GrafanaLogo, grafanaOverviewUrl, useAlertingStatus } from '../lib/alerting';
-import type { SourceInfo } from '../lib/types';
+import type { LlmSettings, Provider, SourceInfo } from '../lib/types';
 
 const KEY = 'aletheia.tour';
 const EVT = 'aletheia:tour';
@@ -37,7 +37,7 @@ function find(sel: string, text?: RegExp): Element | null {
 /** One possible next action; the first move whose element is on screen is the one highlighted. */
 interface Move { find: () => Element | null; tip: string; wait?: boolean }
 
-interface Ctx { done: boolean; sources: SourceInfo[]; grafana: string | null }
+interface Ctx { done: boolean; sources: SourceInfo[]; grafana: string | null; provider: Provider }
 
 interface Step {
   path?: string;
@@ -49,6 +49,7 @@ interface Step {
   idle?: (c: Ctx) => ReactNode;   // status while waiting on the app rather than the user
   doneMsg?: string;
   next?: string;
+  skipNext?: string;      // primary label while the step is unfinished: proceeding is a real choice
 }
 
 const collecting = (xs: SourceInfo[]) => [...xs].reverse().find((x) => x.state === 'collecting') ?? xs[xs.length - 1];
@@ -56,7 +57,7 @@ const collecting = (xs: SourceInfo[]) => [...xs].reverse().find((x) => x.state =
 function Progress({ s }: { s?: SourceInfo }) {
   if (!s) return <>Waiting for the source to appear…</>;
   if (s.state === 'collecting' && (s.ready_for_review || s.lines >= MIN_LINES)) {
-    return <>Sample collected. <b>Masking sensitive values</b> and mapping fields…</>;
+    return <>Sample collected. <b>Deriving the template</b> and mapping fields…</>;
   }
   const pct = Math.min(100, Math.round((s.lines / MIN_LINES) * 100));
   return (
@@ -74,9 +75,9 @@ const STEPS: Step[] = [
       <>
         <p>Logs from any vendor, turned into one OCSF schema, <b>losslessly</b>, and a human signs off before anything is normalized.</p>
         <ol className="tour-plan">
-          <li><span>1</span>Pick an AI provider</li>
+          <li><span>1</span>Choose how mappings get suggested</li>
           <li><span>2</span>Start any demo log server you like</li>
-          <li><span>3</span>Watch it get collected and masked</li>
+          <li><span>3</span>Watch it get collected and mapped</li>
           <li><span>4</span>Approve or reject the mapping</li>
         </ol>
         <p className="hint">About three minutes, hands on. Leave any time.</p>
@@ -85,17 +86,27 @@ const STEPS: Step[] = [
     next: 'Start the tour',
   },
   {
-    path: '/dashboard/settings', kicker: 'Step 1 of 4', title: 'Choose an LLM provider',
+    path: '/dashboard/settings', kicker: 'Step 1 of 4', title: 'How should mappings be suggested?',
     body: () => (
-      <p>The AI only <i>suggests</i> field mappings. <b>Local</b> keeps everything on your machine, <b>Gemini</b> is
-        cloud, <b>None</b> runs on heuristics alone. Any choice works.</p>
+      <>
+        <p>Aletheia maps fields with built-in heuristics. A model, if you connect one, only fills the slots the
+          heuristics could not place, and it never sees a live event.</p>
+        <ul className="tour-plan tour-choices">
+          <li><b>None</b> heuristics alone. Nothing leaves this machine, and nothing here needs a key.</li>
+          <li><b>Local model</b> Ollama, llama.cpp, vLLM or LM Studio on your own hardware.</li>
+          <li><b>Gemini</b> cloud, with samples masked before they are sent.</li>
+        </ul>
+        <p className="hint">Pick whichever suits you. The rest of the tour works the same either way, and you can
+          change it later on this page.</p>
+      </>
     ),
     moves: [
       { find: () => find(`:is(${OVERLAYS}) :is(.modal-foot, footer, .modal-footer) button.primary`), tip: 'Save your choice' },
-      { find: () => find('.provider-grid'), tip: 'Pick any provider' },
+      { find: () => find('.provider-grid'), tip: 'Pick whichever you prefer' },
     ],
-    doneMsg: 'Provider saved. Nice.',
+    doneMsg: 'Saved. That choice is yours to change any time.',
     next: 'Continue to Demo',
+    skipNext: 'Keep what I have',
   },
   {
     path: '/dashboard/demo', kicker: 'Step 2 of 4', title: 'Pick a demo server',
@@ -110,17 +121,28 @@ const STEPS: Step[] = [
     ],
   },
   {
-    path: '/dashboard/sources', kicker: 'Step 3 of 4', title: 'Collecting and masking',
-    body: () => (
-      <p>Raw lines are stored first, untouched. Before any sample reaches the LLM, IPs, users, hosts and secrets are
-        <b> masked</b> into typed placeholders, so the model sees the shape, never your data.</p>
-    ),
+    path: '/dashboard/sources', kicker: 'Step 3 of 4', title: 'Collecting and mapping',
+    body: ({ sources, provider }) => {
+      const s = collecting(sources);
+      // The bundled servers onboard rules-only, so on this path nothing is sent anywhere at all.
+      if (s?.rules_only || provider === 'none') {
+        return (
+          <p>Raw lines are stored first, untouched. The bundled servers are mapped by the built-in heuristics
+            on this machine, so <b>nothing is sent anywhere</b>, whichever provider you picked.</p>
+        );
+      }
+      return (
+        <p>Raw lines are stored first, untouched. Your own sources ask {provider === 'local' ? 'your local model'
+          : 'Gemini'} about the slots the heuristics could not place, and IPs, users, hosts and secrets are
+          <b> masked</b> into typed placeholders first, so the model sees the shape, never your data.</p>
+      );
+    },
     moves: [
       { find: () => find('.src-connect .modal-foot button.primary'), tip: 'Confirm with Connect' },
       { find: () => find('.src-card:not(.ready)'), tip: 'Collecting and masking…', wait: true },
     ],
     idle: ({ sources }) => <Progress s={collecting(sources)} />,
-    doneMsg: 'Masking done, a mapping is ready.',
+    doneMsg: 'A mapping is ready.',
     next: 'Review it',
   },
   {
@@ -202,6 +224,7 @@ export function Tour() {
   });
   const [done, setDone] = useState(false);
   const [sources, setSources] = useState<SourceInfo[]>([]);
+  const [provider, setProvider] = useState<Provider>('none');
   const baseline = useRef<Record<string, string> | null>(null);
   const grafana = grafanaOverviewUrl(useAlertingStatus().status);
   const nav = useNavigate();
@@ -225,11 +248,20 @@ export function Tour() {
     const on = (e: Event) => {
       const d = (e as CustomEvent).detail;
       if (d === 'restart') go(0);
-      else if (d === 'provider' && step === 1) setDone(true);
+      else if (d === 'provider') {
+        api.getSettings().then((x: LlmSettings) => setProvider(x.provider)).catch(() => { /* keep the last value */ });
+        if (step === 1) setDone(true);
+      }
     };
     window.addEventListener(EVT, on);
     return () => window.removeEventListener(EVT, on);
   }, [go, step]);
+
+  // Whatever the user already had before the tour started.
+  useEffect(() => {
+    if (step === null) return;
+    api.getSettings().then((x: LlmSettings) => setProvider(x.provider)).catch(() => { /* keep the default */ });
+  }, [step]);
 
   // Connect on the Demo page lands on Sources, which completes step 2.
   useEffect(() => {
@@ -268,7 +300,7 @@ export function Tour() {
   }, [step, go]);
 
   if (step === null || !s) return null;
-  const ctx: Ctx = { done, sources, grafana };
+  const ctx: Ctx = { done, sources, grafana, provider };
   const last = step === STEPS.length - 1;
   const pad = 6;
   const status = !s.moves || last ? null
@@ -312,7 +344,7 @@ export function Tour() {
           <span className="grow" />
           {step > 0 && !last && <button onClick={() => go(step - 1)}>Back</button>}
           <button className={`primary${done ? ' tour-pulse' : ''}`} onClick={() => go(step + 1)}>
-            {s.next ?? (s.moves && !done ? 'Skip step' : 'Next')}
+            {(!done && s.skipNext) || s.next || (s.moves && !done ? 'Skip step' : 'Next')}
           </button>
         </div>
       </section>

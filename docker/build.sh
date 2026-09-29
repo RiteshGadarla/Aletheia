@@ -667,6 +667,7 @@ gunzip -c aletheia-${ALETHEIA_VERSION}.tar.gz | docker load
 docker run -d --name aletheia \\
   -p 6156:6156 \\
   -p 26514:5514/udp -p 26514:5514/tcp -p 26515:5515/tcp -p 26516:6514/tcp \\
+  -p 29099:9099 \\
   ${IMAGE}
 \`\`\`
 
@@ -683,6 +684,7 @@ there; it is stored encrypted in the container and never leaves it otherwise.
 | 26514 udp/tcp | Syslog input — send your own logs |
 | 26515 tcp | Syslog, octet-counted framing |
 | 26516 tcp | Syslog over TLS |
+| 29099 tcp | Supply stream out — point a SIEM or collector here once the Export page enables it |
 
 Send a log line:
 

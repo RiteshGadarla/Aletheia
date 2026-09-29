@@ -331,6 +331,8 @@ export type SourceState = 'collecting' | 'review' | 'approved' | 'rejected';
 
 export interface SourceInfo {
   id: string; name: string; type: string; config: Record<string, unknown>; enabled: boolean;
+  /** Onboards on heuristics alone, whatever Settings says; on by default for the bundled servers. */
+  rules_only: boolean;
   state: SourceState; attempts: number; created_at: number; status: string; error: string; lines: number; bytes: number;
   errors: number; eps: number; last_seen: number | null; by_severity: Record<string, number>;
   has_proposal: boolean; ready_for_review: boolean;

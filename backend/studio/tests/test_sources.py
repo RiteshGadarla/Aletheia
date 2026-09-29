@@ -55,6 +55,37 @@ def test_create_validates(client: Any) -> None:
     assert client.patch("/api/v1/sources/fw", json={"enabled": False}).json()["status"] == "passive"
 
 
+def test_internal_generators_default_to_rules_only(client: Any) -> None:
+    """Our own generators onboard without the LLM; anything else keeps the normal AI-assisted path."""
+    from studio.api.samples import INTERNAL_SOURCE_IDS
+    assert "llm-cluster" in INTERNAL_SOURCE_IDS and "asa-fw" in INTERNAL_SOURCE_IDS
+
+    internal = {"id": "asa-fw", "type": "tcp", "config": {"host": "127.0.0.1", "port": 9101}}
+    assert client.post("/api/v1/sources", json=internal).json()["rules_only"] is True
+
+    outside = {"id": "customer-fw", "type": "tcp", "config": {"host": "10.0.0.1", "port": 514}}
+    assert client.post("/api/v1/sources", json=outside).json()["rules_only"] is False
+
+    forced = {"id": "quiet-fw", "type": "tcp", "config": {"host": "10.0.0.2", "port": 514},
+              "rules_only": True}
+    assert client.post("/api/v1/sources", json=forced).json()["rules_only"] is True
+    assert client.patch("/api/v1/sources/quiet-fw", json={"rules_only": False}).json()["rules_only"] is False
+
+
+def test_rules_only_source_never_calls_the_ai(client: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("studio.api.sources._ai_mapper",
+                        lambda: (_ for _ in ()).throw(AssertionError("AI mapper built")))
+    client.post("/api/v1/sources", json={"id": "llm-cluster", "type": "tcp",
+                                         "config": {"host": "127.0.0.1", "port": 9111}})
+    client.post("/api/v1/ingest/llm-cluster", content="\n".join(_lines("llm", 300)))
+    _flush(client)
+    r = client.post("/api/v1/sources/llm-cluster/propose", json={})
+    assert r.status_code == 200
+    prop = r.json()
+    assert prop["clusters"]
+    assert all(c["mapping"]["origin"] == "heuristic" for c in prop["clusters"])
+
+
 def test_onboarding_approve_reject_retry(client: Any) -> None:
     client.post("/api/v1/ingest/app-live", content="\n".join(_lines("app", 300)))
     _flush(client)

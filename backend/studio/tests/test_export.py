@@ -411,3 +411,16 @@ def test_push_mode_validates_target() -> None:
         LogSupplyServer().configure(enabled=True, mode="push", target="")
     with pytest.raises(SupplyError):
         LogSupplyServer().configure(mode="broadcast")
+
+
+def test_supply_stream_is_reachable_from_outside_the_image() -> None:
+    """The stream is useless if the image keeps its port shut or binds the container's loopback.
+
+    Both halves are packaging, not code, so nothing in the Python suite would otherwise catch a
+    regression here.
+    """
+    from .conftest import REPO_ROOT
+    dockerfile = (REPO_ROOT / "docker" / "allinone" / "Dockerfile").read_text(encoding="utf-8")
+    expose = next(l for l in dockerfile.splitlines() if l.startswith("EXPOSE "))
+    assert "9099" in expose, f"supply port not published by the image: {expose}"
+    assert "ALETHEIA_SUPPLY_HOST=0.0.0.0" in dockerfile, "in-container bind would be unreachable"

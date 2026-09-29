@@ -55,6 +55,11 @@ SAMPLES: dict[str, dict[str, Any]] = {
             "title": "LLM Cluster Trainer", "format": "JSON Telemetry", "transport": "TCP stream", "ctl": 9211, "port": 9111,
             "preset": {"id": "llm-cluster", "type": "tcp", "config": {"host": HOST, "port": "9111"}}},
 }
+# The sources the Connect button pre-fills. These are our own generators on loopback, so they
+# onboard rules-only by default: no sample of theirs is worth a cloud round trip, and a source
+# that never calls out cannot be held up by an LLM outage.
+INTERNAL_SOURCE_IDS = frozenset(s["preset"]["id"] for s in SAMPLES.values())
+
 _PROCS: dict[str, subprocess.Popen] = {}
 
 
